@@ -1,0 +1,20 @@
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# Local credentials, certificates, and deployment artifacts
+certs/
+secrets/
+*.pem
+*.cer
+*.crt
+*.key
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.log
+logs/
+screenshots/
+dumps/
