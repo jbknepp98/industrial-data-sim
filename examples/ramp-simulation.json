@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "generatorVersion": 1,
+  "session": {
+    "schemaVersion": 1,
+    "sessionId": "example-ramp-session",
+    "connectionProfile": "local-development",
+    "dataset": "Example Dataset",
+    "startUtc": "2026-09-01T00:00:00Z",
+    "endUtc": "2026-09-01T00:00:05Z",
+    "outputTags": [
+      {
+        "name": "Example.Temperature",
+        "valueType": "number"
+      },
+      {
+        "name": "Example.Running",
+        "valueType": "boolean"
+      },
+      {
+        "name": "Example.State",
+        "valueType": "string"
+      }
+    ]
+  },
+  "samplingIntervalMs": 1000,
+  "generators": [
+    {
+      "tag": "Example.Temperature",
+      "kind": "ramp",
+      "startValue": 10,
+      "ratePerSecond": 2,
+      "minimum": 0,
+      "maximum": 15
+    },
+    {
+      "tag": "Example.Running",
+      "kind": "constant",
+      "value": true
+    },
+    {
+      "tag": "Example.State",
+      "kind": "constant",
+      "value": "Idle"
+    }
+  ]
+}

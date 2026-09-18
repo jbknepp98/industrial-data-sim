@@ -156,13 +156,13 @@ Use bounded transactions and serialize database writes. Configure durability
 explicitly, including WAL/checkpoint management; keep SQLite on local disk.
 One application instance owns the database; refuse a second writer process.
 
-Persist batch transitions such as Pending, Sending, Uncertain, and Verified.
+Persist batch transitions such as Pending, Sending, Uncertain, and Acknowledged.
 Record Sending before issuing HTTP. After a crash, treat Sending as Uncertain.
 Do not hold database transactions open across network calls.
 
 Apply limits for per-session and total queued bytes, point counts, memory, and
 disk headroom. Backpressure pauses generation, never drops pending data.
-Schedule sessions fairly and expose why they are throttled. Prune verified
+Schedule sessions fairly and expose why they are throttled. Prune acknowledged
 payloads under a retention policy while retaining resumable checkpoints and
 an appropriate audit summary.
 
@@ -171,6 +171,12 @@ reservations fail atomically. Paused sessions retain ownership. Queue pressure
 and process restarts preserve exact generator state and pending payloads.
 
 ## Milestone 5: Historian delivery and recovery
+
+**Recovery policy:** follow the [delivery and recovery decision](delivery-recovery.md).
+Historian can omit repeated values. Acknowledgement and retained-point verification
+are separate evidence; latest stored timestamps are not delivery checkpoints.
+No missing sample, including a missing suffix, authorizes replay.
+
 
 Implement Pulse client-credentials authentication, token renewal, verified TLS,
 timeouts, and redacted diagnostics. Read Dataset existence/settings and each
@@ -183,22 +189,24 @@ flush age. Preserve per-tag order within and across requests. Keep production
 batch boundaries separate from transport batches. Begin with conservative limits
 that are configuration defaults, not claimed server limits.
 
-Phase 1 uses full read-back verification before marking a batch Verified and
-advancing delivery for its tags. Filter boundary/sentinel points, normalize
-documented Boolean representation, and compare timestamps, values, and quality.
-Unexpected changes or missing points remain unresolved. Measure verification
-cost before introducing any weaker optional policy.
+Persist the generated payload before submission and record Sending before issuing
+HTTP. Persist successful batch acknowledgement before advancing its tags. Until
+the API's success/partial-acceptance contract is verified, production delivery is
+blocked. Read-back checks retained representation (timestamps, values, quality,
+and required transitions); it cannot prove individual delivery of omitted repeats.
 
-On uncertain delivery, read back the exact submitted points. Confirm matches;
-resend only an absent suffix strictly newer than the current latest timestamp.
-Stop the affected session for conflicts or holes behind already-written data.
-Unrelated sessions can continue. Never promise exactly-once delivery without
-server guarantees. Bound retries and use backoff; a response error is not proof
-that nothing was written.
+On timeout, crash after Sending, malformed response, or any response without a
+proven no-write guarantee, mark the batch Uncertain. Stop delivery for its session,
+retain tag ownership and payloads, and allow unrelated sessions to continue.
+Read-back may reveal conflicts or confirm retained points but never authorizes
+an automatic resend. Pending batches known never to have entered Sending can be
+submitted after restart. There is no automatic retry of ambiguous writes.
 
-**Exit check:** after termination before submission, during submission, and after
-server acceptance but before local acknowledgement, restart reconciles safely
-and finishes or reports a precise conflict without blind replay.
+**Exit check:** injected crashes before submission, during submission, and after
+server acceptance but before local acknowledgement must preserve pending data and
+ownership, resume only known-safe work, or report Uncertain with an actionable
+explanation. Do not promise automatic completion or exactly-once delivery where
+the server provides no corresponding guarantee.
 
 ## Milestone 6: End-to-end acceptance and measured capacity
 

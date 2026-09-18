@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "generatorVersion": 1,
+  "session": {
+    "schemaVersion": 1,
+    "sessionId": "example-random-staircase-session",
+    "connectionProfile": "local-development",
+    "dataset": "Example Dataset",
+    "startUtc": "2026-09-01T00:00:00Z",
+    "endUtc": "2026-09-01T03:00:00Z",
+    "outputTags": [
+      {
+        "name": "Example.Temperature",
+        "valueType": "number"
+      },
+      {
+        "name": "Example.Running",
+        "valueType": "boolean"
+      },
+      {
+        "name": "Example.State",
+        "valueType": "string"
+      }
+    ]
+  },
+  "samplingIntervalMs": 60000,
+  "generators": [
+    {
+      "tag": "Example.Temperature",
+      "kind": "staircase",
+      "afterSteps": "holdLast",
+      "steps": [
+        {
+          "value": 0,
+          "durationRangeMs": {
+            "minimum": 600000,
+            "maximum": 3600000
+          }
+        },
+        {
+          "value": 10,
+          "durationRangeMs": {
+            "minimum": 600000,
+            "maximum": 3600000
+          }
+        },
+        {
+          "value": 20,
+          "durationMs": 900000
+        }
+      ],
+      "seed": 42,
+      "maxTotalDurationMs": 7200000
+    },
+    {
+      "tag": "Example.Running",
+      "kind": "constant",
+      "value": true
+    },
+    {
+      "tag": "Example.State",
+      "kind": "constant",
+      "value": "Idle"
+    }
+  ]
+}

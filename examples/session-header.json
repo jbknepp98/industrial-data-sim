@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "sessionId": "example-session",
+  "connectionProfile": "local-development",
+  "dataset": "Example Dataset",
+  "startUtc": "2026-09-01T00:00:00Z",
+  "endUtc": "2026-09-02T00:00:00Z",
+  "outputTags": [
+    { "name": "Example.Temperature", "valueType": "number" },
+    { "name": "Example.Running", "valueType": "boolean" },
+    { "name": "Example.State", "valueType": "string" }
+  ]
+}

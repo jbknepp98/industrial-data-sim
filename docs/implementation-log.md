@@ -1,0 +1,432 @@
+# Implementation log
+
+## Increment 1 — solution foundation and Dataset validation
+
+### Scope and decisions
+
+- Added .NET 10 Core, CLI, and xUnit test projects in one solution.
+- Enabled nullable reference checks and treated compiler warnings as errors.
+- Added a pure Dataset-name validator and a single offline `validate-dataset`
+  command. Deliberately deferred the full session schema until its contract can
+  be reviewed as a separate change.
+- Added XML documentation and inline comments where the reason matters: no
+  silent name normalization, explicit ASCII policy, and no reflection of input
+  values into diagnostic output.
+- Validation returns a stable code, JSON path, and human-readable message.
+  The CLI wraps these in a versioned JSON response and meaningful exit code.
+- No third-party runtime dependencies. The test project uses the SDK template's
+  xUnit and Microsoft test packages; the unused coverage collector was removed.
+- A project-local SDK and caches are ignored, together with build output and
+  future runtime database/state files. Credentials and certificates remain local.
+
+### Verification scope
+
+Tests cover allowed names, empty input, surrounding whitespace, path separators,
+URL syntax, control characters, Unicode whitespace/letters, and emoji. CLI tests
+exercise JSON parsing, status codes, argument errors, and non-disclosure of input.
+The command's name validation is local only; no Historian reads or writes occur.
+
+Results: Release build and all 30 tests passed with SDK 10.0.401. Direct process
+checks also verified valid, invalid, and incorrect-usage responses and exit codes
+0, 1, and 2. The initial test declaration used unsupported attribute arguments;
+it was corrected to xUnit member data before the successful run. This host's
+sandbox blocked MSBuild IPC sockets, so the successful suite ran with permission
+to use local IPC. This was a runner constraint, not a Historian dependency.
+
+### Follow-up scope (implemented in increment 2)
+
+Define a deliberately small versioned session-header contract: session ID,
+connection profile reference, Dataset, UTC time range, and declared output tags.
+Review its schema and validation behavior before adding generation, SQLite,
+network access, or the complete sequence vocabulary. Tag ownership across
+sessions remains a later transactional concern, not something name validation
+alone can enforce.
+
+## Increment 2 — session header and offline file validation
+
+### Scope and decisions
+
+- Added a typed session header and a strict JSON parser with structured errors.
+  Invalid input does not return a partially usable definition.
+- Defined one Dataset, a connection-profile reference, explicit UTC start/end,
+  session identity/version, and typed output declarations. The time interval is
+  start-inclusive/end-exclusive. This is not yet a complete generator schema.
+- Added `validate-session`, a JSON Schema, and a synthetic example. The CLI caps
+  file size at 1 MiB, uses strict UTF-8 decoding, and does not resolve profiles or
+  load credentials. Unreadable files use exit code 3 without exposing paths.
+- Reject unknown and duplicate properties rather than ignore misspellings;
+  reject case-only tag collisions without changing the stored tag spelling.
+- Explicit code comments document the conservative naming choices, parser
+  boundaries, input limits, and why unsupported field names are not echoed.
+- Kept the existing Dataset validator and JSON diagnostic envelope intact.
+
+### Verification scope
+
+Tests exercise required fields, types, versions, identifiers, Dataset names,
+valid/invalid UTC dates, time order, duplicate tags, unknown fields, duplicate
+properties, malformed documents, and CLI file errors. An exploratory Unicode
+test found that JsonDocument defers decoding unpaired surrogate escapes until
+string access. Added a decoding pass inside the parser's error boundary and
+regression tests to prevent unhandled stack traces.
+
+Results: all 91 tests passed in Release configuration on SDK 10.0.401. Direct
+process checks covered the published example, malformed Unicode, and unreadable
+files. An independent Draft 2020-12 validator (development-only jsonschema 4.25.1
+with rfc3339-validator 0.1.4) and the compiled CLI agreed on 24 structural cases.
+The schema check explicitly enabled date-time validation; installing jsonschema
+alone had not enabled its optional date-time dependency. No validation libraries
+were added to the simulator runtime. Whitespace patterns in the schema were made
+explicit to avoid differences between regex engines.
+
+### Follow-up scope (implemented in increment 3)
+
+Review the header contract before adding one deterministic constant generator
+and a bounded offline dry-run. Sampling, seed/model version, and a real executable
+configuration must be introduced explicitly rather than silently treating a
+validated header as a runnable job. SQLite and network delivery remain deferred.
+
+## Increment 3 — deterministic constants and bounded dry-run
+
+### Scope and decisions
+
+- Added a separate versioned constant-model wrapper around the unchanged header.
+  It requires a generator version, one positive millisecond sampling interval,
+  and exactly one correctly typed constant per declared output tag.
+- Added `validate-simulation` and `dry-run`; parsing reuses the header's strict
+  JSON/Unicode helpers. File reading is now separate from execution and output
+  so output errors cannot be mislabeled as unreadable configuration files.
+- Added typed TVQ records with the verified wire keys `t`, `v`, and `q`. Quality
+  is fixed at 192 for this first generator. JSON constants preserve their types
+  and numeric spelling after the input document is disposed.
+- Generation uses integer ticks and the half-open session range. It computes
+  counts before allocating, caps the total across tags at 10000, and derives
+  each timestamp from the start. No wall clock, random state, or mutable shared
+  engine state is involved.
+- Added a bounded UTF-8 serialization buffer: previews exceeding 4 MiB fail
+  without printing partial data. This includes escape expansion and line ending.
+- Added an executable example, a schema referencing the existing header schema,
+  and an explicit contract document. Preview output deliberately contains values;
+  diagnostics and validation-only responses continue to avoid echoing input.
+
+### Verification
+
+The Release suite passed all 130 tests. New checks cover scalar type preservation,
+exact timestamp boundaries, repeated/interleaved runs, generator declaration
+order, point budgets across tags, extreme dates and durations, invalid constants,
+missing/duplicate generators, nested diagnostic paths, and oversized escaped
+string output. The runtime still has no additional third-party dependencies.
+
+An independent Draft 2020-12 schema validator and the compiled CLI agreed on 19
+structural cases, including resolution of the local header schema reference.
+Two direct CLI runs of the published example produced identical nine-point
+output with the expected timestamps, values, and quality codes. No Historian
+connection was opened and no data was written.
+
+### Follow-up scope (implemented in increment 4)
+
+Review the constant-model and sampling contract, then add one deterministic ramp
+using the same clock and offline validation approach. Keep sequence logic,
+randomness, persistence, concurrency scheduling, and delivery as separately
+reviewable increments. This preview engine is not yet a resumable session runner.
+
+## Increment 4 — deterministic numeric ramps
+
+### Scope and decisions
+
+- Added a numeric ramp: start value plus rate per elapsed simulated second,
+  with optional clamping bounds. Positive, negative, and zero rates are supported.
+- Required finite parameters, ordered bounds, and a starting value inside them.
+  Ramps must target numeric tags; pattern-specific fields are strictly checked.
+- Renamed the internal implementation entry points to `SimulationDefinition`,
+  `SimulationDefinitionLoader`, and `DryRun` now that they support multiple
+  patterns. Existing constant JSON, CLI commands, and output semantics remain
+  unchanged. Introduced a small immutable generator evaluation abstraction rather
+  than duplicating the sampling loop or implementing a plugin system prematurely.
+- Kept quality, sample clock, and preview limits unchanged. Ramp evaluation uses
+  elapsed time from the session origin instead of accumulating per-sample deltas.
+- Arithmetic overflow returns a structured failure with no partial preview;
+  bounds do not convert infinity into a plausible observation. Constants retain
+  their original JSON scalar representation; ramps explicitly use binary64.
+- Added a mixed ramp/constant example, a combined schema, and in-code explanations
+  of time origin, precision, clamping, and overflow handling.
+
+### Verification
+
+Focused tests cover ascending/descending/zero-rate ramps, one-sided and equal
+bounds, starting on a bound, fractional sampling, values at shared timestamps,
+interleaved runs, mixed tag types, invalid configurations, and arithmetic failure
+at both the engine and CLI boundaries. Existing constant and parser tests remain
+part of the regression suite. No network writes or connection loading are added.
+
+Results: all 161 tests passed in Release configuration on SDK 10.0.401. The
+independent schema validator and compiled CLI agreed on 16 structural cases,
+including the existing constant example. Two direct CLI runs produced identical
+15-point mixed previews with ramp values 10, 12, 14, 15, and 15. Repository-visible
+files were checked for configured secrets and accidental local artifacts.
+
+### Additional verification before the next pattern
+
+The suite now passes 165 tests. A fixed-seed test exercises 100 varied ramps
+against an independent decimal per-step accumulator, including fractional rates,
+different sample intervals, negative values, and clamping. Observed differences
+were within the asserted 1e-9 absolute tolerance over the tested process ranges.
+This is not a precision guarantee for all binary64 inputs.
+
+Parsing and serialized points remained identical under French, Turkish, and Saudi
+Arabic cultures. Separate compiled CLI processes also produced byte-identical
+output under UTC, America/Chicago, and Pacific/Auckland timezone settings.
+
+A full CLI preview emitted exactly 10000 points at one-millisecond sampling;
+extending the range to 10001 points returned the expected structured limit error
+with no partial data. No new production-code defect was found in these checks.
+These tests remain offline and do not establish Historian throughput or recovery
+correctness, which belong to later implementation milestones.
+
+### Next increment
+
+Add a deterministic staircase with explicit dwell durations and precise boundary
+tests before introducing randomized timing, sequences, or faults. Keep later
+persistence and delivery work separate; there is still no resumable session runner.
+
+### Live 24-hour verification
+
+Submitted all four current pattern categories to Test using six fresh tags,
+1440 samples per tag and twelve ordered batches. Every batch returned HTTP 200;
+none was replayed. Full-period read-back verified all expected transitions and
+3170 returned records, including types, timestamps, values, and quality 192.
+Unchanged repeats were omitted, including string repeats after the first batch.
+This prevents individual confirmation of all 8640 submitted samples and means
+latest stored timestamps cannot serve as delivery checkpoints. Production code
+was unchanged. See [the complete result](live-verification-24h.md).
+
+### Deterministic staircase increment
+
+Added numeric staircase steps with explicit positive whole-millisecond dwell
+periods and required `afterSteps: "holdLast"`. Boundary evaluation uses cumulative
+integer ticks and binary search with no mutable cursor. Exact boundaries advance
+to the next step; the final value holds. The existing session sample grid stays
+unchanged, so steps shorter than that grid can be missed. Numeric JSON values
+retain their token precision. Duration validation guards cumulative overflow.
+Code comments explain these choices; the combined schema, example, README, and
+[pattern contract](staircase-simulation-v1.md) document agent-facing behavior.
+
+Verification: all 191 Release tests passed (26 new staircase cases). Coverage
+includes before/at boundaries, short steps, repeated and descending values,
+large integer preservation, shared-timestamp consistency, interleaved runs,
+invalid types and fields, explicit end policy, and duration overflow. A compiled
+CLI check produced the expected 24 mixed points and staircase values
+`0, 0, 10, 10, 10, 20, 20, 20`. An independent JSON Schema validator accepted the
+constant, ramp, and staircase examples. No live writes were made in this increment.
+
+The next design decision is reproducible randomized dwell durations, including
+how minimum/maximum durations interact with an overall sequence time limit.
+Conditional sequences and durable delivery remain separate later increments.
+
+### Seeded staircase dwell durations
+
+Added `durationRangeMs` with inclusive minimum/maximum integer milliseconds,
+required per-generator uint32 `seed` for ranged steps, and optional
+`maxTotalDurationMs`. Fixed and ranged dwells can coexist. Planning reserves
+later minima before choosing each dwell and rejects infeasible schedules.
+The cap covers the scheduled dwells; `holdLast` continues the final value until
+session end. It neither loops nor launches a subsequent sequence step.
+
+Moved staircase parsing into a focused loader. Resolved schedules remain
+immutable and use the existing exact-boundary evaluator. Per-step SHA-256
+choices with rejection sampling are explicitly versioned and independent of
+sample frequency, other generators, and mutable random state. Inline comments
+and the [staircase contract](staircase-simulation-v1.md) explain byte encoding,
+seed behavior, duration reservation, and the sequential selection distribution.
+Changing these timing conventions requires preserving existing version behavior.
+
+Verification: all 219 Release tests passed (28 new cases). Tests include 200
+seeds within constrained duration ranges, tight-budget minimum holds, mixed
+fixed/random timing, independent Python timing vectors, repeatability, shared
+sample timestamps, and invalid range/seed/budget configurations. A test-only
+collection-expression compilation error was corrected before the passing run.
+The independent schema validator and compiled CLI agreed on 16 structural cases;
+all four examples passed schema validation. Runtime additionally rejected reversed
+ranges and infeasible caps with no partial dry-run data. Two compiled CLI runs
+were byte-identical; all 180 staircase samples in the 540-point mixed example
+matched a separately computed Python schedule and quality/timestamp checks.
+No network writes or new dependencies were introduced.
+
+Next small increment: a bounded random-integer value held for a configured dwell,
+with explicit treatment of adjacent equal choices. Conditional sequence control
+and persistence remain pending. Exact-duration scheduling that fills a target
+period is also distinct from this increment's maximum-duration cap.
+
+### Exact-duration random-integer holds
+
+Added the numeric `randomIntegerHold` pattern with signed 32-bit inclusive value
+bounds, an explicit seed, fixed or ranged dwell timing, an exact total duration,
+and explicit adjacent-value and end policies. Feasible hold counts are chosen
+within the supported 10000-hold limit. Each dwell reserves both the minimum time
+and the maximum capacity of later holds, so the final hold is never shortened
+or extended beyond its bounds to fit. Impossible plans fail before output.
+Resolved random-integer schedules also share a 10000-hold model allocation limit.
+
+The planner uses independent versioned count, duration, and value hash streams;
+the existing staircase stream remains unchanged. `requireChange` skips the
+previous integer without retrying; `allowRepeat` can extend the visibly unchanged
+value across multiple planned holds. The immutable schedule reuses existing
+half-open boundary evaluation. `holdLast` after the pattern duration is separate
+from the exact scheduled interval. Code comments and the
+[pattern contract](random-integer-hold-v1.md) explain these choices and limits.
+
+Verification: all 253 Release tests passed (34 new cases), including 200 seeds
+for exact total time and value/dwell bounds, fixed boundaries, final holds,
+singleton repeats, full Int32 bounds, reproducibility, independent Python output
+vectors, infeasible timing gaps, validation, and aggregate allocation limits.
+All five examples passed independent JSON Schema validation. Ten invalid shapes
+agreed between the schema and compiled CLI; two infeasible schedules failed the
+CLI without partial data. The five-hour example generated 900 mixed points:
+all 300 random-tag samples matched a separately computed 14-hold Python schedule,
+including timestamps and quality 192. Repeated CLI output was byte-identical.
+
+This increment passed offline checks; no Historian data was written. Next is
+sequence composition connecting the staircase to these holds, followed by a
+separate tested increment for behavior triggered by another tag's value/state,
+as agreed with the user. Durable execution and delivery recovery remain pending.
+
+### Finite sequence composition
+
+Added a numeric `sequence` generator with 1–1000 ordered steps, each owning a
+`pattern` that inherits the sequence tag. This first increment supports staircase
+and random-integer holds only; nested sequences and conditional controls remain
+unsupported. Each child's resolved schedule determines its duration. Randomized
+staircases advance at actual completion, not at their maximum-duration cap.
+
+Each child starts at local elapsed time zero. Half-open sequence intervals select
+the next child exactly at the handoff; the fixed session sample grid does not
+restart or insert boundary points. Required `afterSequence: "holdLast"` freezes
+the final scheduled value, even if coarse sampling missed its interval. Child
+standalone end policies remain required but do not prevent sequence advancement.
+Cumulative duration overflow and shared random-hold allocation limits are checked.
+Centralized strict pattern dispatch preserves standalone validation and rejects
+child tag overrides. Inline comments and the [sequence contract](sequence-v1.md)
+explain timing, completion, resource limits, and the current scope.
+
+Verification: all 277 Release tests passed (24 new sequence/CLI cases). Coverage
+includes exact and off-grid handoffs, local-clock resets, actual random-staircase
+completion below its cap, repeated seeded children, session truncation, final
+values missed by sampling, malformed steps, unsupported nesting/types/policies,
+aggregate hold budgets, and cumulative duration overflow. All six examples passed
+independent JSON Schema validation; ten invalid sequence shapes failed both
+schema and CLI without partial data. The completed eight-hour CLI example emitted
+1440 mixed points; all 480 sequence samples matched an independent Python
+calculation, including timestamps and quality. Repeated output was byte-identical.
+The staircase completed at elapsed 3981804 ms; the five-hour random pattern ended
+at 21981804 ms, followed by the final-value hold.
+
+No Historian writes were made. The agreed next increment is a behavior trigger
+based on another tag's value or state, starting with clearly defined trigger and
+waiting semantics. Durable session execution and delivery recovery remain pending.
+
+### Boolean-triggered sequence branches and live test
+
+Added a Boolean timeline and numeric Boolean switch with explicit restart-on-change
+semantics. Source binding is independent of declaration order and restricted to
+local Boolean constants/timelines. Actual simulated activation times determine
+branch clocks, so off-grid changes remain deterministic. Equal adjacent Boolean
+states do not retrigger. Both branches validate up front and share existing
+resource budgets. Existing generation and sampling remain pure and immutable.
+Inline comments and the [trigger contract](boolean-triggers-v1.md) document
+initial activation, interruption, re-entry, scope, and remaining limitations.
+
+Verification: 304 Release tests passed (27 new trigger cases), covering both
+states, initial True, completion, interruptions/restarts, repeated equal states,
+transitions between samples, constant inputs, declaration ordering, determinism,
+invalid references/types/policies, overflow, and unsupported nesting. All seven
+examples passed schema validation, and the full live preview matched an independent
+Python calculation. The user-authorized 24-hour Test write then completed in
+12 batches: 2880 submitted samples, six retained Boolean records, and 36 retained
+response records. Every transition and returned record matched with quality 192;
+all writes returned HTTP 200 without replay. See the
+[live result](live-verification-boolean-trigger.md) for exact names and values.
+No credentials or certificate material were included in public examples/docs.
+
+Next behavior choices can build on this tested local dependency: start gates,
+edge-only triggers, or explicit completion/interrupt policies. General cross-tag
+expressions and durable execution remain later work.
+
+### Boolean gate suppression modes
+
+Implemented the user's confirmed pause-and-suppress and continue-and-suppress
+semantics. Both initially wait for the first True; subsequent False periods
+produce no points. Pause uses cumulative True time; continue uses elapsed time
+since the first True. Returning to True resumes the original schedule without
+restarting, buffering, or backfilling. Local source binding remains restricted to
+Boolean constants/timelines and independent of declaration order. Immutable open
+intervals preserve exact timing even between sample slots. Gates support existing
+constant, ramp, staircase, random-integer, and sequence patterns without nesting.
+
+Added an explicit emission predicate separate from nullable arithmetic failure.
+Dry-run skips suppressed slots before evaluating values, retains an empty array
+for a fully suppressed declared tag, and reports actual emitted pointCount. The
+10000 candidate-slot limit remains conservative before suppression, preserving
+the existing work bound. Current timestamps and quality 192 are unchanged for
+emitted points. Comments explain interval construction, clock arithmetic, and
+suppression; the [gate contract](boolean-gates-v1.md), schema, and two-mode example
+document initial waiting, completion, limits, and unsupported behavior.
+
+Verification: all 330 Release tests passed (26 new cases). Coverage includes exact
+opening/closing boundaries, multiple pauses, continuous advancement, no hidden
+records/backfill, all-False output, initial True constants, off-grid timing,
+sequence completion while hidden, paused boundaries, preserved seeded schedules,
+repeatability, type/reference validation, arithmetic failures, scalar constants,
+and candidate-work limits. Eight examples passed independent schema validation;
+six invalid gate shapes agreed between schema and CLI. The compiled CLI's
+20-second example matched a hand-calculated reference: 20 Boolean points plus
+11 points from each gate, exactly 42 emitted points. False-gated responses serialized
+as empty arrays, not nulls; repeated output was byte-identical. Whitespace checks
+passed. No Historian writes were made in this increment.
+
+The requested feature increment is complete. No additional feature work or broad
+retrospective review was started; the user plans to request a full code and
+documentation review from the beginning next.
+
+### Human readability and actionable-error review rule
+
+Added repository-wide instructions in `AGENTS.md` requiring human-readable code,
+comments explaining intent and invariants, and useful errors with stable codes,
+structured locations, clear explanations, and corrective guidance. The rule
+applies to every returned error, including future delivery and persistence
+failures. It also requires bounded diagnostics, explicit truncation, and safe
+context without secrets or raw exception details. README links the process.
+
+This is a process/documentation change, not a claim that all existing errors
+meet the new standard. For example, the current file-read error says only that
+the configuration file could not be read; it should also suggest checking file
+existence and read permissions. Apply this standard during the pending A1 repair
+and subsequent error-path reviews. No runtime behavior changed in this update.
+
+### Audit repairs and reproducible checkpoint
+
+Fixed bounded diagnostic collection and unified bounded CLI serialization. At
+most 100 diagnostics plus one actionable truncation notice are returned; failure
+counts still increase after truncation so invalid child patterns cannot pass
+construction checks. Responses use UTF-8 byte accounting and an LF terminator.
+File-read errors now suggest checking existence and permissions; unsupported
+properties direct callers to the version 1 schema without echoing input names.
+
+All 337 .NET Release tests passed, including seven new diagnostic-limit cases.
+Corrected active clock/capability documentation. Replaced the unsafe absent-suffix
+retry instruction with a conservative Uncertain policy; API acceptance guarantees
+remain a prerequisite to the production writer. No writer was implemented.
+
+Versioned readable offline schema/clock verification and read-only live-evidence
+comparison, with prerequisites documented. Eight Python verifier tests pass.
+All eight simulation examples validate, six malformed shapes fail both validators,
+and 100 independent gate scenarios check 3722 samples. Saved full read-backs match
+3170 and 42 retained records respectively; omitted repeats are not certified as
+individual deliveries. No network requests or Historian writes were performed.
+
+A clean export of the staged repository restored from the existing NuGet cache,
+built, and passed all 337 .NET tests, eight Python tests, schema comparisons, and
+100 independent clock scenarios. SDK and Python dependencies were supplied
+externally as documented; no ignored project source/helper files were copied.
+Repository-visible files passed checks for configured secret values, private-key
+markers, Markdown links, and whitespace. This is a targeted secret check, not a
+guarantee against every possible form of sensitive content. The repair checkpoint
+captures the previously uncommitted implementation and these audit repairs.

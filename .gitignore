@@ -18,3 +18,20 @@ secrets/
 logs/
 screenshots/
 dumps/
+
+# Build tooling, generated output, and runtime state
+.tools/
+**/bin/
+**/obj/
+TestResults/
+state/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Python verification caches
+__pycache__/
+*.pyc

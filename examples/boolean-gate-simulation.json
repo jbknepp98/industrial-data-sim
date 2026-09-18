@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "generatorVersion": 1,
+  "session": {
+    "schemaVersion": 1,
+    "sessionId": "example-gate-modes",
+    "connectionProfile": "local-development",
+    "dataset": "Example Dataset",
+    "startUtc": "2026-09-01T00:00:00Z",
+    "endUtc": "2026-09-01T00:00:20Z",
+    "outputTags": [
+      {
+        "name": "Example.Ready.Boolean",
+        "valueType": "boolean"
+      },
+      {
+        "name": "Example.Response.Pause",
+        "valueType": "number"
+      },
+      {
+        "name": "Example.Response.Continue",
+        "valueType": "number"
+      }
+    ]
+  },
+  "samplingIntervalMs": 1000,
+  "generators": [
+    {
+      "tag": "Example.Ready.Boolean",
+      "kind": "booleanTimeline",
+      "afterSteps": "holdLast",
+      "steps": [
+        {
+          "value": false,
+          "durationMs": 2000
+        },
+        {
+          "value": true,
+          "durationMs": 4000
+        },
+        {
+          "value": false,
+          "durationMs": 4000
+        },
+        {
+          "value": true,
+          "durationMs": 3000
+        },
+        {
+          "value": false,
+          "durationMs": 3000
+        },
+        {
+          "value": true,
+          "durationMs": 4000
+        }
+      ]
+    },
+    {
+      "tag": "Example.Response.Pause",
+      "kind": "booleanGate",
+      "triggerTag": "Example.Ready.Boolean",
+      "whenFalse": "pauseAndSuppress",
+      "pattern": {
+        "kind": "ramp",
+        "startValue": 0,
+        "ratePerSecond": 1
+      }
+    },
+    {
+      "tag": "Example.Response.Continue",
+      "kind": "booleanGate",
+      "triggerTag": "Example.Ready.Boolean",
+      "whenFalse": "continueAndSuppress",
+      "pattern": {
+        "kind": "ramp",
+        "startValue": 0,
+        "ratePerSecond": 1
+      }
+    }
+  ]
+}

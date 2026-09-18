@@ -164,5 +164,19 @@ mismatch; the subsequent check handled the observed grouping.
 - Timestamp precision, range boundaries, and persistence after service restart.
 - Concurrency control when other writers share a tag.
 
-The simulator is not implemented yet. These observations inform its design;
-they are not a completed integration test suite.
+The generator and offline CLI are implemented; production delivery and recovery
+remain pending. These observations do not constitute a complete integration suite.
+
+## Unchanged values in a 24-hour live run
+
+A subsequent engine-generated test submitted 8640 samples in twelve ordered
+batches to six fresh Test tags. All writes returned HTTP 200; full-period reads
+returned 3170 records. All value transitions matched. Numeric/Boolean constants
+retained only their first point, and a bounded ramp omitted its unchanged plateau.
+The string constant retained the first batch's 120 points but no subsequent
+repeats. The cause and generality of this behavior remain unestablished.
+
+HTTP success does not prove individual retention of repeated samples. Latest
+stored timestamps can lag submission progress. Recovery needs an explicit policy
+for unverifiable repeats and must not blindly replay them or mark them individually
+verified from value equality alone. See [test details](live-verification-24h.md).

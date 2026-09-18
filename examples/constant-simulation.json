@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "generatorVersion": 1,
+  "session": {
+    "schemaVersion": 1,
+    "sessionId": "example-session",
+    "connectionProfile": "local-development",
+    "dataset": "Example Dataset",
+    "startUtc": "2026-09-01T00:00:00Z",
+    "endUtc": "2026-09-01T00:00:03Z",
+    "outputTags": [
+      {
+        "name": "Example.Temperature",
+        "valueType": "number"
+      },
+      {
+        "name": "Example.Running",
+        "valueType": "boolean"
+      },
+      {
+        "name": "Example.State",
+        "valueType": "string"
+      }
+    ]
+  },
+  "samplingIntervalMs": 1000,
+  "generators": [
+    {
+      "tag": "Example.Temperature",
+      "kind": "constant",
+      "value": 72.5
+    },
+    {
+      "tag": "Example.Running",
+      "kind": "constant",
+      "value": true
+    },
+    {
+      "tag": "Example.State",
+      "kind": "constant",
+      "value": "Idle"
+    }
+  ]
+}

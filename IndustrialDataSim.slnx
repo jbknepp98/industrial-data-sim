@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IndustrialDataSim.Cli/IndustrialDataSim.Cli.csproj" />
+    <Project Path="src/IndustrialDataSim.Core/IndustrialDataSim.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IndustrialDataSim.Tests/IndustrialDataSim.Tests.csproj" />
+  </Folder>
+</Solution>
