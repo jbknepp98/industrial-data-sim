@@ -13,6 +13,12 @@ it does not yet contain a runnable simulator.
 See [API findings](docs/timebase-api-findings.md) for payloads, observed behavior,
 and unresolved questions.
 
+See the [Phase 1 implementation plan](docs/phase-1-plan.md) for the proposed
+session engine, conditional models, durable buffering, and acceptance criteria.
+
+Dataset naming policy: use letters, digits, hyphens (`-`), underscores (`_`),
+and spaces only; avoid other special characters.
+
 ## Local configuration
 
 Copy `.env.example` to `.env` and populate it locally. No configuration loader

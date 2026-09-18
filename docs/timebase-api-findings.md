@@ -30,6 +30,12 @@ hostname verification enabled using the deployment's root CA.
 
 ## TVQ payload
 
+Dataset naming guidance supplied by the project owner: avoid all special
+characters except hyphens (`-`), underscores (`_`), and spaces. Enforce this as
+project validation policy and still URL-encode Dataset path segments. The
+inspected OpenAPI name schema does not declare a character pattern or length
+limit; do not misrepresent this guidance as a documented server restriction.
+
 Use `POST /api/datasets/{dataset}/data` with `Content-Type: application/json`
 and `Authorization: Bearer <access-token>`. The body maps tag names to arrays of
 points. The separate `/data/{tagname}` write endpoint is marked deprecated.
@@ -114,9 +120,23 @@ The meaning of quality 193 is not established by the inspected documentation.
 Do not assume it means rejection or treat these points as absent.
 
 This installation accepted older data. Forward-only writes must be enforced by
-the simulator. Duplicate-timestamp writes, unsorted points within a batch, and
-mixed valid/invalid batches were not tested. No cleanup was performed; the
+the simulator. Unsorted points within a batch and mixed valid/invalid batches
+were not tested. No cleanup was performed; the
 historical test points remain in the development Dataset.
+
+A subsequent September 14 batch at `12:00:00Z` through `12:00:02Z`, values
+30–32, was also accepted and read back with quality 193. A single further
+submission at `2026-09-14T12:00:02Z`, value 33 and quality 192, returned HTTP 200,
+but immediate read-back retained value 32 and quality 193. This is one observed
+duplicate-timestamp result, not a universal guarantee about overwrite behavior.
+
+The Dataset schema also documents `ldt` (late data tolerance, milliseconds):
+out-of-order data within this clock-skew window is discarded, while older data
+beyond it can be accepted for backfill. `lda` limits the age of accepted late
+data in days; zero rejects all late data, and the documented default is 30.
+These settings explain why server acceptance is not equivalent to enforcing
+the simulator's stricter forward-only policy. They do not establish the meaning
+of quality 193 or fully explain the duplicate result without further testing.
 
 ## Reading and response differences
 
@@ -139,7 +159,7 @@ mismatch; the subsequent check handled the observed grouping.
 
 - Maximum points and bytes per batch, rate limits, and timeouts.
 - Partial success, atomicity, idempotency, and safe retry semantics.
-- Duplicate timestamps and the interpretation of quality 193.
+- General duplicate-timestamp semantics and the interpretation of quality 193.
 - Numeric type selection, type changes, null handling, and string limits.
 - Timestamp precision, range boundaries, and persistence after service restart.
 - Concurrency control when other writers share a tag.
