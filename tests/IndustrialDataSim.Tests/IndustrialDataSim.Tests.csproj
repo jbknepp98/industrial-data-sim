@@ -17,6 +17,17 @@
     <Using Include="Xunit" />
     <ProjectReference Include="../../src/IndustrialDataSim.Core/IndustrialDataSim.Core.csproj" />
     <ProjectReference Include="../../src/IndustrialDataSim.Cli/IndustrialDataSim.Cli.csproj" />
+    <ProjectReference Include="../../src/IndustrialDataSim.Runtime/IndustrialDataSim.Runtime.csproj" />
+    <ProjectReference Include="../IndustrialDataSim.CrashProbe/IndustrialDataSim.CrashProbe.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="../../examples/*simulation.json" Link="examples/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="CopyCrashProbe" AfterTargets="Build">
+    <ItemGroup>
+      <CrashProbeFiles Include="$(MSBuildThisFileDirectory)../IndustrialDataSim.CrashProbe/bin/$(Configuration)/net10.0/**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(CrashProbeFiles)" DestinationFiles="@(CrashProbeFiles->'$(OutDir)crash-probe/%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
 </Project>

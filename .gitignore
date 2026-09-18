@@ -35,3 +35,7 @@ state/
 # Python verification caches
 __pycache__/
 *.pyc
+
+# Durable-runtime ownership handles
+*.db.owner
+*.sqlite.owner

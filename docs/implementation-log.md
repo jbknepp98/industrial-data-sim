@@ -449,3 +449,49 @@ falling back to zero. See the error-review document for scope and limitations.
 Verification: all 346 Release tests passed, including nine new actionable-error
 cases. Existing simulation tests remain unchanged. Stable error codes, JSON paths,
 exit codes, and generator semantics are preserved. Diff whitespace checks passed.
+
+### Durable-runtime increments: state, ownership, buffering, recovery, fake delivery
+
+1. Defined the versioned persisted contract in `durable-runtime-v1.md`: immutable
+   model/hash, original-grid cursor, explicit states, durable batches, attempts,
+   and separate per-tag buffered/submitted/acknowledged positions. Pure current
+   generators reconstruct schedules from the model and cursor, with no rerolling.
+2. Added a separate Microsoft.Data.Sqlite runtime project, schema migration v1,
+   WAL/FULL durability, lifetime owner file, serialized transactions, atomic tag
+   admission, pause/resume, and explicit completed-session release. Initial
+   ownership/reopen/concurrent-admission tests brought the suite to 352 passing.
+3. Added bounded generation windows and transactional payload/checkpoint commits.
+   Queue points/bytes, candidate slots, encoded payload size, and disk headroom
+   produce explicit backpressure without advancing progress. All eight examples
+   matched original preview output across reopen; 365 tests passed.
+4. Added restart handling and injected commit-boundary failures. Persisted Sending
+   becomes Uncertain on reopen. Configuration/payload integrity checks prevent
+   altered state from silently regenerating or submitting data. A separate
+   test-only child process is killed without cleanup at six boundaries; cross-
+   process ownership is also checked. The suite reached 386 passing tests.
+5. Added delivery solely against a sealed in-memory fake with explicit acceptance
+   semantics. Tests cover lost responses, partial acceptance, ambiguity,
+   cancellation, concurrency, unrelated-session progress, per-tag ordering, and
+   repeat suppression. Payload pruning commits together with acknowledgement;
+   hashes, positions, and audit metadata remain. No production HTTP adapter or
+   credential path was added.
+
+This increment uses library APIs rather than extending the existing two-argument
+validation CLI. Documentation includes a bounded driver example and explains
+caller scheduling, local ownership scope, inspection, and future hosted-worker
+requirements. No Historian data was written. Runtime tests require only local
+SQLite files and synthetic model data.
+
+Final working-tree verification: all 393 Release tests passed (47 new cases over
+the prior checkpoint), including real process termination and the two-day
+17280-point bounded run with a midrun reopen. Injected SQL failure rolled back
+payload, checkpoint, and buffered positions together and returned a redacted,
+actionable storage error. Simulation-only database identity is persisted and
+checked so fake acknowledgements cannot be adopted as production evidence.
+Repository-visible files passed configured-secret/private-key-marker checks,
+Markdown link checks, and diff whitespace checks.
+
+A clean export of the staged repository restored from the local dependency cache
+and passed the same 393 .NET tests, eight Python verifier tests, all example/schema
+checks, and 100 independent gate scenarios (3722 samples). The clean copy included
+the crash probe and all required build inputs, with no ignored helper source.

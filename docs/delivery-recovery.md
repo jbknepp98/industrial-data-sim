@@ -1,6 +1,7 @@
 # Delivery and recovery decision
 
-This is the planned production policy, not an implemented writer. The priority
+This is the production policy. Its durable state transitions are implemented
+and tested against the fake Historian; no production writer is enabled. The priority
 is preserving per-tag forward ordering without replaying an accepted timestamp.
 Availability must yield to uncertainty when server evidence is insufficient.
 

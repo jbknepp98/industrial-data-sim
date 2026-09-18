@@ -15,7 +15,11 @@ If using the optional local SDK, pass `--dotnet "$PWD/.tools/dotnet/dotnet"`
 to `verify_offline.py`, and use that executable for the build/test command.
 The verifier locates repository files relative to itself, not the working directory.
 
-The .NET suite covers generator semantics, parsing, diagnostics, and CLI output.
+The .NET suite covers generator semantics, parsing, diagnostics, CLI output,
+SQLite ownership and queues, deterministic restart, and fake delivery. A test-only
+child executable is killed at six durable boundaries; no cleanup handlers run.
+These tests need local process-launch permissions and writable temporary storage.
+They use synthetic configurations and never contact Historian.
 The independent Python check validates all eight simulation examples and the
 header/subset schemas, rejects six invalid gate shapes through both schema and
 CLI, checks repeatability, and exercises 100 seeded gate timelines against an

@@ -147,9 +147,14 @@ waiting reasons, active faults, and completion without exposing credentials.
 
 ## Milestone 4: SQLite queue and concurrent session ownership
 
+The [durable runtime v1](durable-runtime-v1.md) library implements the finite-model
+slice of this milestone: transactional generation, bounded queues, reservations,
+round-robin turns, pause/resume, and restart recovery. A continuously hosted
+scheduler and future stateful pattern checkpoints remain later increments.
+
 Use versioned migrations and tables for sessions, immutable configurations,
 tag reservations, generator checkpoints, batches, delivery attempts, and
-per-tag verified progress. Store complete payloads needed for exact recovery.
+per-tag buffered, submitted, and acknowledged progress. Store complete payloads needed for exact recovery.
 
 Commit generated batches and the resulting generator checkpoint together.
 Use bounded transactions and serialize database writes. Configure durability
@@ -171,6 +176,11 @@ reservations fail atomically. Paused sessions retain ownership. Queue pressure
 and process restarts preserve exact generator state and pending payloads.
 
 ## Milestone 5: Historian delivery and recovery
+
+Durable delivery transitions and failure injection are implemented against the
+sealed fake Historian. Production authentication, preflight, and HTTP delivery
+remain blocked on the acceptance contract; fake acknowledgements do not establish
+that contract.
 
 **Recovery policy:** follow the [delivery and recovery decision](delivery-recovery.md).
 Historian can omit repeated values. Acknowledgement and retained-point verification

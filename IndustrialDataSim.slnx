@@ -2,8 +2,10 @@
   <Folder Name="/src/">
     <Project Path="src/IndustrialDataSim.Cli/IndustrialDataSim.Cli.csproj" />
     <Project Path="src/IndustrialDataSim.Core/IndustrialDataSim.Core.csproj" />
+    <Project Path="src/IndustrialDataSim.Runtime/IndustrialDataSim.Runtime.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/IndustrialDataSim.CrashProbe/IndustrialDataSim.CrashProbe.csproj" />
     <Project Path="tests/IndustrialDataSim.Tests/IndustrialDataSim.Tests.csproj" />
   </Folder>
 </Solution>

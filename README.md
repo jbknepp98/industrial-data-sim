@@ -9,8 +9,10 @@ Initial API exploration is complete. Authentication, certificate verification,
 automatic tag creation, and batched writes were exercised against a development
 installation. The current implementation provides a .NET solution and
 offline Dataset-name, session-header, and simulation-model validation commands.
-A bounded dry-run generates deterministic constant, ramp, staircase, and random-integer-hold TVQ data, including finite sequences and local Boolean triggers. Background session
-execution, SQLite persistence, and Historian delivery are not yet implemented.
+A bounded dry-run generates deterministic constant, ramp, staircase, and random-integer-hold TVQ data, including finite sequences and local Boolean triggers. A library runtime now persists concurrent sessions, tag reservations, checkpoints,
+and bounded TVQ queues in SQLite. Delivery and crash recovery are exercised against
+a sealed in-memory fake Historian. Production Historian delivery and a hosted
+background worker remain unimplemented.
 
 See [API findings](docs/timebase-api-findings.md) for payloads, observed behavior,
 and unresolved questions.
@@ -100,6 +102,9 @@ and the next small increment.
 See [reproducible verification](docs/verification.md) for schema comparisons,
 independent clock checks, and read-only validation of saved live-test evidence.
 
+See [durable runtime v1](docs/durable-runtime-v1.md) for state transitions,
+limits, restart semantics, and an example of driving generation and fake delivery.
+
 ## Local configuration
 
 Copy `.env.example` to `.env` and populate it locally. Connection-profile loading
@@ -133,7 +138,9 @@ Read the latest timestamp before resuming an existing tag. Submit batches
 sequentially per tag and coordinate writers to prevent races. After an ambiguous
 write response or timeout, stop the affected session and preserve its payload and
 tag ownership. Missing read-back points cannot authorize replay. See the
-[delivery recovery policy](docs/delivery-recovery.md). These are requirements, not implemented safeguards.
+[delivery recovery policy](docs/delivery-recovery.md). Local durable reservations, forward progress, and conservative uncertainty handling
+are implemented for simulated delivery. Server preflight and production transport
+remain future work.
 
 ## Repository hygiene
 
