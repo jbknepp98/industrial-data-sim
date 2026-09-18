@@ -2,6 +2,15 @@ namespace IndustrialDataSim.Runtime;
 
 internal static class Schema
 {
+    // Cover only outstanding batches. Acknowledged audit history stays in the
+    // table but cannot increase the number of entries scanned for queue totals.
+    // SQLite maintains this index in the same transaction as each state change.
+    internal const string VersionTwo = """
+        CREATE INDEX batch_outstanding ON batches(session_id,point_count,byte_count)
+          WHERE state!='Acknowledged';
+        PRAGMA user_version=2;
+        """;
+
     // Immutable configuration and batch bodies are written only at creation.
     // Per-tag progress outlives reservations, preventing backward reuse locally.
     internal const string VersionOne = """

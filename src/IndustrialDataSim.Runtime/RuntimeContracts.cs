@@ -16,6 +16,7 @@ public sealed record GenerationTurn(string SessionId, bool Progressed, string? R
 public sealed class RuntimeFailure(string code, string message) : Exception(message)
 {
     public ValidationError Error { get; } = new(code, "$", message);
+    internal bool Logged { get; set; }
 }
 
 public sealed record RuntimeLimits

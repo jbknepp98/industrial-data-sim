@@ -6,7 +6,12 @@ using IndustrialDataSim.Core.Validation;
 namespace IndustrialDataSim.Core.Simulation;
 
 public sealed record GenerationWindowResult(long NextSlot, int PointCount, string Payload,
-    IReadOnlyDictionary<string, long> LastTicks, ValidationError? Error);
+    IReadOnlyDictionary<string, long> LastTicks, ValidationError? Error)
+{
+    public GenerationFailureContext? FailureContext { get; init; }
+}
+
+public sealed record GenerationFailureContext(int OutputTagIndex, long CandidateSlot, DateTime SampleUtc);
 
 /// <summary>
 /// Generates a bounded slice on the original sample grid. A flattened cursor
@@ -36,16 +41,18 @@ public static class GenerationWindow
         long stop = nextSlot + Math.Min((long)maximumSlots, total - nextSlot);
         for (; cursor < stop && pointCount < maximumPoints; cursor++)
         {
-            var tag = model.Session.OutputTags[(int)(cursor % model.Session.OutputTags.Count)];
+            int tagIndex = (int)(cursor % model.Session.OutputTags.Count);
+            var tag = model.Session.OutputTags[tagIndex];
             long sample = cursor / model.Session.OutputTags.Count;
             long elapsed = sample * (model.SamplingIntervalMs * TimeSpan.TicksPerMillisecond);
+            var sampleUtc = model.Session.StartUtc.UtcDateTime.AddTicks(elapsed);
             var generator = model.Generators[tag.Name];
             if (!generator.EmitsAt(elapsed)) continue;
             var value = generator.Evaluate(elapsed);
             if (value is null)
-                return Failure(nextSlot, "generation.non_finite_value",
+                return Failure(nextSlot, new(tagIndex, cursor, sampleUtc), "generation.non_finite_value",
                     "Generator arithmetic produced a non-finite value. Reduce the range, start value, or rate.");
-            var point = new TvqPoint(model.Session.StartUtc.UtcDateTime.AddTicks(elapsed), value.Value, 192);
+            var point = new TvqPoint(sampleUtc, value.Value, 192);
             bool existing = data.TryGetValue(tag.Name, out var points);
             int extra;
             try
@@ -62,8 +69,10 @@ public static class GenerationWindow
             if (extra > maximumBytes - bytes)
             {
                 if (pointCount == 0)
-                    return Failure(nextSlot, "generation.point_too_large",
-                        "One encoded tag/value exceeds the batch byte limit. Increase that limit or shorten the tag name or string value.");
+                    return Failure(nextSlot, new(tagIndex, cursor, sampleUtc), "generation.point_too_large",
+                        $"One encoded tag/value exceeds the {maximumBytes}-byte batch limit. " +
+                        "Inspect the configured tag name and string length. For durable sessions, reopen with a larger BatchBytes " +
+                        "and compatible queue byte limits, then call RetryGeneration. Preserve the configuration and checkpoint.");
                 break;
             }
             if (!existing) data.Add(tag.Name, points = []);
@@ -75,8 +84,13 @@ public static class GenerationWindow
         return new(cursor, pointCount, JsonSerializer.Serialize(data), positions, null);
     }
 
-    private static GenerationWindowResult Failure(long cursor, string code, string message) =>
-        new(cursor, 0, "{}", new Dictionary<string, long>(), new(code, "$", message));
+    private static GenerationWindowResult Failure(long checkpoint, GenerationFailureContext context, string code, string message) =>
+        // Keep the original checkpoint: the entire provisional window is discarded.
+        // The failing slot is separate context, not a committed resume position.
+        new(checkpoint, 0, "{}", new Dictionary<string, long>(),
+            new(code, $"$.session.outputTags[{context.OutputTagIndex}]",
+                $"Output tag index {context.OutputTagIndex}, candidate slot {context.CandidateSlot}, sample {context.SampleUtc:O}: {message}"))
+        { FailureContext = context };
 
     private static int EncodedSize<T>(T value, int limit)
     {

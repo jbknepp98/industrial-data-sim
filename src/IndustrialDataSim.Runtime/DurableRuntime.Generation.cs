@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using IndustrialDataSim.Core.Simulation;
 
@@ -25,18 +26,25 @@ public sealed partial class DurableRuntime
             usage.Points > limits.GlobalQueuePoints - limits.BatchPoints ||
             session.QueuedBytes > limits.SessionQueueBytes - limits.BatchBytes ||
             usage.Bytes > limits.GlobalQueueBytes - limits.BatchBytes)
-            return new(id, false, "Queue limit reached. Drain acknowledged work or increase queue limits; the checkpoint has not advanced.");
+            return BlockGeneration(id, "generation.queue_full", "Queue limit reached; capacity is insufficient for another bounded batch; the checkpoint has not advanced.", "Deliver pending work or review queue limits. Inspect Uncertain sessions if delivery is blocked.");
         long free = FreeDiskBytes?.Invoke() ?? AvailableDiskBytes();
         if (free < limits.MinimumFreeDiskBytes || free - limits.MinimumFreeDiskBytes < limits.BatchBytes * 4L)
-            return new(id, false, "Disk headroom is low. Free space on the state volume before continuing; the checkpoint has not advanced.");
+            return BlockGeneration(id, "generation.disk_low", "Disk headroom is low; the checkpoint has not advanced.", "Free space on the state volume before continuing.");
+        ClearGenerationBlock(id);
         var model = LoadModel(id);
         var window = GenerationWindow.Generate(model, session.NextSlot, limits.CandidateSlotsPerTurn, limits.BatchPoints, limits.BatchBytes);
         if (window.Error is { } error)
         {
             Execute("UPDATE sessions SET state='Failed',error_code=$code,error_message=$message WHERE id=$id",
                 ("$id", id), ("$code", error.Code), ("$message", error.Message));
+            Log(LogLevel.Error, error.Code, "Generate", error.Message,
+                error.Code == "generation.point_too_large"
+                    ? "Session is Failed. Reopen with larger batch and compatible queue byte limits, then call RetryGeneration; preserve the configuration and checkpoint."
+                    : "Session is Failed. Preserve its checkpoints and inspect the indicated configuration entry; Resume only supports Paused sessions.",
+                id, failure: window.FailureContext);
             return new(id, false, error.Message);
         }
+        bool completed = false;
         InTransaction(() =>
         {
             if (window.PointCount > 0)
@@ -53,16 +61,29 @@ public sealed partial class DurableRuntime
             }
             Execute("UPDATE sessions SET next_slot=$next,state=CASE WHEN $next=total_slots THEN 'Draining' ELSE 'Ready' END WHERE id=$id",
                 ("$id", id), ("$next", window.NextSlot));
-            CompleteIfDrained(id);
+            completed = CompleteIfDrained(id);
             FaultPoint?.Invoke("before_generation_commit");
         });
         FaultPoint?.Invoke("after_generation_commit");
+        Log(LogLevel.Debug, "generation.committed", "Generate", "Generated window and checkpoint committed to SQLite.",
+            sessionId: id, startSlot: session.NextSlot, endSlot: window.NextSlot,
+            pointCount: window.PointCount, byteCount: Encoding.UTF8.GetByteCount(window.Payload));
+        LogCompletion(id, "Generate", completed);
         return new(id, window.NextSlot != session.NextSlot, null);
-    });
+    }, sessionId: id);
+
+    // Called only after the transaction commits: a rolled-back completion must
+    // never appear as a successful lifecycle event.
+    private void LogCompletion(string id, string operation, bool completed)
+    {
+        if (completed)
+            Log(LogLevel.Information, "session.completed", operation,
+                "Session completed; all emitted batches were acknowledged by the simulated transport.", sessionId: id);
+    }
 
     private (long Points, long Bytes) QueueUsage()
     {
-        using var command = Command("SELECT COALESCE(SUM(point_count),0),COALESCE(SUM(byte_count),0) FROM batches WHERE state!='Acknowledged'");
+        using var command = Command(QueueQueries.GlobalUsage);
         using var reader = command.ExecuteReader();
         reader.Read();
         return (reader.GetInt64(0), reader.GetInt64(1));
@@ -76,10 +97,14 @@ public sealed partial class DurableRuntime
         return drive.AvailableFreeSpace;
     }
 
-    private void CompleteIfDrained(string id) => Execute("""
-        UPDATE sessions SET state='Complete' WHERE id=$id AND state='Draining'
-        AND NOT EXISTS(SELECT 1 FROM batches WHERE session_id=$id AND state!='Acknowledged')
-        """, ("$id", id));
+    private bool CompleteIfDrained(string id)
+    {
+        using var command = Command("""
+            UPDATE sessions SET state='Complete' WHERE id=$id AND state='Draining'
+            AND NOT EXISTS(SELECT 1 FROM batches INDEXED BY batch_outstanding WHERE session_id=$id AND state!='Acknowledged')
+            """, ("$id", id));
+        return command.ExecuteNonQuery() > 0;
+    }
 
     private static List<string> Rotate(List<string> ids, string? after)
     {

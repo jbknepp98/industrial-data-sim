@@ -42,6 +42,16 @@ corrective guidance where applicable, and failure status. Test important edge
 cases and confirm diagnostics do not disclose sensitive input. Review existing
 errors against these rules during repairs; record remaining gaps honestly.
 
+## Operational logging
+
+Treat log messages as a human-facing troubleshooting interface. Use stable event
+codes, a plain-language explanation, and a concrete next action when needed.
+Include only reviewed context such as session/batch IDs and numeric positions;
+never log configuration, values, credentials, paths, or raw exception details.
+Keep volume bounded, report changed conditions rather than repeated polling,
+and test that logger failures cannot change durable state or delivery behavior.
+Logs are observations, never authority for recovery or automatic replay.
+
 ## Completion review
 
 Before reporting an increment complete, check human readability, explanatory

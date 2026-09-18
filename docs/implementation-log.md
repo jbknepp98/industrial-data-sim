@@ -495,3 +495,89 @@ A clean export of the staged repository restored from the local dependency cache
 and passed the same 393 .NET tests, eight Python verifier tests, all example/schema
 checks, and 100 independent gate scenarios (3722 samples). The clean copy included
 the crash probe and all required build inputs, with no ignored helper source.
+
+### Operational logging and human-readable troubleshooting
+
+Added optional standard `ILogger<DurableRuntime>` injection and a bounded local
+JSON-lines file sink. Events have UTC time, stable codes, plain-language messages,
+next actions, and selected session/batch/cursor context. Information covers
+lifecycle changes; warnings cover pressure and uncertain delivery; errors explain
+failed operations; Debug adds batch/window detail. Successful lifecycle events
+follow commits. Repeated unchanged pressure warnings are suppressed. Logging
+neither owns recovery state nor authorizes replay.
+
+The file sink rotates with configurable size/count limits, serializes concurrent
+writes, and excludes arbitrary formatter messages, scopes, and exceptions.
+Initialization/write failures expose logger health and one safe stderr notice
+per outage; subsequent events can recover. Injected provider exceptions and
+broken stderr cannot change generation or acknowledgement outcomes. Logs contain
+no configuration, payload, tag values/names, dataset/profile names, or raw paths.
+Neutral session IDs are intentionally retained for correlation. The host must
+opt into logging; the existing JSON CLI is unchanged.
+
+Generation failure messages now persist zero-based output-tag index, failing
+candidate slot, and UTC sample time, with matching structured log context.
+The original checkpoint remains unchanged on a failed window. Oversized-point
+advice now explains that Failed sessions cannot resume; the same-tag repair
+lifecycle remains unresolved. Corrected the documented driver to consider both
+generation and delivery progress before stopping, with regressions for a full
+queue and already-Draining sessions. These changes address audit R2/R5; the
+remaining findings are tracked in the runtime audit follow-up.
+
+Updated AGENTS.md to require readable, actionable, bounded, privacy-reviewed
+logs and tests proving logger failures do not change durable behavior. Added
+runtime-logging.md with setup, event meanings, troubleshooting, retention, and
+honest limits (synchronous I/O, possible missing/partial records, opt-in setup).
+
+Verification: all 413 Release tests passed (20 new cases), including existing
+child-process crash/recovery tests. Eight Python verifier tests, all example/schema
+checks, six invalid-shape checks, and 100 independent gate scenarios (3722 samples)
+passed. Repository-visible text checks found no configured secret/private-key
+matches or broken local Markdown links; diff whitespace checks passed. No
+production delivery or Historian writes were performed.
+
+### Audit R1: explicit oversized-point generation recovery
+
+Added `RetryGeneration(id)` for Failed sessions whose saved error is
+`generation.point_too_large`. Reopen with larger batch/compatible queue limits,
+then request recovery explicitly. The operation verifies the immutable model,
+checkpoint and reservations, rejects Sending/Uncertain submissions, and previews
+the next emitted point within a bounded 10000-candidate window. Suppressed slots
+cannot hide the oversized point when the new turn size is smaller. Only status
+and the resolved error fields change, in one transaction; queued payloads,
+hashes, attempts, ownership, and progress remain untouched. No transport call is
+made. Successful recovery logs an actionable event after commit.
+
+Updated the returned oversized-point guidance, recovery runbook, logging guide,
+and audit follow-up. Other failure types remain protected; this is not a generic
+reset, configuration edit, or delivery retry. Queue/disk backpressure still
+applies after recovery. R3, R4, R6, and unrelated documentation cleanup remain.
+
+Verification: 426 Release tests passed (13 new cases). Coverage includes exact
+stream equivalence after recovery/reopen, unchanged queued payloads and positions,
+insufficient limits, both injected recovery commit boundaries, configuration and
+ownership damage, invalid checkpoints, other failure states, suppressed-slot
+lookahead, and in-flight/uncertain delivery rejection. Existing real-process
+crash tests also passed; the new recovery boundary tests inject exceptions and
+reopen the database. Repository-visible secret-marker/local-link checks and diff
+whitespace checks passed. No Historian writes, commit, or push were performed.
+
+### Audit R3: queue accounting independent of acknowledged history
+
+Added schema version 2 with a partial covering index for outstanding batches.
+Global/per-session queue sums and completion checks explicitly select that index.
+Acknowledged history remains available for inspection without participating in
+queue accounting. SQLite maintains the index inside existing transactions;
+there are no new counters or reconciliation paths. Version 1 databases upgrade
+atomically on open. The documented initial index build reads existing history;
+this increment does not implement audit-history retention or promise constant
+cost when the outstanding queue itself grows.
+
+Verification: all 434 Release tests passed (eight new cases). Tests examine the
+actual global and per-session query plans with 1000 and 100000 acknowledged rows,
+verify totals across two sessions, preserve existing state through v1 migration,
+and check generation/acknowledgement rollback and commit boundaries. Sending and
+recovered Uncertain batches remain charged against queue capacity. Existing
+real-process recovery tests passed. No production throughput claim is made from
+these deterministic plan checks. No Historian writes, commit, or push performed.
+R4 session-failure isolation is the next audit repair.

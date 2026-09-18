@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace IndustrialDataSim.Runtime;
 
@@ -29,6 +30,8 @@ public sealed partial class DurableRuntime
         if (batch.Payload is null || Hash(batch.Payload) != batch.Hash)
         {
             Execute("UPDATE sessions SET state='Failed',error_code='delivery.payload_integrity',error_message='Queued payload hash does not match. Restore verified state; do not regenerate or submit the altered batch.' WHERE id=$id", ("$id", id));
+            Log(LogLevel.Error, "delivery.payload_integrity", "Claim", "Queued payload failed its integrity check; session is Failed.",
+                "Restore verified state. Do not regenerate or submit the altered batch.", id, batch);
             return null;
         }
         var model = LoadModel(id);
@@ -40,8 +43,9 @@ public sealed partial class DurableRuntime
             FaultPoint?.Invoke("before_sending_commit");
         });
         FaultPoint?.Invoke("after_sending_commit");
+        Log(LogLevel.Debug, "delivery.claimed", "Claim", "Submission intent committed; this is not proof of acceptance.", sessionId: id, batch: batch);
         return new(batch with { Status = BatchStatus.Sending }, model.Session.ConnectionProfile, model.Session.Dataset);
-    });
+    }, sessionId: id);
 
     internal void Finish(DeliveryWork work, bool acknowledged) => Access(() =>
     {
@@ -49,6 +53,7 @@ public sealed partial class DurableRuntime
         string id = work.Batch.SessionId;
         if ((string?)Scalar("SELECT state FROM batches WHERE id=$batch", ("$batch", batchId)) != "Sending")
             throw new RuntimeFailure("delivery.invalid_transition", "Batch is no longer Sending. Inspect durable state; do not replay or force acknowledgement.");
+        bool completed = false;
         InTransaction(() =>
         {
             if (acknowledged)
@@ -56,7 +61,7 @@ public sealed partial class DurableRuntime
                 UpdatePositions(batchId, id, "acknowledged_ticks");
                 Execute("UPDATE batches SET state='Acknowledged',payload=NULL WHERE id=$batch", ("$batch", batchId));
                 Execute("UPDATE attempts SET state='Acknowledged' WHERE batch_id=$batch", ("$batch", batchId));
-                CompleteIfDrained(id);
+                completed = CompleteIfDrained(id);
                 FaultPoint?.Invoke("before_acknowledgement_commit");
             }
             else
@@ -69,9 +74,17 @@ public sealed partial class DurableRuntime
                     """, ("$id", id));
             }
         });
-        if (acknowledged) FaultPoint?.Invoke("after_acknowledgement_commit");
+        if (acknowledged)
+        {
+            FaultPoint?.Invoke("after_acknowledgement_commit");
+            Log(LogLevel.Debug, "delivery.acknowledged", "Finish", "Simulated transport acknowledgement committed; queued payload released.", sessionId: id, batch: work.Batch);
+            LogCompletion(id, "Finish", completed);
+        }
+        else
+            Log(LogLevel.Warning, "delivery.uncertain", "Finish", "Batch acceptance is uncertain; session and subsequent delivery are stopped.",
+                "Preserve payload and tag ownership. Investigate acceptance evidence; do not resend missing samples or force acknowledgement.", id, work.Batch);
         return true;
-    });
+    }, sessionId: work.Batch.SessionId);
 
     private void UpdatePositions(long batchId, string session, string column)
     {

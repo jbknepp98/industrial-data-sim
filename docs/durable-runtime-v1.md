@@ -23,7 +23,15 @@ payload and checkpoint. No generated checkpoint can outrun its durable payload.
 Every database is explicitly marked `simulation-only`. A future production runtime
 must refuse these fake acknowledgements; it must not reuse this database as real
 delivery evidence. SQLite user_version is the migration boundary. Unknown newer versions are
-rejected. WAL, synchronous FULL, foreign keys, serialized short transactions,
+rejected. Database schema version 2 adds a partial covering index containing only
+unacknowledged batches. Opening a version 1 database creates the index and advances
+its version in one transaction; configurations, payloads, checkpoints, attempts,
+and reservations are unchanged. The first upgrade must read existing batch
+history to build the index, so large databases may take longer to open. Use a
+SQLite-aware backup before upgrading; older runtimes reject version 2. Do not
+manually lower the version to bypass this protection.
+
+WAL, synchronous FULL, foreign keys, serialized short transactions,
 and a lifetime exclusive owner-file handle protect a local database. Use one
 canonical database path on local disk; do not alias it through symlinks or copy
 an open database without SQLite-aware backup. Never delete the owner file while
@@ -43,6 +51,7 @@ Sessions begin Ready, may be Paused, become Draining after their last candidate
 slot, and Complete after all payloads are acknowledged. All-suppressed output
 may complete without a batch. Uncertain and Failed sessions stop generation and
 delivery but retain data and ownership. Resume affects Paused sessions only.
+RetryGeneration provides the narrowly checked oversized-point recovery described below.
 
 Batches progress Pending -> Sending -> Acknowledged or Uncertain. Persist Sending
 and an attempt record before calling the fake transport. On startup convert all
@@ -51,6 +60,43 @@ batch or send a later batch for that session. Submitted positions represent
 submission intent, not proof of network receipt. Acknowledged positions advance
 only with the fake's explicit whole-batch acceptance result. Retained samples are
 separate evidence; repeat suppression does not reduce the acknowledged position.
+
+## Recovering an oversized point
+
+A `generation.point_too_large` failure leaves the session Failed without advancing
+its checkpoint. To recover, close the runtime, increase `RuntimeLimits.BatchBytes`
+(up to 4194304 bytes), and ensure session/global queue byte limits fit a full batch.
+Reopen the same database, then explicitly call `RetryGeneration(sessionId)`.
+Reopening alone does not resume the session. For example:
+
+```csharp
+using var logs = new RuntimeFileLogger("logs");
+using var runtime = new DurableRuntime("state/simulation.db",
+    new RuntimeLimits { BatchBytes = 2 * 1024 * 1024 }, logs);
+runtime.RetryGeneration("session-a");
+// Continue the normal generation/delivery loop; do not call AddSession again.
+```
+
+Recovery checks the saved failure code, configuration hash/version, checkpoint,
+and tag reservations, and rejects any Sending or Uncertain batch for the session.
+It previews at most 10000 candidate slots and one emitted point using the current
+byte limit. Suppressed slots cannot hide the offending point when the newly
+configured generation turn is smaller. The preview is discarded.
+
+Only after these checks succeed does one transaction change Failed to Ready and
+clear the resolved error. Configuration, cursor, queued payloads/hashes, attempts,
+per-tag positions, and reservations are unchanged. Recovery itself never submits
+a batch. A crash before commit leaves Failed; after commit it leaves Ready.
+The `generation.retry_enabled` information event follows the commit.
+
+If the limit is still insufficient, `runtime.generation_limit_unresolved` explains
+how to adjust it and leaves the original failure intact. Other errors identify
+an ineligible status, unresolved delivery, inconsistent checkpoint, missing
+ownership, or configuration-integrity problem. Preserve the database and follow
+the returned guidance. There is no general reset of Failed or Uncertain sessions.
+If the point cannot fit the maximum supported limit, a changed configuration
+requires an independent session with disjoint tags; do not edit saved state.
+Queue or disk pressure can still delay normal generation after successful recovery.
 
 ## Limits and scheduling
 
@@ -62,6 +108,14 @@ A candidate that cannot fit an empty batch fails with corrective guidance rather
 than stalling forever. Keep only one bounded generation window in memory at a
 time. Serialized round-robin turns provide fairness across active sessions;
 sessions coexist durably rather than needing one generator thread each.
+
+Global and per-session queue totals read only the `batch_outstanding` index.
+Pending, Sending, and Uncertain batches all count against capacity; Acknowledged
+history does not. Completion checks use the same index. SQLite maintains index
+membership atomically with inserts/state changes, including rollback and restart,
+so no separately persisted queue counters need reconciliation. The cost of
+summing counts depends on outstanding batches, not the retained history size.
+This does not bound history storage or eliminate all historical lookups elsewhere.
 
 Acknowledgement removes the payload body after persisting its hash, counts,
 range, attempts, and per-tag acknowledgement. Retain batch audit metadata and
@@ -79,22 +133,27 @@ Reference `src/IndustrialDataSim.Runtime/IndustrialDataSim.Runtime.csproj` from 
 ```csharp
 using IndustrialDataSim.Runtime;
 
-using var runtime = new DurableRuntime("state/simulation.db");
+using var logs = new RuntimeFileLogger("logs");
+using var runtime = new DurableRuntime("state/simulation.db", logger: logs);
 runtime.AddSession(File.ReadAllText("examples/boolean-gate-simulation.json"));
 var fake = new FakeHistorian();
 var delivery = new SimulatedDelivery(runtime, fake);
 for (int round = 0; round < 100; round++)
 {
     var generation = runtime.GenerateRound();
-    await delivery.RunRoundAsync();
+    int delivered = await delivery.RunRoundAsync();
     if (runtime.Sessions().All(s => s.Status == SessionStatus.Complete)) break;
-    if (generation.All(turn => !turn.Progressed))
+    if (generation.All(turn => !turn.Progressed) && delivered == 0)
     {
-        // Inspect status, error codes, and turn reasons before scheduling again.
+        // No generation OR delivery progress. Inspect status, errors, and turn reasons.
         break;
     }
 }
 ```
+
+The round cap bounds this example; inspect status after the loop rather than
+assuming that reaching the cap means completion. See [runtime logging](runtime-logging.md)
+for readable messages, event codes, retention, safe context, and logger health.
 
 On restart, open the existing database without calling AddSession again. The
 original session ID/configuration is immutable. Sessions(), GetSession(id), and

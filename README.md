@@ -104,6 +104,8 @@ independent clock checks, and read-only validation of saved live-test evidence.
 
 See [durable runtime v1](docs/durable-runtime-v1.md) for state transitions,
 limits, restart semantics, and an example of driving generation and fake delivery.
+See [runtime logging](docs/runtime-logging.md) for optional rotating logs,
+plain-language troubleshooting, event codes, and logger health checks.
 
 ## Local configuration
 
