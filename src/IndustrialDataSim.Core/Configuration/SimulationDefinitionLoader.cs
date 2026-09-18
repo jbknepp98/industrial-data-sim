@@ -91,7 +91,7 @@ public static class SimulationDefinitionLoader
                     if (!definitions.ContainsKey(session.OutputTags[i].Name))
                     {
                         errors.Add(new("simulation.missing_generator", $"$.session.outputTags[{i}].name",
-                            "This output needs a valid generator."));
+                            "Add one generator whose tag matches this output exactly, or correct the reported errors in its existing generator."));
                     }
                 }
             }

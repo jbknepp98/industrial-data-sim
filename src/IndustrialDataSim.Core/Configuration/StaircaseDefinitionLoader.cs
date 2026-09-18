@@ -90,9 +90,10 @@ internal static class StaircaseDefinitionLoader
                 SessionDefinitionLoader.CheckProperties(range, ["minimum", "maximum"], rangePath, errors);
                 range.TryGetProperty("minimum", out var low);
                 range.TryGetProperty("maximum", out var high);
+                long beforeRange = errors.ErrorCount;
                 minimum = ReadDuration(low, rangePath + ".minimum", errors);
                 maximum = ReadDuration(high, rangePath + ".maximum", errors);
-                if (minimum > maximum)
+                if (errors.ErrorCount == beforeRange && minimum > maximum)
                 {
                     errors.Add(new("simulation.invalid_duration_range", rangePath,
                         "Maximum duration must be greater than or equal to minimum."));
@@ -104,7 +105,7 @@ internal static class StaircaseDefinitionLoader
             if (minimum > MaximumDurationMs - minimumTotal)
             {
                 errors.Add(new("simulation.invalid_step_duration", stepPath,
-                    "The sum of minimum durations exceeds the supported tick range."));
+                    "Minimum step durations total more than 922337203685477 milliseconds. Shorten or remove steps."));
                 continue;
             }
             minimumTotal += minimum;
@@ -121,7 +122,7 @@ internal static class StaircaseDefinitionLoader
         if (minimumTotal > budget)
         {
             errors.Add(new("simulation.infeasible_duration_limit", path + ".maxTotalDurationMs",
-                "The duration limit cannot fit all fixed durations and minimum random durations."));
+                "maxTotalDurationMs cannot fit all fixed durations and minimum random durations. Increase the limit or reduce those durations."));
         }
         if (errors.ErrorCount != initialErrors) return null;
 

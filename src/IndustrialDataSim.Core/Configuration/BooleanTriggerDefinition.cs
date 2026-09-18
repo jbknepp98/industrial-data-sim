@@ -79,7 +79,7 @@ internal static class BooleanTriggerDefinitionLoader
             if (!step.TryGetProperty("durationMs", out var duration) || duration.ValueKind != JsonValueKind.Number ||
                 !duration.TryGetInt64(out long ms) || ms <= 0 || ms > (long.MaxValue - total) / TimeSpan.TicksPerMillisecond)
             {
-                errors.Add(new("simulation.invalid_step_duration", stepPath + ".durationMs", "Use positive integer milliseconds within the cumulative tick limit."));
+                errors.Add(new("simulation.invalid_step_duration", stepPath + ".durationMs", FormattableString.Invariant($"Supply durationMs as an integer from 1 through {(long.MaxValue - total) / TimeSpan.TicksPerMillisecond} milliseconds. Shorten earlier steps if no duration remains.")));
                 continue;
             }
             long end = total + ms * TimeSpan.TicksPerMillisecond;

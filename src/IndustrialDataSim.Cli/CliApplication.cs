@@ -96,7 +96,7 @@ public static class CliApplication
             int count = file.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
             if (count > maxBytes)
             {
-                return (null, new("session.file_too_large", "$", "Configuration files must not exceed 1 MiB."), 1);
+                return (null, new("session.file_too_large", "$", "Configuration files must not exceed 1 MiB (1048576 bytes). Reduce the configuration size or split it into smaller sessions."), 1);
             }
             // Accept an editor's BOM, but do not replace malformed UTF-8 bytes.
             int offset = count >= 3 && buffer[0] == 0xef && buffer[1] == 0xbb && buffer[2] == 0xbf ? 3 : 0;
@@ -104,7 +104,7 @@ public static class CliApplication
         }
         catch (DecoderFallbackException)
         {
-            return (null, new("session.invalid_encoding", "$", "Configuration files must use valid UTF-8."), 1);
+            return (null, new("session.invalid_encoding", "$", "Configuration files must use valid UTF-8. Save the file as UTF-8 and rerun the command."), 1);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {

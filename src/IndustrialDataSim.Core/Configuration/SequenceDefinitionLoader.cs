@@ -35,7 +35,7 @@ internal static class SequenceDefinitionLoader
             SessionDefinitionLoader.CheckProperties(step, ["pattern"], stepPath, errors);
             if (!step.TryGetProperty("pattern", out var pattern) || pattern.ValueKind != JsonValueKind.Object)
             {
-                errors.Add(new("simulation.sequence_pattern_required", stepPath + ".pattern", "Expected a pattern object."));
+                errors.Add(new("simulation.sequence_pattern_required", stepPath + ".pattern", "Supply a pattern object with kind staircase or randomIntegerHold."));
                 continue;
             }
             var child = SimulationDefinitionLoader.ReadPattern(pattern, output, stepPath + ".pattern", errors,
@@ -46,7 +46,7 @@ internal static class SequenceDefinitionLoader
             long duration = schedule.Steps[^1].EndTicks;
             if (duration > long.MaxValue - elapsed)
             {
-                errors.Add(new("simulation.sequence_duration_overflow", stepPath, "Combined sequence duration exceeds the supported tick range."));
+                errors.Add(new("simulation.sequence_duration_overflow", stepPath, "Combined sequence duration exceeds 922337203685477 milliseconds. Shorten or remove steps."));
                 continue;
             }
             resolved.Add(new(elapsed, elapsed + duration, child));

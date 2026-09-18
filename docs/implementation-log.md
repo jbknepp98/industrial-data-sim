@@ -430,3 +430,22 @@ Repository-visible files passed checks for configured secret values, private-key
 markers, Markdown links, and whitespace. This is a targeted secret check, not a
 guarantee against every possible form of sensitive content. The repair checkpoint
 captures the previously uncommitted implementation and these audit repairs.
+
+### Acceptance-contract review and actionable diagnostics
+
+Read the local Historian OpenAPI document over verified TLS. Its write operation
+specifies only HTTP 200 with description "OK"; it does not document atomicity,
+partial acceptance, durable receipts, or idempotency. Recorded the evidence and
+five precise questions in the delivery recovery decision. Production acceptance
+semantics remain unresolved; no write/failure-injection experiment was performed.
+
+Reviewed current offline error messages and improved vague range, duration,
+pattern, file-size, and encoding failures. JSON syntax failures now expose only
+safe one-based numeric line/byte positions, never raw exception messages or
+input-derived parser paths. Unicode errors include repair guidance. Suppressed
+a misleading secondary range-ordering error caused by invalid numeric bounds
+falling back to zero. See the error-review document for scope and limitations.
+
+Verification: all 346 Release tests passed, including nine new actionable-error
+cases. Existing simulation tests remain unchanged. Stable error codes, JSON paths,
+exit codes, and generator semantics are preserved. Diff whitespace checks passed.

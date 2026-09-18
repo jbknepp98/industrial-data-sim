@@ -84,10 +84,23 @@ public static partial class SessionDefinitionLoader
             error = null;
             return document;
         }
-        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+        catch (JsonException exception)
         {
             document?.Dispose();
-            error = new("session.invalid_json", "$", "Expected valid JSON and Unicode with at most 32 nesting levels.");
+            // Numeric positions help locate syntax errors without exposing the
+            // parser's raw message or its potentially sensitive property path.
+            string location = exception.LineNumber is long line && exception.BytePositionInLine is long offset
+                ? FormattableString.Invariant($" at line {line + 1}, byte {offset + 1} (both 1-based)")
+                : "";
+            error = new("session.invalid_json", "$",
+                $"Invalid JSON{location}. Correct the syntax and keep nesting at 32 levels or fewer; comments and trailing commas are unsupported.");
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            document?.Dispose();
+            error = new("session.invalid_json", "$",
+                "Invalid Unicode in a JSON string or property name. Replace unpaired surrogate escapes with valid Unicode and rerun validation.");
             return null;
         }
     }

@@ -15,17 +15,20 @@ internal static class RandomIntegerHoldDefinitionLoader
         long initialErrors = errors.ErrorCount;
         if (output is not null && output.ValueType != "number")
             errors.Add(new("simulation.random_integer_requires_number", path + ".tag", "Declare this output as number."));
+        long beforeBounds = errors.ErrorCount;
         long minimum = ReadInteger(generator, "minimum", int.MinValue, int.MaxValue, path, errors);
         long maximum = ReadInteger(generator, "maximum", int.MinValue, int.MaxValue, path, errors);
+        bool validBounds = errors.ErrorCount == beforeBounds;
         long seed = ReadInteger(generator, "seed", 0, uint.MaxValue, path, errors);
-        long duration = ReadInteger(generator, "durationMs", 1, MaximumDurationMs, path, errors);
+        long duration = ReadInteger(generator, "durationMs", 1, MaximumDurationMs, path, errors, milliseconds: true);
         string? adjacent = SessionDefinitionLoader.ReadString(generator, "adjacentValues", path, errors);
         string? after = SessionDefinitionLoader.ReadString(generator, "afterDuration", path, errors);
         if (adjacent is not null && adjacent is not ("allowRepeat" or "requireChange"))
             errors.Add(new("simulation.invalid_adjacent_values", path + ".adjacentValues", "Use allowRepeat or requireChange."));
         if (after is not null && after != "holdLast")
             errors.Add(new("simulation.invalid_after_duration", path + ".afterDuration", "Use holdLast."));
-        if (minimum > maximum || (minimum == maximum && adjacent == "requireChange"))
+        // Do not diagnose range ordering using fallback zeros from invalid fields.
+        if (validBounds && (minimum > maximum || (minimum == maximum && adjacent == "requireChange")))
             errors.Add(new("simulation.invalid_integer_range", path + ".maximum",
                 "Use an ordered integer range with at least two values for requireChange."));
 
@@ -34,18 +37,19 @@ internal static class RandomIntegerHoldDefinitionLoader
         long lower = 0;
         long upper = 0;
         if (fixedHold == rangedHold)
-            errors.Add(new("simulation.invalid_hold_duration", path, "Supply exactly one hold duration or hold duration range."));
+            errors.Add(new("simulation.invalid_hold_duration", path, "Supply exactly one of holdDurationMs or holdDurationRangeMs; durations are integer milliseconds."));
         else if (fixedHold)
-            lower = upper = ReadInteger(generator, "holdDurationMs", 1, MaximumDurationMs, path, errors);
+            lower = upper = ReadInteger(generator, "holdDurationMs", 1, MaximumDurationMs, path, errors, milliseconds: true);
         else if (range.ValueKind != JsonValueKind.Object)
-            errors.Add(new("simulation.invalid_hold_duration", path + ".holdDurationRangeMs", "Expected minimum and maximum durations."));
+            errors.Add(new("simulation.invalid_hold_duration", path + ".holdDurationRangeMs", "Supply an object with minimum and maximum durations in integer milliseconds."));
         else
         {
             string rangePath = path + ".holdDurationRangeMs";
             SessionDefinitionLoader.CheckProperties(range, ["minimum", "maximum"], rangePath, errors);
-            lower = ReadInteger(range, "minimum", 1, MaximumDurationMs, rangePath, errors);
-            upper = ReadInteger(range, "maximum", 1, MaximumDurationMs, rangePath, errors);
-            if (lower > upper)
+            long beforeRange = errors.ErrorCount;
+            lower = ReadInteger(range, "minimum", 1, MaximumDurationMs, rangePath, errors, milliseconds: true);
+            upper = ReadInteger(range, "maximum", 1, MaximumDurationMs, rangePath, errors, milliseconds: true);
+            if (errors.ErrorCount == beforeRange && lower > upper)
                 errors.Add(new("simulation.invalid_hold_duration", rangePath, "Maximum must be at least minimum."));
         }
         if (errors.ErrorCount != initialErrors) return null;
@@ -57,7 +61,7 @@ internal static class RandomIntegerHoldDefinitionLoader
         if (fewest > most)
         {
             errors.Add(new("simulation.infeasible_hold_schedule", path + ".durationMs",
-                "No exact schedule fits the hold bounds within the 10000-hold pattern limit."));
+                "No exact schedule fits durationMs and the hold bounds within 10000 holds. Adjust durationMs or the hold bounds; a fixed hold duration must divide durationMs exactly."));
             return null;
         }
         int count = (int)StableDurationChoice.Choose("integer-hold-count-v1", (uint)seed, 0, fewest, most);
@@ -66,7 +70,7 @@ internal static class RandomIntegerHoldDefinitionLoader
             // Do not alter a tag's random choices to squeeze it into the global
             // limit: that would make its behavior depend on generator ordering.
             errors.Add(new("simulation.hold_schedule_limit", path,
-                "Resolved random-integer schedules exceed 10000 total holds per model."));
+                "Resolved random-integer schedules exceed 10000 total holds per model. Shorten durations, increase hold durations, or split the model."));
             return null;
         }
         remainingHolds -= count;
@@ -102,11 +106,13 @@ internal static class RandomIntegerHoldDefinitionLoader
     }
 
     private static long ReadInteger(JsonElement obj, string name, long minimum, long maximum,
-        string path, ValidationErrors errors)
+        string path, ValidationErrors errors, bool milliseconds = false)
     {
         if (obj.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number &&
             value.TryGetInt64(out long number) && number >= minimum && number <= maximum) return number;
-        errors.Add(new("simulation.invalid_integer", path + "." + name, "Supply an integer literal within the documented field range."));
+        string unit = milliseconds ? " milliseconds" : "";
+        errors.Add(new("simulation.invalid_integer", path + "." + name,
+            FormattableString.Invariant($"Supply an integer literal from {minimum} through {maximum}{unit}, inclusive.")));
         return 0;
     }
 }

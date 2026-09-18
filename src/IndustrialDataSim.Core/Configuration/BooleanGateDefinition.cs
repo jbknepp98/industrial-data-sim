@@ -77,7 +77,7 @@ internal static class BooleanGateDefinitionLoader
             errors.Add(new("simulation.invalid_gate_mode", path + ".whenFalse", "Use pauseAndSuppress or continueAndSuppress."));
         if (!generator.TryGetProperty("pattern", out var pattern) || pattern.ValueKind != JsonValueKind.Object)
         {
-            errors.Add(new("simulation.gate_pattern_required", path + ".pattern", "Supply a supported pattern object."));
+            errors.Add(new("simulation.gate_pattern_required", path + ".pattern", "Supply a pattern object with kind constant, ramp, staircase, randomIntegerHold, or sequence."));
             return null;
         }
         var child = SimulationDefinitionLoader.ReadPattern(pattern, output, path + ".pattern", errors,

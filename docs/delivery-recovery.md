@@ -64,3 +64,37 @@ server guarantees, not a heuristic based on latest retained data.
 Use a fake transport to test crashes at each durable boundary, lost responses,
 partial acceptance, repeat suppression, conflicts, concurrent ownership, and
 unrelated-session progress. A live success test alone cannot validate recovery.
+
+## Documentation review — September 18, 2026
+
+Read the development Historian's `/api/v1.json` over verified TLS. The document
+identifies itself as Timebase Historian API, version `v1`; that is an API version,
+not an identified server build. The write operation
+`POST /api/datasets/{dataset}/data` declares a required JSON object mapping tags
+to arrays of TVQ and only this response:
+
+```json
+{"200":{"description":"OK"}}
+```
+
+The operation declares no response body, receipt, per-point result, or idempotency
+parameter. A full specification search found no descriptions containing
+idempotency, atomicity, partial acceptance, receipts, durability, or transactions.
+This establishes a documentation gap, not proof that the server lacks those
+capabilities. Existing successful read-backs demonstrate retained representation
+for those test runs; they do not resolve crash durability or partial acceptance.
+No writes or failure-injection experiments were performed in this review.
+
+Before production delivery, obtain authoritative answers tied to the server build:
+
+1. Does HTTP 200 mean every submitted point was accepted, subject only to defined
+   repeat suppression, or can points/tags be skipped without an error?
+2. Is a multi-tag request atomic? Can any error response follow a partial write?
+3. At what point is acknowledgement durable across a server/process restart?
+4. Can a client supply an idempotency key or query a durable submission receipt?
+5. Which failures, if any, guarantee that no points were accepted?
+
+Controlled mixed-validity and restart experiments on fresh test tags can supplement
+those answers, but finite tests do not establish a universal atomicity guarantee.
+Until the contract is established, retain the conservative policy above and do
+not advance a production acknowledged checkpoint based solely on the word "OK".

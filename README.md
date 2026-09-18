@@ -26,6 +26,7 @@ and spaces only; avoid other special characters.
 Follow [the development process](AGENTS.md) for every increment. Code must be
 human-readable, with comments explaining non-obvious behavior. Returned errors
 must identify the problem and provide safe, practical troubleshooting guidance.
+See the [offline error review](docs/error-review.md) for current coverage.
 These are review requirements; they do not imply that every existing error has
 already been reviewed against the standard.
 
