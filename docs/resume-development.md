@@ -20,7 +20,7 @@ to leave a terminal or development process running to preserve this work.
 - R5: generation errors identify tag index, candidate slot, and sample time.
 - R6: independent session progress survives release/reuse; schema version 3
   reconstructs old reports transactionally from retained model/batch metadata.
-- Latest verification: 520 Release .NET tests passed in a clean source export.
+- Previous clean-export verification: 520 Release .NET tests passed.
   Details are recorded in [the September 19 audit](audit-2026-09-19.md)
   and the implementation log, including continuous-host process checks. Repository-visible secret-marker/local-link and whitespace
   checks passed after the latest increment.
@@ -31,6 +31,15 @@ certificates, state databases, tooling, and logs remain ignored by Git; they are
 not part of the source checkpoint. Preserve local storage through shutdown.
 
 ## Resume here
+
+Latest increment: 521 local .NET tests and 12 Python tests pass. A tracked
+separate-process capacity probe measured 0/20/80 completed sessions and four active
+constant/sequence sessions over minute-long windows. The worker now skips terminal
+execution turns without removing history. A timed-host test collection is isolated
+after a Windows CI pipe-connect timeout. All three platforms passed at `141a031`; see [verification evidence](verification.md).
+**Next: diagnose occasional multi-second live-control outliers before archive work.**
+The scheduler optimization improved observed progress but did not eliminate those
+outliers. No Historian writes, archival or deletion were introduced.
 
 The next verification checkpoint adds a cross-platform CI workflow and a
 [reproducible capacity baseline/retention design](capacity-and-retention.md).

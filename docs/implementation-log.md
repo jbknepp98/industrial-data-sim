@@ -788,3 +788,26 @@ point counts and payload-pruning checks. Twelve local runs passed. Unsupported
 peak-memory counters report null; sampled working set and managed memory are
 reported separately. See [measurements and retention requirements](capacity-and-retention.md).
 No production writer, archive/delete command, runtime tuning, or secrets were added.
+
+## Sustained history/control measurements and terminal-turn optimization
+
+Added `scripts/measure_host_capacity.py` for isolated 0/20/80-finished-session
+cases, four active constant/sequence sessions, real CLI/IPC timing, pause stability,
+resume and graceful stop. The fixed-fixture helper refuses outstanding WAL before
+immutable post-shutdown audit reads. Added tests for safe inspection, percentile
+semantics and fixture isolation; all 12 Python tests pass. CI includes a five-second
+control-load smoke on each platform.
+
+Five local minute-long runs passed correctness checks. They exposed multi-second
+control outliers and retained audit growth despite payload pruning. Removed
+redundant execution turns for terminal sessions; retained all history and cap
+semantics. Both 80-history repeats improved observed cursor progress, but one still
+had a 4.9-second control outlier. Do not call responsiveness solved. See the
+[measurements](capacity-and-retention.md) for limitations and the next diagnostic step.
+
+All 521 local .NET tests pass, including preserved terminal-history coverage.
+Windows CI encountered a pipe-connect timeout in the existing short-deadline host
+test amid parallel bulk SQLite tests. Isolated the host timing collection instead
+of changing production deadlines. The final `141a031` checkpoint passed all three hosted platforms; evidence is in
+the verification guide. No deployment credentials, production writes or archive/delete
+behavior were added.

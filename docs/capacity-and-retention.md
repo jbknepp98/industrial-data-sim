@@ -177,8 +177,8 @@ until archive semantics, listing/pagination, restore/inspection tooling, and
 failure tests are implemented. Do not manually delete finished sessions to bypass
 the cap. Keep log rotation separate from audit retention.
 
-Next measurements should run longer workloads with increasing finished-session
-history, richer sequences, and sustained backpressure. Measure real live-control
-latency under load and production HTTP behavior once the blind-publish adapter
-exists. Use those results to propose explicit storage warnings and archive
-budgets. Initial batch-size measurements alone must not change runtime defaults.
+Next, instrument the unresolved control-latency outliers, then extend to longer
+soak workloads and sustained backpressure. Measure production HTTP behavior once
+the blind-publish adapter exists. Use those results to propose explicit storage
+warnings and archive budgets. These synthetic measurements alone must not change
+production timeouts or runtime defaults.

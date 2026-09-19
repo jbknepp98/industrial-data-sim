@@ -89,3 +89,5 @@ To reproduce the capacity checks, build the entire solution first (dotnet test
 does not build the standalone probe), then follow [capacity and retention](capacity-and-retention.md).
 
 The first full hosted matrix passed on September 19, 2026 for `ee058f4`: [run 35452466245](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35452466245). Each platform passed all 520 .NET tests, eight Python tests, the schema/oracle checks, host smoke, and the capacity smoke. This result does not cover Windows console signals or live Historian delivery.
+
+Latest code checkpoint `141a031` passed the complete Ubuntu/macOS/Windows matrix: [run 35453423029](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35453423029). Each platform passed 521 .NET tests, 12 Python tests, schema/oracle checks, process verification, the loaded-control smoke, and the original capacity smoke. The preceding two Windows runs had the timed-host connect failure; the isolated collection passed here. This does not establish latency guarantees under arbitrary host or machine load.
