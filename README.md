@@ -153,7 +153,9 @@ write response or timeout, stop the affected session and preserve its payload an
 tag ownership. Missing read-back points cannot authorize replay. See the
 [delivery recovery policy](docs/delivery-recovery.md). Local durable reservations, forward progress, and conservative uncertainty handling
 are implemented for simulated delivery. Server preflight and production transport
-remain future work.
+remain future work. The owner-approved production policy is blind publishing:
+track request completion separately from observed arrival and user review. Do not
+require count equality or a per-point receipt, and do not replay ambiguous writes.
 
 ## Repository hygiene
 
@@ -162,3 +164,9 @@ private keys, deployment certificates, local configuration, screenshots,
 diagnostic dumps, and logs outside version control. The example configuration
 contains no working credentials or deployment-specific identifiers. Review
 staged content before each commit; ignore rules alone are not a secret scanner.
+
+## Verification and capacity
+
+The [verification guide](docs/verification.md) describes the offline CI matrix.
+[Capacity measurements and retention requirements](docs/capacity-and-retention.md)
+provide a reproducible synthetic baseline and identify remaining load/retention work.

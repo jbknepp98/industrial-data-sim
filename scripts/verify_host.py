@@ -6,6 +6,7 @@ check; it is never retried. Only read-only readiness/status checks are polled.
 """
 import argparse
 import json
+import os
 from pathlib import Path
 import signal
 import subprocess
@@ -100,9 +101,15 @@ def verify(dotnet):
         try:
             resumed = invoke("live", "status", database, "host-check-a")["result"]["session"]
             require(resumed["status"] == "Paused" and resumed["nextSlot"] == paused["nextSlot"], 'Pause state or cursor changed after host restart.')
-            host.send_signal(signal.SIGINT)
+            # Windows subprocesses do not support sending SIGINT. Verify the
+            # portable control stop there; Unix additionally exercises SIGINT.
+            if os.name == "nt":
+                invoke("host", "stop", database)
+            else:
+                host.send_signal(signal.SIGINT)
             stdout, _ = host.communicate(timeout=10)
-            require(host.returncode == 130 and json.loads(stdout)["valid"], 'Ctrl+C did not produce a graceful exit.')
+            expected_exit = 0 if os.name == "nt" else 130
+            require(host.returncode == expected_exit and json.loads(stdout)["valid"], 'Restarted host did not produce a graceful exit.')
         finally:
             if host.poll() is None:
                 host.kill()
@@ -111,7 +118,8 @@ def verify(dotnet):
         require(final["status"] == "Paused" and final["nextSlot"] == paused["nextSlot"], 'State changed after graceful shutdown.')
         invoke("session", "cancel", database, "host-check-a", "discard-pending")
         invoke("session", "release", database, "host-check-a")
-    print("Host verification passed: ownership, live controls, peer completion, pause persistence, process restart, graceful control stop and Ctrl+C.")
+    signal_check = "Windows console signals not tested" if os.name == "nt" else "SIGINT checked"
+    print(f"Host verification passed: ownership, live controls, peer completion, pause persistence, process restart, graceful control stop; {signal_check}.")
 
 
 if __name__ == "__main__":

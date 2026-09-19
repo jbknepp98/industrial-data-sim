@@ -756,3 +756,34 @@ source secret/private-key-marker, local-link, and whitespace checks passed. No
 Historian writes were made. See [the full audit](audit-2026-09-19.md) for remaining
 production-contract, capacity/retention, control-outcome, CI/platform, and richer
 model concerns. Development stops here for the user's review.
+
+### Owner clarification: blind-publish production contract
+
+Recorded first-in-wins duplicate handling and the owner's explicit decision to
+use blind publishing without per-point success receipts or count reconciliation.
+Normal HTTP completion (with an empty body) will become publish progress, separate
+from arrival observations and user review. Timeout/interrupted submissions remain
+Uncertain and never automatically replay. The production adapter's state/mode and
+monitor details must be designed before changing the current fake-only runtime.
+
+Read the supplied public documentation. The linked validation article concerns
+Atlas; Historian's sizing guide documents change-based storage, its diagnostics
+provide Dataset activity signals, and its REST guide supports latest/range reads.
+Documented the conflict between generic older-point guidance and prior local
+observations without overriding the owner's forward-only rule. Updated active
+planning/restart/CLI guidance and added a superseding audit note. Documentation
+only: no runtime changes, new Historian requests, or live writes.
+
+## CI and initial capacity measurements — September 19, 2026
+
+Added a pinned-action Linux/macOS/Windows CI matrix for Release build, 520 .NET
+tests, Python tests, schema/gate oracle, separate-process host checks, and a
+synthetic capacity smoke. Windows uses the portable host-stop command; its console
+signals are explicitly untested. CI execution evidence will be recorded after push.
+
+Added a standalone bounded capacity probe with four concurrent seven-day sessions,
+constant/gated patterns, delayed fake delivery, queue-bound assertions, expected
+point counts and payload-pruning checks. Twelve local runs passed. Unsupported
+peak-memory counters report null; sampled working set and managed memory are
+reported separately. See [measurements and retention requirements](capacity-and-retention.md).
+No production writer, archive/delete command, runtime tuning, or secrets were added.

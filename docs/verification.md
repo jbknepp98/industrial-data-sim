@@ -60,8 +60,24 @@ follow the [recovery policy](delivery-recovery.md).
 After the Release build, `python3 scripts/verify_host.py --dotnet <sdk-executable>`
 starts the CLI host and clients as separate processes, checks exclusive ownership,
 live admission/pause/resume/status, disjoint peer completion, retained pause across
-restart, graceful control stop, and Ctrl+C. It uses temporary simulation-only state
+restart and graceful control stop. Unix also checks SIGINT; Windows console signals
+remain untested because Python subprocess SIGINT delivery is not portable. It uses temporary simulation-only state
 and deletes it on completion. It requires local process and pipe access. No mutation
 is retried; only read-only host readiness probes may repeat. The .NET suite also
 checks malformed control frames, inventory limits, lifecycle errors, and corrupted
 saved positions before submission and after acceptance.
+
+## Continuous integration
+
+`.github/workflows/verify.yml` runs on main pushes, pull requests, and manual
+dispatch. The matrix uses Ubuntu 24.04, macOS 15, and Windows Server 2022 with
+.NET 10 and Python 3.12. Official setup actions are pinned to commit hashes;
+the workflow has read-only repository permissions and does not persist Git
+credentials. It runs the Release build, full .NET suite, Python unit tests,
+schema/oracle checks, host process smoke, and a synthetic capacity smoke case.
+No Historian configuration, secrets, or network writes are used by these checks.
+Dependency downloads still require network access. A green workflow is platform
+test evidence, not proof of production Historian compatibility.
+
+To reproduce the capacity checks, build the entire solution first (dotnet test
+does not build the standalone probe), then follow [capacity and retention](capacity-and-retention.md).

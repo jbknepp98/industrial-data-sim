@@ -25,12 +25,19 @@ to leave a terminal or development process running to preserve this work.
   and the implementation log, including continuous-host process checks. Repository-visible secret-marker/local-link and whitespace
   checks passed after the latest increment.
 
-These increments use a sealed fake Historian. Production acceptance semantics
-remain unresolved and production delivery is not enabled. Local configuration,
+These increments use a sealed fake Historian. The owner has selected blind publishing with arrival indicators and user review;
+see docs/delivery-recovery.md. Production delivery is not yet implemented. Local configuration,
 certificates, state databases, tooling, and logs remain ignored by Git; they are
 not part of the source checkpoint. Preserve local storage through shutdown.
 
 ## Resume here
+
+The next verification checkpoint adds a cross-platform CI workflow and a
+[reproducible capacity baseline/retention design](capacity-and-retention.md).
+Local build, 520 .NET tests, eight Python tests, schema/oracle checks, host smoke,
+and twelve capacity runs passed. Check the GitHub workflow result before claiming
+Linux/Windows verification. Archive/deletion and sustained capacity testing remain
+future work; the production adapter follows the approved blind-publish policy.
 
 1. Read AGENTS.md, docs/audit-runtime-2026-09-18.md and its follow-up sections,
    docs/durable-runtime-v1.md, and docs/runtime-logging.md.
@@ -42,11 +49,12 @@ not part of the source checkpoint. Preserve local storage through shutdown.
    The [continuous host](continuous-host.md) now supports same-user local live
    controls. Review [the September 19 audit](audit-2026-09-19.md) before the next
    feature increment. Next model work should define general typed conditions and
-   richer sequence behavior in small tested increments; production delivery stays
-   disabled until its acceptance contract is settled.
+   richer sequence behavior in small tested increments. The owner-approved blind-
+   publish contract now permits production adapter/arrival-monitor implementation;
+   preserve a separate production state boundary and no automatic replay.
 5. Preserve readability, actionable errors, logging, and incremental verification.
 6. Continue docs/phase-1-plan.md: session controls/worker, remaining conditions and
-   patterns, production acceptance contract/adapter, acceptance and capacity
+   patterns, blind-publish adapter and arrival monitoring, acceptance and capacity
    testing, and final code/documentation review. Work in small tested increments.
 
 Do not replay Uncertain batches or force acknowledgement. Recovery uses SQLite,

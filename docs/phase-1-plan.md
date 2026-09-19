@@ -188,12 +188,13 @@ and process restarts preserve exact generator state and pending payloads.
 
 Durable delivery transitions and failure injection are implemented against the
 sealed fake Historian. Production authentication, preflight, and HTTP delivery
-remain blocked on the acceptance contract; fake acknowledgements do not establish
-that contract.
+will follow the owner-approved [blind-publish policy](delivery-recovery.md).
+Per-point acceptance receipts are not a prerequisite. The real adapter and arrival
+monitor are still unimplemented; fake acknowledgements remain synthetic evidence.
 
 **Recovery policy:** follow the [delivery and recovery decision](delivery-recovery.md).
-Historian can omit repeated values. Acknowledgement and retained-point verification
-are separate evidence; latest stored timestamps are not delivery checkpoints.
+Historian can omit repeated values. Publish completion, arrival indicators, and
+user review are separate evidence; latest stored timestamps are not delivery checkpoints.
 No missing sample, including a missing suffix, authorizes replay.
 
 
@@ -209,13 +210,17 @@ batch boundaries separate from transport batches. Begin with conservative limits
 that are configuration defaults, not claimed server limits.
 
 Persist the generated payload before submission and record Sending before issuing
-HTTP. Persist successful batch acknowledgement before advancing its tags. Until
-the API's success/partial-acceptance contract is verified, production delivery is
-blocked. Read-back checks retained representation (timestamps, values, quality,
-and required transitions); it cannot prove individual delivery of omitted repeats.
+HTTP. Record normal request completion as Published, including the expected empty
+response, before advancing publish progress. Do not label this verified acceptance.
+Use bounded reads to check relevant arrival, non-null values, and model-expected
+changes; distinguish constants, plateaus, suppression, and backfill time ranges.
+Dataset diagnostics are supplemental only. User feedback verifies intended behavior.
+Neither counts nor missing repeats prove per-point delivery. Define separate
+production state/observation fields without reusing synthetic acknowledgements.
 
-On timeout, crash after Sending, malformed response, or any response without a
-proven no-write guarantee, mark the batch Uncertain. Stop delivery for its session,
+On timeout, crash after Sending, or an unexpected/unsuccessful outcome without a
+proven no-write guarantee, mark the batch Uncertain. An expected empty response
+is normal for blind publishing and must not be treated as malformed. Stop delivery for its session,
 retain tag ownership and payloads, and allow unrelated sessions to continue.
 Read-back may reveal conflicts or confirm retained points but never authorizes
 an automatic resend. Pending batches known never to have entered Sending can be
