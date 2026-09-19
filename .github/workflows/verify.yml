@@ -40,5 +40,6 @@ jobs:
       - run: python -m unittest discover -s scripts -p "test_*.py"
       - run: python scripts/verify_offline.py
       - run: python -O scripts/verify_host.py
+      - run: python -O scripts/measure_host_capacity.py --history 0 --seconds 5
       # Synthetic only. Correctness is checked; speed varies by hosted runner.
       - run: dotnet tools/IndustrialDataSim.CapacityProbe/bin/Release/net10.0/IndustrialDataSim.CapacityProbe.dll constant 1000

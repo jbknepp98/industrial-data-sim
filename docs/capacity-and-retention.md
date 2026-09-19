@@ -1,7 +1,7 @@
 # Capacity baseline and retention requirements
 
 This increment measures the existing simulation-only runtime. It does not
-measure Historian ingestion, HTTP latency, sustained service capacity, or the
+measure Historian ingestion, HTTP latency, production service capacity, or the
 maximum safe production session count. No archive or deletion command is added.
 
 ## Reproduce
@@ -73,6 +73,49 @@ raising sampled memory. Database bytes per batch increased because allocated
 pages/free space are amortized over fewer batches; do not extrapolate that ratio
 linearly to long-term audit growth. These measurements support retaining bounded
 batching and measuring history growth next, not enabling automatic deletion.
+
+## Sustained host and retained-history probe
+
+After the Release build, run each case separately:
+
+```sh
+python3 scripts/measure_host_capacity.py --history 0 --seconds 60
+python3 scripts/measure_host_capacity.py --history 20 --seconds 60
+python3 scripts/measure_host_capacity.py --history 80 --seconds 60
+```
+
+Use `--dotnet <sdk-executable>` for a private SDK. Allowed observation windows are
+5, 30 and 60 seconds; CI uses five seconds without pre-existing history. Each
+case has a new temporary database. Historical sessions generate seven days of
+three constant tags sampled each minute, then retain their completed metadata.
+The 20/80-session cases verify exact local counts and payload pruning before
+starting the active workload. Zero history reports zero storage because no
+database exists at that point; it is not an empty SQLite database measurement.
+
+Four active sessions (two constant, two staircase/random sequences) use a
+30-day horizon sampled every 10 ms so they remain active throughout observation.
+The probe checks each session advances between inventory samples and tests pause
+stability, resume and graceful stop. All requests use separate CLI processes and
+the real same-user control endpoint. Reported latency includes process startup,
+IPC, host round-boundary wait, response serialization and exit. p50/p95 use
+nearest rank; maximum and sample count accompany them. Pause/resume/stop are
+single observations, not distributions. Candidate cursor advance is local
+generation progress, never a production receipt or a count of retained values.
+
+Storage is sampled after inventory reads with a 256 MiB stop budget, which is a
+probe limit rather than a runtime quota. Historical generation has a three-minute
+command timeout; individual controls have a 40-second subprocess timeout. Only
+read-only host readiness is retried. A failed or lost mutation response aborts
+the probe. Failure cleanup can kill this synthetic child and deletes its temporary
+state; this is test cleanup, never the production recovery procedure.
+
+Audit inspection waits until the owner exits, refuses a nonempty WAL, and reads
+the checkpointed main database immutably without creating sidecars. This fixed
+schema query is test tooling, not a supported production database API. Tests
+check that inspection leaves files unchanged and refuses outstanding WAL.
+After-stop payloads may belong to Pending work; they are reported rather than
+mistakenly treated as a pruning failure. These minute-long runs are still not
+hours/days-long soak tests or measurements with a slow network transport.
 
 ## Retention design boundary
 

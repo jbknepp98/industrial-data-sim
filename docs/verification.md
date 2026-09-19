@@ -75,6 +75,7 @@ dispatch. The matrix uses Ubuntu 24.04, macOS 15, and Windows Server 2022 with
 the workflow has read-only repository permissions and does not persist Git
 credentials. It runs the Release build, full .NET suite, Python unit tests,
 schema/oracle checks, host process smoke, and a synthetic capacity smoke case.
+It also runs the five-second live-control capacity probe against temporary state.
 No Historian configuration, secrets, or network writes are used by these checks.
 Dependency downloads still require network access. A green workflow is platform
 test evidence, not proof of production Historian compatibility.
