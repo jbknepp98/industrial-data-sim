@@ -45,6 +45,7 @@ line and inspect SQLite. Do not infer failed delivery from a missing log record.
 | --- | --- | --- |
 | Information | `runtime.opened`, `runtime.closed` | Database lifecycle. Startup recovery has committed before the opened event. |
 | Information | `session.admitted`, `session.paused`, `session.resumed`, `session.completed`, `session.tags_released` | Durable lifecycle changes. Completion refers to the simulated transport, not a production Historian receipt. |
+| Information | `session.cancellation_requested`, `session.cancelled` | Generation has stopped under the selected drain/discard policy; terminal cancellation retains ownership until explicit release. See [cancellation](session-cancellation.md). |
 | Information | `generation.retry_enabled` | Oversized-point recovery committed; generation is Ready at its unchanged checkpoint. Existing queued batches remain unchanged. |
 | Information | `generation.unblocked` | Queue and disk checks permit another generation attempt; this does not guarantee the next transaction succeeds. |
 | Warning | `generation.queue_full` | Deliver pending work or review queue limits. Inspect Uncertain sessions if their retained work blocks capacity. Cursor is unchanged. |
@@ -58,7 +59,10 @@ line and inspect SQLite. Do not infer failed delivery from a missing log record.
 Repeated queue/disk warnings are suppressed while the same condition persists for
 a session. A changed condition produces a new warning. Passing those checks emits
 `generation.unblocked`; if the condition later recurs, it is reported again.
-Errors from nested runtime calls are logged once as they propagate. Constructor
+Configuration-integrity failures are persisted as Failed and logged once with
+session and operation context before an eligible round continues with other sessions.
+The payload, checkpoint, and reservations remain protected. Errors from nested
+runtime calls are logged once as they propagate. Constructor
 failures before database initialization and calls on a disposed runtime are
 returned to the host; the host must report their safe explanations. The logger
 is not a complete audit trail of every method call.

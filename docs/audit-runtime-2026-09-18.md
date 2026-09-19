@@ -222,3 +222,37 @@ for two sessions. Migration, rollback/commit, Sending, and restart-to-Uncertain
 checks protect accounting correctness. These checks establish query access paths
 and correctness; they do not claim a production throughput measurement.
 R4, R6, and previously listed documentation drift remain open.
+
+## Follow-up: R4 session-local configuration integrity
+
+R4 is resolved. Generation and delivery now persist Failed and an actionable,
+redacted configuration-integrity error before isolating the affected session.
+Generation rounds report its non-progressing turn and proceed; delivery skips
+its unclaimed work and proceeds. Direct Generate retains its RuntimeFailure
+contract. Configuration, batches, checkpoints, progress, and ownership are
+preserved; later rounds and reopen leave the session stopped. A shared-capacity
+limit can still throttle peers because retained work remains charged to the queue.
+
+Tests cover hash mismatch, incompatible generator version, and invalid saved
+models in both generation and delivery, retained state/ownership after reopen,
+safe single-event logging, and refusal to resume/retry the damaged configuration.
+Storage failure while saving Failed and unexpected programming errors still abort
+the round. R6 and the previously listed documentation drift remain open.
+
+## Follow-up: R6 completed-session inspection and documentation cleanup
+
+R6 is resolved by schema version 3's independent session_tag_progress table.
+Progress(id) no longer depends on current ownership or inherits a prior owner's
+positions. Per-session positions update in the same transactions as global
+positions and batch states. Release leaves the session report intact; reuse and
+restart cannot change a completed session's positions or tag display names.
+
+Versions 1/2 reconstruct progress transactionally from immutable configurations
+and retained batch-position metadata, including previously released sessions and
+suppressed tags. Invalid required history blocks and rolls back the upgrade;
+current global timestamps are never substituted for missing session evidence.
+Tests exercise release, case-insensitive reuse, restart, migration, submission
+versus acknowledgement, suppressed tags, and migration rollback. The session-header,
+sequence, and staircase documents now distinguish pure model behavior from the
+implemented durable runtime. All six findings and the listed documentation drift
+are addressed; broader Phase 1 capabilities and known production limitations remain.

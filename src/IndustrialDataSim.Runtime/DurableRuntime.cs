@@ -27,7 +27,7 @@ public sealed partial class DurableRuntime : IDisposable
     internal Action<string>? FaultPoint { get; set; }
     internal Func<long>? FreeDiskBytes { get; set; }
 
-    public DurableRuntime(string path, RuntimeLimits? limits = null, ILogger<DurableRuntime>? logger = null)
+    public DurableRuntime(string path, RuntimeLimits? limits = null, ILogger<DurableRuntime>? logger = null, bool createIfMissing = true)
     {
         this.logger = logger ?? NullLogger<DurableRuntime>.Instance;
         this.limits = limits ?? new();
@@ -53,7 +53,7 @@ public sealed partial class DurableRuntime : IDisposable
         }
         connection = new(new SqliteConnectionStringBuilder
         {
-            DataSource = databasePath, Mode = SqliteOpenMode.ReadWriteCreate, Pooling = false,
+            DataSource = databasePath, Mode = createIfMissing ? SqliteOpenMode.ReadWriteCreate : SqliteOpenMode.ReadWrite, Pooling = false,
             DefaultTimeout = 5
         }.ToString());
         try
@@ -61,7 +61,7 @@ public sealed partial class DurableRuntime : IDisposable
             connection.Open();
             Execute("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=1000;");
             long version = Convert.ToInt64(Scalar("PRAGMA user_version;"));
-            if (version is not (0 or 1 or 2))
+            if (version is not (0 or 1 or 2 or 3 or 4))
                 throw new RuntimeFailure("runtime.schema_version", "Unsupported state database version. Open it with the matching simulator version; do not reset or overwrite it.");
             long interrupted = 0;
             InTransaction(() =>
@@ -70,6 +70,8 @@ public sealed partial class DurableRuntime : IDisposable
                 if ((string?)Scalar("SELECT value FROM runtime_metadata WHERE key='execution_mode'") != "simulation-only")
                     throw new RuntimeFailure("runtime.execution_mode", "This database is not marked simulation-only. Use a dedicated simulation state database; fake delivery must not share production checkpoints.");
                 if (version < 2) Execute(Schema.VersionTwo);
+                if (version < 3) MigrateSessionProgress();
+                if (version < 4) Execute(Schema.VersionFour);
                 interrupted = Convert.ToInt64(Scalar("SELECT COUNT(*) FROM batches WHERE state='Sending'"));
                 Execute("""
                     UPDATE sessions SET state='Uncertain',error_code='delivery.interrupted',
@@ -137,6 +139,7 @@ public sealed partial class DurableRuntime : IDisposable
                     INSERT INTO tags(profile_key,dataset_key,tag_key,tag_name,owner) VALUES($p,$d,$t,$name,$id)
                     ON CONFLICT(profile_key,dataset_key,tag_key) DO UPDATE SET owner=$id,tag_name=$name
                     """, ("$p", profile), ("$d", dataset), ("$t", Key(tag.Name)), ("$name", tag.Name), ("$id", model.Session.SessionId));
+            InsertSessionProgress(model);
             FaultPoint?.Invoke("before_admission_commit");
         });
         Log(LogLevel.Information, "session.admitted", "AddSession", "Session admitted; configuration and tag ownership are durable.", sessionId: model.Session.SessionId);
@@ -145,13 +148,27 @@ public sealed partial class DurableRuntime : IDisposable
 
     public SessionSnapshot GetSession(string id) => Access(() => ReadSession(id), sessionId: id);
     public IReadOnlyList<SessionSnapshot> Sessions() => Access(() => SessionIds().Select(ReadSession).ToArray());
-    public IReadOnlyList<BatchSnapshot> Batches(string id, long afterId = 0, int limit = 1000) => Access(() =>
+
+    /// <summary>Bounded ordinal ID pagination for command/host inspection.</summary>
+    public IReadOnlyList<SessionSnapshot> ListSessions(string? afterId = null, int limit = 100) => Access(() =>
+    {
+        if (limit is < 1 or > 100)
+            throw new RuntimeFailure("runtime.invalid_session_page", "Use a session page size from 1 through 100 and the previous page's last session ID as the cursor.");
+        var ids = new List<string>();
+        using (var command = Command("SELECT id FROM sessions WHERE ($after IS NULL OR id>$after) ORDER BY id LIMIT $limit",
+            ("$after", afterId), ("$limit", limit)))
+        using (var reader = command.ExecuteReader())
+            while (reader.Read()) ids.Add(reader.GetString(0));
+        return ids.Select(ReadSession).ToArray();
+    });
+
+    public IReadOnlyList<BatchSnapshot> Batches(string id, long afterId = 0, int limit = 1000, bool includePayload = true) => Access(() =>
     {
         _ = ReadSession(id);
         if (afterId < 0 || limit is < 1 or > 1000)
             throw new RuntimeFailure("runtime.invalid_page", "Use a nonnegative batch cursor and a page size from 1 through 1000.");
         var result = new List<BatchSnapshot>();
-        using var command = Command("SELECT id,session_id,state,start_slot,end_slot,point_count,byte_count,hash,payload FROM batches WHERE session_id=$id AND id>$after ORDER BY id LIMIT $limit", ("$id", id), ("$after", afterId), ("$limit", limit));
+        using var command = Command("SELECT id,session_id,state,start_slot,end_slot,point_count,byte_count,hash,CASE WHEN $payload THEN payload ELSE NULL END FROM batches WHERE session_id=$id AND id>$after ORDER BY id LIMIT $limit", ("$id", id), ("$after", afterId), ("$limit", limit), ("$payload", includePayload));
         using var reader = command.ExecuteReader();
         while (reader.Read()) result.Add(ReadBatch(reader));
         return result;
@@ -161,7 +178,7 @@ public sealed partial class DurableRuntime : IDisposable
     {
         _ = ReadSession(id);
         var result = new List<TagProgress>();
-        using var command = Command("SELECT tag_name,buffered_ticks,submitted_ticks,acknowledged_ticks FROM tags WHERE owner=$id ORDER BY tag_key", ("$id", id));
+        using var command = Command("SELECT tag_name,buffered_ticks,submitted_ticks,acknowledged_ticks FROM session_tag_progress WHERE session_id=$id ORDER BY tag_key", ("$id", id));
         using var reader = command.ExecuteReader();
         while (reader.Read()) result.Add(new(reader.GetString(0), NullableLong(reader, 1), NullableLong(reader, 2), NullableLong(reader, 3)));
         return result;
@@ -209,7 +226,8 @@ public sealed partial class DurableRuntime : IDisposable
         using var reader = command.ExecuteReader();
         if (!reader.Read()) throw new RuntimeFailure("runtime.session_missing", "Session ID was not found. List sessions and use an existing ID, or admit a new configuration.");
         return new(reader.GetString(0), Enum.Parse<SessionStatus>(reader.GetString(1)), reader.GetInt64(2), reader.GetInt64(3),
-            reader.GetInt64(4), reader.GetInt64(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7));
+            reader.GetInt64(4), reader.GetInt64(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7))
+        { Cancellation = reader.IsDBNull(8) ? null : Enum.Parse<CancellationMode>(reader.GetString(8)) };
     }
 
     private List<string> SessionIds(string? state = null)
@@ -219,6 +237,23 @@ public sealed partial class DurableRuntime : IDisposable
         using var reader = command.ExecuteReader();
         while (reader.Read()) result.Add(reader.GetString(0));
         return result;
+    }
+
+    // Generation and delivery must stop this session when its immutable model
+    // cannot be trusted. Persist the failure before allowing a round to continue;
+    // a failed database update must propagate as a storage failure instead.
+    private SimulationDefinition LoadModelForWork(string id, [CallerMemberName] string operation = "")
+    {
+        try { return LoadModel(id); }
+        catch (RuntimeFailure failure) when (failure.Error.Code == "runtime.configuration_integrity")
+        {
+            Execute("UPDATE sessions SET state='Failed',error_code=$code,error_message=$message WHERE id=$id",
+                ("$id", id), ("$code", failure.Error.Code), ("$message", failure.Error.Message));
+            Log(LogLevel.Error, failure.Error.Code, operation,
+                "Saved configuration failed integrity validation; this session is Failed.", failure.Error.Message, id);
+            failure.Logged = true;
+            throw;
+        }
     }
 
     private SimulationDefinition LoadModel(string id)

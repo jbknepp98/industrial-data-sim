@@ -106,6 +106,10 @@ See [durable runtime v1](docs/durable-runtime-v1.md) for state transitions,
 limits, restart semantics, and an example of driving generation and fake delivery.
 See [runtime logging](docs/runtime-logging.md) for optional rotating logs,
 plain-language troubleshooting, event codes, and logger health checks.
+See [session cancellation](docs/session-cancellation.md) for explicit drain/discard
+controls and safe release of cancelled sessions.
+The [session CLI](docs/session-cli.md) exposes admission, paginated inspection,
+pause/resume, cancellation, release, and checked generation recovery.
 
 ## Local configuration
 

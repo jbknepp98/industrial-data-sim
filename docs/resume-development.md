@@ -1,6 +1,7 @@
 # Restart after the planned shutdown
 
-Development is paused after the logging, audit R1, and audit R3 increments.
+Development resumed after the shutdown checkpoint; logging and audit R1–R5
+repairs and R6 are complete, with the listed documentation drift corrected.
 No production Historian writer or resident simulator service has been started
 by these increments. No Historian writes were performed. There is no requirement
 to leave a terminal or development process running to preserve this work.
@@ -14,8 +15,12 @@ to leave a terminal or development process running to preserve this work.
 - R2: corrected the example driver to account for delivery progress.
 - R3: schema version 2 indexes only outstanding batches for queue accounting.
   Existing version 1 databases upgrade transactionally.
+- R4: configuration-integrity failures stop the affected session while eligible
+  peers continue; storage failures still propagate.
 - R5: generation errors identify tag index, candidate slot, and sample time.
-- Latest verification: 434 Release .NET tests passed. Prior offline/schema/gate
+- R6: independent session progress survives release/reuse; schema version 3
+  reconstructs old reports transactionally from retained model/batch metadata.
+- Latest verification: 478 Release .NET tests passed. Prior offline/schema/gate
   checks passed. Repository-visible secret-marker/local-link and whitespace
   checks passed after the latest increment.
 
@@ -29,12 +34,14 @@ not part of the source checkpoint. Preserve local storage through shutdown.
 1. Read AGENTS.md, docs/audit-runtime-2026-09-18.md and its follow-up sections,
    docs/durable-runtime-v1.md, and docs/runtime-logging.md.
 2. Inspect Git status before editing; preserve any newer user changes.
-3. Address audit R4 next: persist an actionable session-local integrity failure
-   and continue eligible unrelated sessions in generation and delivery rounds.
-   Do not swallow database-wide storage failures or programming errors.
-4. Add generation/delivery isolation regressions, review human-readable errors
-   and logs, and update the audit and implementation log.
-5. Then address R6 (inspection after ownership release) and stale documentation.
+3. Review the completed audit repairs and inspect uncommitted work before any
+   commit/push; R4, R6, cancellation, and the session CLI were completed after the shutdown checkpoint.
+4. Runtime cancellation and the agent-facing session CLI are implemented
+   (docs/session-cancellation.md, docs/session-cli.md). Next, add a bounded worker
+   for generation and simulated delivery, with graceful stop/restart and a clear
+   ownership/control contract. Keep production delivery disabled until its contract
+   is settled.
+5. Preserve readability, actionable errors, logging, and incremental verification.
 6. Continue docs/phase-1-plan.md: session controls/worker, remaining conditions and
    patterns, production acceptance contract/adapter, acceptance and capacity
    testing, and final code/documentation review. Work in small tested increments.

@@ -581,3 +581,107 @@ recovered Uncertain batches remain charged against queue capacity. Existing
 real-process recovery tests passed. No production throughput claim is made from
 these deterministic plan checks. No Historian writes, commit, or push performed.
 R4 session-failure isolation is the next audit repair.
+
+### Audit R4: isolate session configuration-integrity failures
+
+Resumed from the clean shutdown checkpoint. Generation and delivery now validate
+models through a helper that persists Failed and a safe error before isolating
+configuration-integrity failures. GenerateRound returns a non-progressing turn
+and serves remaining sessions. Direct Generate retains its RuntimeFailure
+contract; delivery declines the affected claim before Sending or transport.
+The model, cursor, queued batches, per-tag progress, and reservations are retained.
+An already claimed submission retains its normal completion/uncertainty handling.
+
+The catch is restricted to runtime.configuration_integrity. Failure to persist
+the Failed status propagates as a storage error; unexpected exceptions still
+abort the round. One contextual error log identifies the session and operation
+and gives recovery guidance without exposing configuration data. No generic
+reset/replay path was added. Shared resource limits still apply to healthy peers.
+
+Verification: 443 Release tests passed (nine new cases). Tests cover corrupted
+hashes, incompatible generator versions, invalid saved models, generation and
+delivery isolation, persisted failure after reopen, unchanged work/ownership,
+redacted single-event logging, refused resume/retry, storage failure while saving
+Failed, and an unexpected programming exception. The first baseline test request
+was not executed because permission review timed out; the retry and final full
+suite both passed against the repaired tree. Documentation and restart guidance
+now identify R6 as the next repair. No Historian writes, commit, or push performed.
+
+### Audit R6: preserve independent session progress
+
+Added schema version 3 with session_tag_progress, initialized with every declared
+tag and null positions. Generation, claim, and acknowledgement update session
+and global positions together in their existing transactions. Progress(id) now
+reads session-local positions and original display names independently of current
+ownership. Release does not erase the report; later tag reuse starts empty and
+cannot alter the earlier session's report. Global high-water marks still prevent
+backward admission.
+
+Versions 1/2 upgrade transactionally by reconstructing positions from verified
+immutable tag declarations and retained batch-position metadata. Acknowledged
+payload pruning does not remove this metadata. Sending/Uncertain positions remain
+submitted rather than acknowledged. Never-emitted tags retain nulls. Unusable
+required metadata or configurations fail safely and roll back the upgrade;
+there is no fallback to another session's global positions. Documented the
+migration cost, backup guidance, and compatibility boundary.
+
+Verification: 451 Release tests passed (eight new cases), including release/reuse
+with case changes, restart, migration of released history and suppressed tags,
+submission-versus-acknowledgement semantics, and rollback on damaged history.
+Existing generation/delivery transaction and real-process recovery tests passed.
+Corrected the session-header, sequence, and staircase documentation drift. R1–R6
+are addressed; the next Phase 1 area is operational session controls and a worker.
+No Historian writes, commit, or push performed in this increment.
+
+### Session lifecycle: explicit drain/discard cancellation
+
+Added Cancel(id, mode) with required Drain or DiscardPending semantics. Drain
+stops generation, persists Cancelling, and delivers existing queued work through
+the unchanged claim/acknowledgement protections before becoming Cancelled.
+DiscardPending refuses Sending/Uncertain work and Pending batches with attempt
+evidence, then atomically marks unsent batches Discarded and clears their payloads.
+Neither mode resets progress, undoes writes, or changes an accepted cancellation
+mode. Failed drain/uncertain outcomes remain blocked for investigation.
+
+Cancelled sessions retain ownership until ReleaseCancelled verifies no outstanding
+work and explicitly releases tags. Session progress and global high-water marks
+remain, including buffered positions of discarded data. Schema version 4 adds
+cancellation_mode and updates the live queue index to exclude discarded history.
+The upgrade is transactional; older models and batches do not acquire cancellation
+intent. Added readable lifecycle logs and documented error codes, recovery rules,
+mode eligibility, conservative tag reuse, and the library-only scope.
+
+Verification: 465 Release tests passed (14 new cases). Coverage includes drain
+across reopen, paused/empty sessions, explicit/immutable modes, discard capacity,
+retained audit metadata/progress, ownership and backward-range checks, in-flight
+success/uncertainty, failed generation, inconsistent attempts, v3 migration, and
+real child-process termination on both sides of cancellation commit. Existing
+migration, integrity-isolation, ordering, and recovery regressions also passed.
+No Historian writes, commit, or push performed. CLI lifecycle commands and the
+continuously hosted worker remain subsequent increments.
+
+### Agent-facing session lifecycle CLI
+
+Added the simulation-only `session` command group: help, start (admission only),
+paginated list/batches, status, pause, resume, explicit cancellation, release, and
+checked oversized-point recovery. Start validates the bounded UTF-8 model before
+opening state. Other commands require an existing database and open it without
+SQLite's create flag. Every command honors exclusive ownership and normal startup
+migration/recovery. No generation worker or network transport is launched.
+
+Responses use one bounded JSON envelope, readable state names, UTC progress
+positions, and actionable runtime/usage errors. Runtime list inspection now has
+bounded ID pagination. Batch inspection omits payload bodies at the SQL read as
+well as in the response. Logs are bounded files beside the database and remain
+separate from stdout. Documented command exit codes, pagination, startup effects,
+local inspection data, mutation-before-output-failure behavior, and the fact that
+retry-generation limits are not persisted for a later worker.
+
+Verification: 478 Release tests passed (13 new cases). Coverage includes durable
+CLI lifecycle transitions, validation before database creation, invalid numeric
+arguments/modes, missing state, owner conflicts, list/batch pagination, payload
+exclusion, generation-retry protection, readable UTC progress, uncertainty, and
+bounded output failure. Seven additional process-level commands exercised the
+built executable through admission/list/status/pause/resume/cancel/release; their
+temporary simulation state was removed. No Historian writes, commit, or push
+performed. A bounded generation/simulated-delivery worker is the next increment.

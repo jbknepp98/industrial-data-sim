@@ -77,7 +77,8 @@ Seeds and child timing algorithms remain unchanged. Reusing the same seed and
 configuration in two steps intentionally repeats the same local schedule.
 Changing earlier steps shifts later absolute start times but does not consume
 or alter their random choices. This immutable composition is reproducible,
-not a persisted/resumable session runner.
+not itself a persisted session runner. The [durable runtime](durable-runtime-v1.md)
+persists the immutable configuration and cursor to resume sequence execution.
 
 ## Validation and limits
 

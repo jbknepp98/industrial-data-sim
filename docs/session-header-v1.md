@@ -3,8 +3,9 @@
 This is a small, offline configuration contract. A successful validation means
 the header is well-formed, not that a complete simulation can execute. Generator
 definitions, sampling, seeds, and preview limits belong to the implemented
-simulation wrapper. Production-target end conditions, durable resource budgets,
-tag reservations, and connection resolution remain future work.
+simulation wrapper. Durable resource budgets and tag reservations are implemented
+in the [runtime library](durable-runtime-v1.md), not this header validator.
+Production-target end conditions and production connection resolution remain future work.
 
 The [constant simulation v1 wrapper](constant-simulation-v1.md) now provides the
 first executable dry-run format while leaving this header contract unchanged.

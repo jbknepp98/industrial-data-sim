@@ -111,7 +111,8 @@ must remain stable for saved definitions.
 
 The independent per-step choices require no shared mutable random stream.
 This makes regeneration deterministic from an unchanged definition and origin;
-it does not implement interrupted-session persistence or delivery recovery.
+the [durable runtime](durable-runtime-v1.md) now persists the configuration and
+cursor for interrupted-session recovery, with delivery tested against a fake Historian.
 Random measurement noise remains future work. Randomized integer output values
 are supported by the separate [random-integer-hold pattern](random-integer-hold-v1.md). JSON Schema checks shape; runtime additionally checks ordered ranges,
 feasible total budgets, finite numbers, and integer-literal spelling.

@@ -16,6 +16,11 @@ try
     }
     runtime.FaultPoint = StopAt;
     runtime.Generate("session-a");
+    if (args[2] is "before_cancellation_commit" or "after_cancellation_commit")
+    {
+        runtime.Cancel("session-a", CancellationMode.DiscardPending);
+        return 0;
+    }
     var delivery = new SimulatedDelivery(runtime, new()) { FaultPoint = StopAt };
     await delivery.DeliverOneAsync("session-a");
     return 0;

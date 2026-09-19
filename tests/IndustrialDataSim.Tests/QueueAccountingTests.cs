@@ -69,9 +69,9 @@ public class QueueAccountingTests
         }
         using (var db = Open(files.Database))
         {
-            // Restore the exact v1 schema: v2 adds only this index and version.
+            // Restore v1 by removing the v2 index and v3 session progress table.
             using var command = db.CreateCommand();
-            command.CommandText = "DROP INDEX batch_outstanding; PRAGMA user_version=1;";
+            command.CommandText = "ALTER TABLE sessions DROP COLUMN cancellation_mode; DROP TABLE session_tag_progress; DROP INDEX batch_outstanding; PRAGMA user_version=1;";
             command.ExecuteNonQuery();
         }
         using var migrated = new DurableRuntime(files.Database);
@@ -81,7 +81,7 @@ public class QueueAccountingTests
         using var check = Open(files.Database);
         using var version = check.CreateCommand();
         version.CommandText = "PRAGMA user_version";
-        Assert.Equal(2L, version.ExecuteScalar());
+        Assert.Equal(4L, version.ExecuteScalar());
         Assert.Equal(session.QueuedPoints, GlobalTotals(check).Points);
         Assert.Equal("runtime.tag_owned", Assert.Throws<RuntimeFailure>(() =>
             migrated.AddSession(RuntimeFixture.Model("conflict").ToJsonString())).Error.Code);

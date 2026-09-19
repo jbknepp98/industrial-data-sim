@@ -41,6 +41,32 @@ public class ProcessRecoveryTests
         }
     }
 
+    [Theory]
+    [InlineData("before_cancellation_commit", SessionStatus.Ready, BatchStatus.Pending)]
+    [InlineData("after_cancellation_commit", SessionStatus.Cancelled, BatchStatus.Discarded)]
+    public async Task KilledCancellationProcessPreservesAtomicOutcome(string boundary, SessionStatus status, BatchStatus batchStatus)
+    {
+        using var files = new RuntimeFixture();
+        using var child = Start(files, boundary);
+        try
+        {
+            Assert.Equal("boundary-reached", await child.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(15)));
+            child.Kill(entireProcessTree: true);
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            using var recovered = new DurableRuntime(files.Database);
+            Assert.Equal(status, recovered.GetSession("session-a").Status);
+            Assert.Equal(3, recovered.GetSession("session-a").NextSlot);
+            var batch = Assert.Single(recovered.Batches("session-a"));
+            Assert.Equal(batchStatus, batch.Status);
+            Assert.Equal(batchStatus == BatchStatus.Discarded, batch.Payload is null);
+            Assert.Equal(batchStatus == BatchStatus.Discarded ? 0 : 3, recovered.GetSession("session-a").QueuedPoints);
+        }
+        finally
+        {
+            if (!child.HasExited) { child.Kill(entireProcessTree: true); await child.WaitForExitAsync(); }
+        }
+    }
+
     [Fact]
     public async Task SeparateProcessCannotOpenOwnedDatabase()
     {

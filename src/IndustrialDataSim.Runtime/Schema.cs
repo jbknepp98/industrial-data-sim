@@ -2,6 +2,21 @@ namespace IndustrialDataSim.Runtime;
 
 internal static class Schema
 {
+    internal const string VersionFour = """
+        ALTER TABLE sessions ADD COLUMN cancellation_mode TEXT;
+        DROP INDEX batch_outstanding;
+        CREATE INDEX batch_outstanding ON batches(session_id,point_count,byte_count)
+          WHERE state NOT IN ('Acknowledged','Discarded');
+        PRAGMA user_version=4;
+        """;
+
+    internal const string VersionThree = """
+        CREATE TABLE session_tag_progress(
+          session_id TEXT NOT NULL REFERENCES sessions(id), tag_key TEXT NOT NULL,
+          tag_name TEXT NOT NULL, buffered_ticks INTEGER, submitted_ticks INTEGER,
+          acknowledged_ticks INTEGER, PRIMARY KEY(session_id,tag_key));
+        """;
+
     // Cover only outstanding batches. Acknowledged audit history stays in the
     // table but cannot increase the number of entries scanned for queue totals.
     // SQLite maintains this index in the same transaction as each state change.

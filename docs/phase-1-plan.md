@@ -70,6 +70,13 @@ time bounds, sampling intervals, random ranges, rule actions, and dependency
 cycles before any writes. Validate uncertain server naming/case semantics
 conservatively to prevent two aliases from bypassing reservations.
 
+The runtime library now implements explicit drain/discard cancellation; see
+[session cancellation](session-cancellation.md). Agent-facing lifecycle commands now exist in the [session CLI](session-cli.md);
+they admit and control state but do not execute generation/delivery. The hosted
+worker remains to implement. Runtime statuses currently use Ready,
+Paused, Draining, Complete, Uncertain, Failed, Cancelling, and Cancelled; the
+broader names below are proposed host/model states, not additional implemented states.
+
 Provide commands for validate, dry-run, start, list, status, pause, resume, and
 cancel. Model the lifecycle explicitly: Created, Running, Waiting, Paused,
 Draining, Completed, NeedsAttention, Failed, and Cancelled. Define cancellation

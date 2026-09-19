@@ -12,7 +12,19 @@ public sealed partial class DurableRuntime
     {
         var ids = Rotate(SessionIds("Ready"), generationAfter);
         if (ids.Count > 0) generationAfter = ids[0];
-        return ids.Select(Generate).ToArray();
+        var turns = new List<GenerationTurn>();
+        foreach (string id in ids)
+        {
+            try { turns.Add(Generate(id)); }
+            catch (RuntimeFailure failure) when (failure.Error.Code == "runtime.configuration_integrity")
+            {
+                // LoadModelForWork already persisted Failed and preserved ownership.
+                // Do not broaden this catch: storage and programming failures must
+                // abort the round rather than appearing to be isolated safely.
+                turns.Add(new(id, false, failure.Error.Message));
+            }
+        }
+        return turns;
     });
 
     public GenerationTurn Generate(string id) => Access(() =>
@@ -31,7 +43,7 @@ public sealed partial class DurableRuntime
         if (free < limits.MinimumFreeDiskBytes || free - limits.MinimumFreeDiskBytes < limits.BatchBytes * 4L)
             return BlockGeneration(id, "generation.disk_low", "Disk headroom is low; the checkpoint has not advanced.", "Free space on the state volume before continuing.");
         ClearGenerationBlock(id);
-        var model = LoadModel(id);
+        var model = LoadModelForWork(id);
         var window = GenerationWindow.Generate(model, session.NextSlot, limits.CandidateSlotsPerTurn, limits.BatchPoints, limits.BatchBytes);
         if (window.Error is { } error)
         {
@@ -56,8 +68,11 @@ public sealed partial class DurableRuntime
                     ("$bytes", Encoding.UTF8.GetByteCount(window.Payload)), ("$payload", window.Payload),
                     ("$hash", Hash(window.Payload)), ("$positions", JsonSerializer.Serialize(window.LastTicks)));
                 foreach (var (tag, ticks) in window.LastTicks)
+                {
+                    SetSessionPosition(id, tag, "buffered_ticks", ticks);
                     Execute("UPDATE tags SET buffered_ticks=$ticks WHERE owner=$id AND tag_key=$tag",
                         ("$ticks", ticks), ("$id", id), ("$tag", Key(tag)));
+                }
             }
             Execute("UPDATE sessions SET next_slot=$next,state=CASE WHEN $next=total_slots THEN 'Draining' ELSE 'Ready' END WHERE id=$id",
                 ("$id", id), ("$next", window.NextSlot));
@@ -101,7 +116,7 @@ public sealed partial class DurableRuntime
     {
         using var command = Command("""
             UPDATE sessions SET state='Complete' WHERE id=$id AND state='Draining'
-            AND NOT EXISTS(SELECT 1 FROM batches INDEXED BY batch_outstanding WHERE session_id=$id AND state!='Acknowledged')
+            AND NOT EXISTS(SELECT 1 FROM batches INDEXED BY batch_outstanding WHERE session_id=$id AND state NOT IN ('Acknowledged','Discarded'))
             """, ("$id", id));
         return command.ExecuteNonQuery() > 0;
     }

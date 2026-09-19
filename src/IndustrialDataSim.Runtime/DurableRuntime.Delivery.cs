@@ -11,7 +11,7 @@ public sealed partial class DurableRuntime
 
     internal IReadOnlyList<string> DeliveryOrder() => Access(() =>
     {
-        var ids = Rotate(SessionIds().Where(id => ReadSession(id).Status is SessionStatus.Ready or SessionStatus.Draining).ToList(), deliveryAfter);
+        var ids = Rotate(SessionIds().Where(id => ReadSession(id).Status is SessionStatus.Ready or SessionStatus.Draining or SessionStatus.Cancelling).ToList(), deliveryAfter);
         if (ids.Count > 0) deliveryAfter = ids[0];
         return ids;
     });
@@ -19,7 +19,7 @@ public sealed partial class DurableRuntime
     internal DeliveryWork? Claim(string id) => Access<DeliveryWork?>(() =>
     {
         var session = ReadSession(id);
-        if (session.Status is not (SessionStatus.Ready or SessionStatus.Draining)) return null;
+        if (session.Status is not (SessionStatus.Ready or SessionStatus.Draining or SessionStatus.Cancelling)) return null;
         if (Scalar("SELECT id FROM batches WHERE session_id=$id AND state IN ('Sending','Uncertain') LIMIT 1", ("$id", id)) is not null)
             return null;
         BatchSnapshot? batch;
@@ -34,7 +34,14 @@ public sealed partial class DurableRuntime
                 "Restore verified state. Do not regenerate or submit the altered batch.", id, batch);
             return null;
         }
-        var model = LoadModel(id);
+        Core.Configuration.SimulationDefinition model;
+        try { model = LoadModelForWork(id); }
+        catch (RuntimeFailure failure) when (failure.Error.Code == "runtime.configuration_integrity")
+        {
+            // No claim or transport call has occurred. The persisted failure is
+            // visible in status, while the delivery round can serve other sessions.
+            return null;
+        }
         InTransaction(() =>
         {
             Execute("UPDATE batches SET state='Sending' WHERE id=$batch", ("$batch", batch.Id));
@@ -54,6 +61,7 @@ public sealed partial class DurableRuntime
         if ((string?)Scalar("SELECT state FROM batches WHERE id=$batch", ("$batch", batchId)) != "Sending")
             throw new RuntimeFailure("delivery.invalid_transition", "Batch is no longer Sending. Inspect durable state; do not replay or force acknowledgement.");
         bool completed = false;
+        bool cancelled = false;
         InTransaction(() =>
         {
             if (acknowledged)
@@ -62,6 +70,7 @@ public sealed partial class DurableRuntime
                 Execute("UPDATE batches SET state='Acknowledged',payload=NULL WHERE id=$batch", ("$batch", batchId));
                 Execute("UPDATE attempts SET state='Acknowledged' WHERE batch_id=$batch", ("$batch", batchId));
                 completed = CompleteIfDrained(id);
+                cancelled = CancelIfDrained(id);
                 FaultPoint?.Invoke("before_acknowledgement_commit");
             }
             else
@@ -79,6 +88,7 @@ public sealed partial class DurableRuntime
             FaultPoint?.Invoke("after_acknowledgement_commit");
             Log(LogLevel.Debug, "delivery.acknowledged", "Finish", "Simulated transport acknowledgement committed; queued payload released.", sessionId: id, batch: work.Batch);
             LogCompletion(id, "Finish", completed);
+            if (cancelled) LogCancellationFinished(id, "Finish");
         }
         else
             Log(LogLevel.Warning, "delivery.uncertain", "Finish", "Batch acceptance is uncertain; session and subsequent delivery are stopped.",
@@ -92,7 +102,10 @@ public sealed partial class DurableRuntime
         string json = (string)Scalar("SELECT positions FROM batches WHERE id=$batch", ("$batch", batchId))!;
         var positions = JsonSerializer.Deserialize<Dictionary<string, long>>(json)!;
         foreach (var (tag, ticks) in positions)
+        {
+            SetSessionPosition(session, tag, column, ticks);
             Execute($"UPDATE tags SET {column}=$ticks WHERE owner=$id AND tag_key=$tag",
                 ("$ticks", ticks), ("$id", session), ("$tag", Key(tag)));
+        }
     }
 }

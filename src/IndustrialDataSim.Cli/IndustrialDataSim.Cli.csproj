@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../IndustrialDataSim.Core/IndustrialDataSim.Core.csproj" />
+    <ProjectReference Include="../IndustrialDataSim.Runtime/IndustrialDataSim.Runtime.csproj" />
   </ItemGroup>
 </Project>

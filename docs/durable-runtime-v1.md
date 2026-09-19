@@ -23,7 +23,7 @@ payload and checkpoint. No generated checkpoint can outrun its durable payload.
 Every database is explicitly marked `simulation-only`. A future production runtime
 must refuse these fake acknowledgements; it must not reuse this database as real
 delivery evidence. SQLite user_version is the migration boundary. Unknown newer versions are
-rejected. Database schema version 2 adds a partial covering index containing only
+rejected. Database schema version 2 added a partial covering index containing only
 unacknowledged batches. Opening a version 1 database creates the index and advances
 its version in one transaction; configurations, payloads, checkpoints, attempts,
 and reservations are unchanged. The first upgrade must read existing batch
@@ -42,8 +42,45 @@ conservative invariant uppercase key. Connection profiles are references, not
 credentials. Within a profile, sessions may share a Dataset only for disjoint
 tags. Multiple profile aliases for the same server must not be used to bypass
 ownership. Keep reservations through pause, failure, uncertainty, and completion
-until explicit release; only completed, fully acknowledged sessions may release.
+until explicit release. Complete sessions use ReleaseCompleted; safely Cancelled
+sessions with no outstanding batches use ReleaseCancelled.
 Retain per-tag progress after release to reject backward reuse.
+
+## Session progress and schema version 3
+
+Schema version 3 introduced independent progress; the current schema is version 4.
+`Progress(id)` reports that session's own tags
+and buffered/submitted/acknowledged positions from `session_tag_progress`.
+Every declared tag has a row, with null positions until that session reaches the
+corresponding stage. ReleaseCompleted changes only current ownership; completed
+progress and original tag display names remain available after release, restart,
+and later reuse of the tags. A later session starts with null positions even
+when earlier sessions used those same tags.
+
+The separate `tags` table retains global high-water marks and current ownership
+for admission and backward-write protection. Session and global positions update
+within the same generation, claim, or acknowledgement transaction. A rollback
+cannot advance either report independently of its batch/checkpoint. Progress
+inspection after release cannot weaken admission checks.
+
+Opening schema version 1 or 2 upgrades transactionally through version 3 to the
+current version. The progress upgrade
+reconstructs session-local progress from verified immutable tag declarations and
+retained batch-position metadata, including acknowledged batches whose payloads
+were pruned. It never copies a later owner's global timestamps. All batches
+contribute buffered positions; Sending, Uncertain, and Acknowledged contribute
+submitted positions; only Acknowledged contributes acknowledged positions.
+Tags that never emitted retain nulls. This restores inspection of already released
+sessions, provided their required model and audit metadata remain intact.
+
+The first upgrade reads all session definitions and batch-position metadata and
+can take time on a large history. Use a SQLite-aware backup before upgrading.
+Invalid configurations or unusable metadata stop the upgrade with a safe error;
+the migration transaction rolls back without changing the schema version or
+partially persisting reconstructed progress. Restore verified state rather than
+editing versions or forcing replay. Older runtimes reject newer schema versions.
+Long-term archival must preserve these reports or define an explicit archival
+contract; deleting audit history before this upgrade is unsupported.
 
 ## Session and batch transitions
 
@@ -60,6 +97,37 @@ batch or send a later batch for that session. Submitted positions represent
 submission intent, not proof of network receipt. Acknowledged positions advance
 only with the fake's explicit whole-batch acceptance result. Retained samples are
 separate evidence; repeat suppression does not reduce the acknowledged position.
+
+Explicit cancellation adds Cancelling and Cancelled session states. Drain stops
+generation while delivering existing queued work; DiscardPending permanently
+abandons only unsent payloads, marking their batches Discarded. Both preserve
+ordering history and require explicit ownership release. Schema version 4 records
+the cancellation mode and excludes Discarded batches from the live queue index.
+See [session cancellation](session-cancellation.md) for eligibility, failure handling,
+release rules, and operator guidance.
+
+## Isolating a damaged session
+
+Before generation or claiming a queued batch, the runtime validates the saved
+configuration hash, generator version, and model. A configuration-integrity
+failure persists Failed with the safe `runtime.configuration_integrity` error
+and logs the session ID, affected operation, and corrective guidance. Configuration,
+checkpoint, batches, progress, and tag ownership remain untouched. No new batch is
+claimed or submitted for that session. A previously claimed submission may still
+finish; its normal acknowledgement/uncertainty rules remain in force.
+
+`GenerateRound` reports a non-progressing turn for the failed session and continues
+eligible peers. A direct `Generate(id)` still throws the structured RuntimeFailure
+after saving Failed. Delivery returns no work for the affected claim and continues
+the round; inspect session status/logs for the reason. Failed sessions are excluded
+from later rounds, including after restart. This is not automatic repair, release,
+or replay; Resume and RetryGeneration cannot bypass configuration-integrity failures.
+
+Only the known configuration-integrity failure is isolated this way. If persisting
+Failed cannot complete, the storage error propagates and the round stops. Other
+storage errors and unexpected programming exceptions are not swallowed. Healthy
+sessions remain subject to global queue/disk limits: retaining a failed session's
+pending data can still consume shared capacity.
 
 ## Recovering an oversized point
 
@@ -111,7 +179,7 @@ sessions coexist durably rather than needing one generator thread each.
 
 Global and per-session queue totals read only the `batch_outstanding` index.
 Pending, Sending, and Uncertain batches all count against capacity; Acknowledged
-history does not. Completion checks use the same index. SQLite maintains index
+and Discarded history does not. Completion checks use the same index. SQLite maintains index
 membership atomically with inserts/state changes, including rollback and restart,
 so no separately persisted queue counters need reconciliation. The cost of
 summing counts depends on outstanding batches, not the retained history size.
@@ -124,6 +192,9 @@ log; freed pages can be reused. Database file shrinking and metadata archival
 are later operational work. Free-space checks are conservative preflights, not
 reservations against other processes filling the disk; database write failure
 must leave the transaction uncommitted.
+
+The [session CLI](session-cli.md) exposes bounded inspection and lifecycle controls
+while the runtime owner is stopped. It does not start generation or delivery.
 
 ## Library usage and observability
 
@@ -157,7 +228,7 @@ for readable messages, event codes, retention, safe context, and logger health.
 
 On restart, open the existing database without calling AddSession again. The
 original session ID/configuration is immutable. Sessions(), GetSession(id), and
-Progress(id) expose status, cursor, queue usage, and per-tag positions. Batches(id,
+Progress(id) expose status, cursor, queue usage, and session-local per-tag positions. Batches(id,
 afterId, limit) supports pagination (maximum 1000 records per call); payload bodies
 are available only until acknowledgement. Treat inspection output as local data,
 not a public diagnostic dump. RuntimeFailure exposes a stable Error.Code and a

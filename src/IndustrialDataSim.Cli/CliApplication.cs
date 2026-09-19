@@ -7,11 +7,11 @@ using IndustrialDataSim.Core.Simulation;
 namespace IndustrialDataSim.Cli;
 
 /// <summary>
-/// The first offline command boundary. Keeping it separate from process startup
-/// allows tests to exercise the same JSON and exit codes that agents receive.
-/// This command does not load credentials, contact a server, or reserve tags.
+/// CLI boundary shared by offline validation and simulation-only lifecycle commands.
+/// Keeping it separate from process startup lets tests exercise the actual JSON
+/// and exit codes. Lifecycle commands reserve tags locally; none contact a server.
 /// </summary>
-public static class CliApplication
+public static partial class CliApplication
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -24,10 +24,11 @@ public static class CliApplication
     /// </summary>
     public static int Run(string[] args, TextWriter output)
     {
+        if (args.Length > 0 && args[0] == "session") return RunSessionCommand(args, output);
         if (args.Length != 2 || args[0] is not ("validate-dataset" or "validate-session" or "validate-simulation" or "dry-run"))
         {
             WriteResult(output, [new("cli.usage", "$",
-                "Usage: validate-dataset <name>, validate-session <file>, validate-simulation <file>, or dry-run <file>. Quote arguments containing spaces.")]);
+                "Usage: validate-dataset <name>, validate-session <file>, validate-simulation <file>, or dry-run <file>. Use session help for durable session commands. Quote arguments containing spaces.")]);
             return 2;
         }
 

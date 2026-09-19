@@ -2,11 +2,15 @@ using IndustrialDataSim.Core.Validation;
 
 namespace IndustrialDataSim.Runtime;
 
-public enum SessionStatus { Ready, Paused, Draining, Complete, Uncertain, Failed }
-public enum BatchStatus { Pending, Sending, Acknowledged, Uncertain }
+public enum SessionStatus { Ready, Paused, Draining, Complete, Uncertain, Failed, Cancelling, Cancelled }
+public enum BatchStatus { Pending, Sending, Acknowledged, Uncertain, Discarded }
+public enum CancellationMode { Drain, DiscardPending }
 
 public sealed record SessionSnapshot(string SessionId, SessionStatus Status, long NextSlot,
-    long TotalSlots, long QueuedPoints, long QueuedBytes, string? ErrorCode, string? ErrorMessage);
+    long TotalSlots, long QueuedPoints, long QueuedBytes, string? ErrorCode, string? ErrorMessage)
+{
+    public CancellationMode? Cancellation { get; init; }
+}
 public sealed record BatchSnapshot(long Id, string SessionId, BatchStatus Status, long StartSlot,
     long EndSlot, int PointCount, int ByteCount, string Hash, string? Payload);
 public sealed record TagProgress(string Tag, long? BufferedTicks, long? SubmittedTicks, long? AcknowledgedTicks);
