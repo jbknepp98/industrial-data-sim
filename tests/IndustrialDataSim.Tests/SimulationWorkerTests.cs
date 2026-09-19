@@ -7,6 +7,29 @@ namespace IndustrialDataSim.Tests;
 public class SimulationWorkerTests
 {
     [Fact]
+    public async Task RepeatedSingleRoundsKeepRotatingFirstSession()
+    {
+        using var files = new RuntimeFixture();
+        using var runtime = new DurableRuntime(files.Database, new() { BatchPoints = 1 });
+        runtime.AddSession(RuntimeFixture.Model().ToJsonString());
+        runtime.AddSession(RuntimeFixture.Model("session-b", "B").ToJsonString());
+        var order = new List<string>();
+        var fake = new FakeHistorian
+        {
+            BeforeWrite = () =>
+            {
+                order.Add(runtime.Sessions().Single(s => runtime.Batches(s.SessionId)
+                    .Any(b => b.Status == BatchStatus.Sending)).SessionId);
+                return Task.CompletedTask;
+            }
+        };
+        var worker = new SimulationWorker(runtime, fake);
+        await worker.RunAsync(1);
+        await worker.RunAsync(1);
+        Assert.Equal(new[] { "session-a", "session-b", "session-b", "session-a" }, order);
+    }
+
+    [Fact]
     public async Task TwoSessionsMakeFairProgressWithOneBatchOfGlobalCapacity()
     {
         using var files = new RuntimeFixture();

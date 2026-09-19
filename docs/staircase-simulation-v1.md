@@ -18,7 +18,8 @@ pattern. Existing constant and ramp behavior is unchanged.
 ```
 
 At one-second sampling, an eight-second session yields
-`0, 0, 10, 10, 10, 20, 20, 20`. The first step starts at the session origin.
+`0, 0, 10, 10, 10, 20, 20, 20`. A standalone staircase starts at the session origin. Inside a sequence or gate,
+its first step starts at pattern-local zero.
 Dwell intervals include their start and exclude their end; a sample exactly at
 a boundary uses the next step. `afterSteps` is required and currently accepts
 only `holdLast`: after all dwell periods, continue the final value until the
@@ -38,15 +39,17 @@ validation. Values may increase, decrease, or repeat. JSON numeric tokens are
 preserved, including integers beyond binary64's exact integer range; subsequent
 Historian storage can have different precision.
 
-Evaluation searches cumulative integer-tick boundaries from the session origin.
+Evaluation searches cumulative integer-tick boundaries using the supplied pattern
+clock. Sequence children use step-local time; gates use their pause/continue clock.
 It keeps no mutable step cursor, so interleaved previews and different sample
 frequencies agree at shared timestamps. The existing quality 192, 10000-point,
 and CLI input/output size limits apply.
 
 Run `dotnet run --project src/IndustrialDataSim.Cli -- dry-run
 examples/staircase-simulation.json` for a mixed staircase/constant preview.
-Looping, conditional transitions, faults, network writes, and durable execution
-remain later increments.
+Looping, conditional step transitions, faults, and production network writes remain
+future work. Sequences, Boolean wrappers, and [durable execution](durable-runtime-v1.md)
+are implemented separately.
 
 ## Reproducible random dwell durations
 

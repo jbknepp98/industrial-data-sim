@@ -712,3 +712,47 @@ fake history and ordering, session/round bounds, drain cancellation, unexpected
 failure propagation, and CLI stop/reopen outcomes. A built-executable SIGINT smoke
 test returned exit 130 and reopened state without uncertainty; temporary state was
 removed. No production Historian writes were performed.
+
+### Continuous host, live controls, and full audit — September 19, 2026
+
+Completed the three authorized steps following e0f584f: documented the continuous
+host/local-control contract, implemented resident foreground simulation execution,
+and added live CLI controls. The host retains the sole SQLite owner and runs one
+bounded worker round at a time. Controls execute between rounds; idle/blocked
+polling waits 250 ms and logs only changed worker states. Scheduling rotation
+persists across repeated one-round calls. Ctrl+C and host stop finish in-flight
+work and preserve durable checkpoints. All acknowledgements remain synthetic.
+
+Local controls use a same-user named pipe, versioned bounded JSON frames, one
+connected client/queued command, deadlines, and explicit unknown-outcome guidance.
+No command is automatically retried or falls back to opening SQLite. Admission
+validates the supplied model contents and enforces the 100-total-session host cap
+before reserving tags. Existing pause/resume, cancellation, release, and checked
+generation-recovery protections are reused. The host never reads a remote client's
+model-file path or offers a production transport switch.
+
+The full review found and repaired a macOS pipe-name length failure, a broken-peer
+cleanup failure that prevented subsequent controls, lifecycle/cursor diagnostic
+gaps, and unchecked batch-position metadata. Positions now validate before claim
+and acknowledgement and old-schema migration rejects duplicate keys. A failure
+after transport leaves Sending for conservative Uncertain recovery. No schema or
+generator version changed. Corrected active capability and pattern-clock documents;
+retained historical log/report entries and added the current audit report.
+
+Final verification: all 520 Release .NET tests passed in a clean source export
+restored from the existing dependency cache. No ignored source or helpers were
+copied. Tests include lost control replies, stalled-client graceful shutdown,
+invalid controls, inventory bounds, scheduling rotation, state corruption, and
+existing process-crash/recovery/ownership and logging-isolation coverage.
+The repository process verifier passed against separate host/client processes,
+including live peer completion, pause across restart, exclusive ownership, control
+stop, and Ctrl+C. The final clean-copy run also used Python -O to confirm checks
+remain active. Eight Python tests, all eight example/schema checks, six invalid
+shape comparisons, and 100 independent gate scenarios (3722 samples) passed.
+
+NuGet reported no vulnerable direct or transitive packages for the five projects
+at review time; Python dependencies were not separately audited. Targeted public
+source secret/private-key-marker, local-link, and whitespace checks passed. No
+Historian writes were made. See [the full audit](audit-2026-09-19.md) for remaining
+production-contract, capacity/retention, control-outcome, CI/platform, and richer
+model concerns. Development stops here for the user's review.

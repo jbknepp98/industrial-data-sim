@@ -57,7 +57,8 @@ This is a local simulated dependency, not polling Historian for an external
 input. It does not yet implement general expressions, numeric thresholds,
 edge-only rules, debounce, pause/resume, queued completion, or arbitrary dependency
 graphs. Those require explicit semantics in later increments. Separate [Boolean gates](boolean-gates-v1.md) now provide pause/continue suppression.
-Neither behavior implements durable/resumable execution.
+The [durable runtime](durable-runtime-v1.md) now resumes both behaviors from their
+immutable model and candidate cursor; their clocks remain independent of transport batches.
 
 ## Validation
 

@@ -73,8 +73,9 @@ conservatively to prevent two aliases from bypassing reservations.
 The runtime library now implements explicit drain/discard cancellation; see
 [session cancellation](session-cancellation.md). Agent-facing lifecycle commands now exist in the [session CLI](session-cli.md);
 the explicit run-simulated command drives a [bounded foreground worker](simulation-worker.md).
-Other lifecycle commands admit/control state without executing work. Resident
-hosting and live control remain to implement. Runtime statuses currently use Ready,
+Other session commands admit/control state without executing work. The
+[continuous host and live controls](continuous-host.md) now execute simulation work
+and service commands while retaining exclusive SQLite ownership. Runtime statuses currently use Ready,
 Paused, Draining, Complete, Uncertain, Failed, Cancelling, and Cancelled; the
 broader names below are proposed host/model states, not additional implemented states.
 
@@ -157,8 +158,8 @@ waiting reasons, active faults, and completion without exposing credentials.
 
 The [durable runtime v1](durable-runtime-v1.md) library implements the finite-model
 slice of this milestone: transactional generation, bounded queues, reservations,
-round-robin turns, pause/resume, and restart recovery. A continuously hosted
-scheduler and future stateful pattern checkpoints remain later increments.
+round-robin turns, pause/resume, and restart recovery. The [continuous host](continuous-host.md) now supplies resident foreground scheduling.
+Future stateful pattern checkpoints remain later increments.
 
 Use versioned migrations and tables for sessions, immutable configurations,
 tag reservations, generator checkpoints, batches, delivery attempts, and

@@ -55,7 +55,8 @@ dwell explicitly or add a one-step staircase hold as another sequence step.
 
 ## Timing and boundaries
 
-The first pattern starts at the session origin. Each subsequent pattern starts
+For a standalone sequence, the first pattern starts at the session origin.
+A Boolean gate or switch instead supplies its documented pattern-local clock. Each subsequent pattern starts
 exactly when its predecessor finishes. Child elapsed time starts at zero at
 that boundary; it never includes time spent in earlier patterns. Intervals are
 half-open: a point exactly at handoff uses the next pattern's first value.

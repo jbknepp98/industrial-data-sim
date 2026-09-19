@@ -62,8 +62,9 @@ After the process exits and releases database ownership, use the session CLI to
 inspect, pause/resume, cancel, or release sessions. Then invoke run-simulated again
 without admitting the existing models again. Live commands cannot open the database
 while the worker owns it. This stop/control/restart workflow is the initial control
-contract; IPC/live control, service installation, and a resident scheduler remain
-later work. Do not run multiple worker instances against the same runtime object.
+contract for this finite command. The separate [continuous host](continuous-host.md)
+now provides resident foreground scheduling and local live controls; service installation
+remains future work. Do not run multiple worker instances against the same runtime object.
 A worker object rejects overlapping RunAsync calls.
 
 Forced termination or machine loss uses existing SQLite recovery. Pending work

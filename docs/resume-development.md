@@ -20,8 +20,9 @@ to leave a terminal or development process running to preserve this work.
 - R5: generation errors identify tag index, candidate slot, and sample time.
 - R6: independent session progress survives release/reuse; schema version 3
   reconstructs old reports transactionally from retained model/batch metadata.
-- Latest verification: 490 Release .NET tests passed. Prior offline/schema/gate
-  checks passed. Repository-visible secret-marker/local-link and whitespace
+- Latest verification: 520 Release .NET tests passed in a clean source export.
+  Details are recorded in [the September 19 audit](audit-2026-09-19.md)
+  and the implementation log, including continuous-host process checks. Repository-visible secret-marker/local-link and whitespace
   checks passed after the latest increment.
 
 These increments use a sealed fake Historian. Production acceptance semantics
@@ -38,9 +39,11 @@ not part of the source checkpoint. Preserve local storage through shutdown.
    commit/push; R4, R6, cancellation, and the session CLI were completed after the shutdown checkpoint.
 4. Runtime cancellation, lifecycle CLI, and bounded foreground worker are implemented
    (docs/session-cancellation.md, docs/session-cli.md, docs/simulation-worker.md).
-   The worker uses stop/control/restart, not live IPC. Next, review the resident
-   worker/live-control contract before implementing continuous hosting. Keep
-   production delivery disabled until its acceptance contract is settled.
+   The [continuous host](continuous-host.md) now supports same-user local live
+   controls. Review [the September 19 audit](audit-2026-09-19.md) before the next
+   feature increment. Next model work should define general typed conditions and
+   richer sequence behavior in small tested increments; production delivery stays
+   disabled until its acceptance contract is settled.
 5. Preserve readability, actionable errors, logging, and incremental verification.
 6. Continue docs/phase-1-plan.md: session controls/worker, remaining conditions and
    patterns, production acceptance contract/adapter, acceptance and capacity

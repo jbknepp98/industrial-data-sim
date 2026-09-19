@@ -103,6 +103,7 @@ public class SessionProgressTests
     [InlineData("UPDATE batches SET positions='PRIVATE_BROKEN_METADATA'", "runtime.progress_migration")]
     [InlineData("UPDATE sessions SET config_hash='changed'", "runtime.configuration_integrity")]
     [InlineData("UPDATE batches SET positions='{}'", "runtime.progress_migration")]
+    [InlineData("UPDATE batches SET positions='{\"A.0\":0,\"A.0\":1}'", "runtime.progress_migration")]
     public void UnreconstructableHistoryRollsBackWholeMigration(string damage, string expectedCode)
     {
         using var files = new RuntimeFixture();

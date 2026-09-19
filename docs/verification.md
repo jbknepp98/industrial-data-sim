@@ -5,6 +5,7 @@ access for the initial restore/install. Run from the repository root:
 
 ```sh
 dotnet test IndustrialDataSim.slnx --configuration Release
+python3 scripts/verify_host.py
 python3 -m venv .tools/verification
 .tools/verification/bin/python -m pip install -r scripts/requirements.txt
 .tools/verification/bin/python scripts/verify_offline.py
@@ -53,3 +54,14 @@ using this sanitized helper. No live-write command is enabled by these checks.
 Future live-write tooling must be explicitly invoked, use fresh unique tags,
 persist submission intent, and refuse replay after an interrupted run. It must
 follow the [recovery policy](delivery-recovery.md).
+
+## Host process verification
+
+After the Release build, `python3 scripts/verify_host.py --dotnet <sdk-executable>`
+starts the CLI host and clients as separate processes, checks exclusive ownership,
+live admission/pause/resume/status, disjoint peer completion, retained pause across
+restart, graceful control stop, and Ctrl+C. It uses temporary simulation-only state
+and deletes it on completion. It requires local process and pipe access. No mutation
+is retried; only read-only host readiness probes may repeat. The .NET suite also
+checks malformed control frames, inventory limits, lifecycle errors, and corrupted
+saved positions before submission and after acceptance.

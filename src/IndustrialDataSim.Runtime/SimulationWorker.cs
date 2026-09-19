@@ -17,6 +17,7 @@ public sealed class SimulationWorker
     private readonly DurableRuntime runtime;
     private readonly SimulatedDelivery delivery;
     private int running;
+    private uint nextRound;
 
     public SimulationWorker(DurableRuntime runtime, FakeHistorian? historian = null)
     {
@@ -26,7 +27,14 @@ public sealed class SimulationWorker
         delivery = new(runtime, historian ?? new FakeHistorian { KeepHistory = false });
     }
 
-    public async Task<WorkerRunResult> RunAsync(int maximumRounds, CancellationToken stop = default)
+    public Task<WorkerRunResult> RunAsync(int maximumRounds, CancellationToken stop = default) =>
+        RunCoreAsync(maximumRounds, stop, reportLifecycle: true);
+
+    // Resident hosting reports transitions itself, rather than logging every round.
+    internal Task<WorkerRunResult> RunRoundAsync(CancellationToken stop) =>
+        RunCoreAsync(1, stop, reportLifecycle: false);
+
+    private async Task<WorkerRunResult> RunCoreAsync(int maximumRounds, CancellationToken stop, bool reportLifecycle)
     {
         if (maximumRounds is < 1 or > 10000)
             throw new RuntimeFailure("worker.invalid_round_limit", "Choose a worker round limit from 1 through 10000. Inspect the outcome before starting another run.");
@@ -36,7 +44,7 @@ public sealed class SimulationWorker
         try
         {
             var sessions = Snapshot();
-            runtime.WorkerEvent("worker.started", "Bounded simulation worker started.", "No production Historian writes are enabled. Request a graceful stop before using separate lifecycle commands.");
+            if (reportLifecycle) runtime.WorkerEvent("worker.started", "Bounded simulation worker started.", "No production Historian writes are enabled. Request a graceful stop before using separate lifecycle commands.");
             while (true)
             {
                 if (stop.IsCancellationRequested) return Finish(WorkerStopReason.Stopped, "Graceful stop completed. In-flight delivery has finished; pending work and checkpoints remain durable.");
@@ -47,7 +55,7 @@ public sealed class SimulationWorker
                 bool progressed = false;
                 // Rotate the first session each round without depending on another
                 // session's random stream or model clock. Each session gets one turn.
-                int start = rounds % sessions.Count;
+                int start = (int)(nextRound++ % (uint)sessions.Count);
                 rounds++;
                 for (int offset = 0; offset < sessions.Count; offset++)
                 {
@@ -81,7 +89,7 @@ public sealed class SimulationWorker
         WorkerRunResult Finish(WorkerStopReason reason, string message)
         {
             var final = Snapshot();
-            runtime.WorkerEvent("worker.stopped", $"Simulation worker stopped: {reason}.", message);
+            if (reportLifecycle) runtime.WorkerEvent("worker.stopped", $"Simulation worker stopped: {reason}.", message);
             return new(reason, rounds, generated, acknowledged, message, final);
         }
     }

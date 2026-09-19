@@ -196,6 +196,8 @@ must leave the transaction uncommitted.
 The [session CLI](session-cli.md) exposes bounded inspection and lifecycle controls
 while the runtime owner is stopped. Its explicit run-simulated command starts a
 [bounded foreground worker](simulation-worker.md) for generation and fake delivery.
+The [continuous host](continuous-host.md) supplies ongoing execution and live controls
+without opening another SQLite owner.
 
 ## Library usage and observability
 
@@ -272,3 +274,16 @@ Implementation references: [Microsoft.Data.Sqlite transactions](https://learn.mi
 and [database errors and concurrency](https://learn.microsoft.com/en-us/dotnet/standard/data/sqlite/database-errors).
 The runtime serializes access to its connection and keeps transport work outside
 transactions. Package version is pinned in the project file.
+
+## Saved-state integrity checks
+
+Unknown lifecycle names, numeric enum aliases, and invalid cursor bounds fail with
+`runtime.state_integrity`, without reflecting saved input in an exception. Generation
+also verifies total candidate slots against the immutable model. Before submission
+and acknowledgement, batch positions must be nonempty, unique, bounded, valid UTC
+ticks and agree with the queued payload's final timestamps and point count. Invalid
+metadata returns `runtime.progress_integrity`; a failed pre-claim check leaves work
+Pending, and failure after submission leaves Sending for conservative recovery.
+These checks detect specific inconsistencies; they are not a complete forensic
+validator for arbitrary SQLite corruption or malicious edits. Preserve verified
+backups and never edit runtime metadata manually.

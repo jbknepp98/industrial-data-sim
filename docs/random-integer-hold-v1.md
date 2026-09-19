@@ -25,7 +25,9 @@ required: `holdDurationMs` or `holdDurationRangeMs` with `minimum` and `maximum`
 Durations are positive integer literals, at most 922337203685477 milliseconds.
 Nulls, coercions, unknown properties, and missing fields are validation errors.
 
-`durationMs` is measured from the session origin and must be filled exactly.
+`durationMs` is measured from pattern-local zero and must be filled exactly.
+Standalone patterns start at the session origin; sequence and gate wrappers supply
+their documented local clocks.
 Fixed holds must divide it exactly. Random bounds must admit a whole number of
 holds; for example, 25 ms cannot fit holds of 10–11 ms. Infeasible plans fail
 before emitting data; there is no shortened last hold. Equal dwell bounds act
@@ -74,8 +76,8 @@ full signed 32-bit range. Equal bounds require no random draw.
 The complete immutable schedule is resolved when loading the model. Sampling,
 other tags, process execution order, and session length do not change it. An
 unchanged definition and seed regenerate the same schedule; using the same seed
-and settings for two tags creates matching schedules. This is not durable session
-recovery. Changes to the count, bounds, seed, or duration can change the schedule.
+and settings for two tags creates matching schedules. The [durable runtime](durable-runtime-v1.md)
+persists the configuration and cursor needed to reconstruct that schedule after restart. Changes to the count, bounds, seed, or duration can change the schedule.
 
 ## Sampling
 

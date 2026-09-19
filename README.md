@@ -11,8 +11,8 @@ installation. The current implementation provides a .NET solution and
 offline Dataset-name, session-header, and simulation-model validation commands.
 A bounded dry-run generates deterministic constant, ramp, staircase, and random-integer-hold TVQ data, including finite sequences and local Boolean triggers. A library runtime now persists concurrent sessions, tag reservations, checkpoints,
 and bounded TVQ queues in SQLite. Delivery and crash recovery are exercised against
-a sealed in-memory fake Historian. Production Historian delivery and a hosted
-background worker remain unimplemented.
+a sealed in-memory fake Historian. A bounded worker and a continuous foreground host provide simulation execution
+and local live controls. Production Historian delivery remains unimplemented.
 
 See [API findings](docs/timebase-api-findings.md) for payloads, observed behavior,
 and unresolved questions.
@@ -112,6 +112,11 @@ The [session CLI](docs/session-cli.md) exposes admission, paginated inspection,
 pause/resume, cancellation, release, and checked generation recovery.
 The [bounded simulation worker](docs/simulation-worker.md) runs generation and fake
 delivery in the foreground, with explicit round limits and graceful Ctrl+C stop.
+The [continuous host](docs/continuous-host.md) adds local live controls and remains
+available while idle or blocked.
+
+See the [latest full audit](docs/audit-2026-09-19.md) for repaired defects,
+verification evidence, and remaining Phase 1 concerns.
 
 ## Local configuration
 

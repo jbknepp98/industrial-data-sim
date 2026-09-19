@@ -94,7 +94,8 @@ Constants are 72.5, true, and "Idle". It does not include second 3.
 - Escaping and non-ASCII text count toward the byte limit. A low point count does
   not bypass this limit when constants or tag names are large.
 - Limits are preview safeguards, not discovered Historian API limits or a future
-  backfill capacity limit. There is no disk-backed queue or resumability yet.
+  backfill capacity limit. Dry-run has no disk-backed queue or resume cursor;
+  [durable execution](durable-runtime-v1.md) is provided separately.
 
 Failures return only structured errors, not partially generated data. Repeated
 dry-runs regenerate the same full preview; they do not advance persistent state.

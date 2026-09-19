@@ -1,4 +1,3 @@
-using System.Text.Json;
 using IndustrialDataSim.Core.Configuration;
 
 namespace IndustrialDataSim.Runtime;
@@ -45,10 +44,9 @@ public sealed partial class DurableRuntime
                 string state = reader.GetString(0);
                 if (state is not ("Pending" or "Sending" or "Uncertain" or "Acknowledged"))
                     throw ProgressMigrationFailure();
-                Dictionary<string, long>? positions;
-                try { positions = JsonSerializer.Deserialize<Dictionary<string, long>>(reader.GetString(1)); }
-                catch (JsonException) { throw ProgressMigrationFailure(); }
-                if (positions is null || positions.Count is < 1 or > 1000) throw ProgressMigrationFailure();
+                Dictionary<string, long> positions;
+                try { positions = ReadPositions(reader.GetString(1)); }
+                catch (RuntimeFailure) { throw ProgressMigrationFailure(); }
                 foreach (var (tag, ticks) in positions)
                 {
                     if (ticks < DateTime.MinValue.Ticks || ticks > DateTime.MaxValue.Ticks)

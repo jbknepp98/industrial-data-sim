@@ -43,6 +43,7 @@ line and inspect SQLite. Do not infer failed delivery from a missing log record.
 
 | Level | Events | Meaning and next action |
 | --- | --- | --- |
+| Information | `host.started`, `host.progress_state`, `host.stopped` | Continuous host lifecycle and changed worker state; idle polling does not emit repeated events. |
 | Information | `worker.started`, `worker.stopped` | Bounded simulation worker lifecycle and stop reason; inspect session state if unfinished. |
 | Information | `runtime.opened`, `runtime.closed` | Database lifecycle. Startup recovery has committed before the opened event. |
 | Information | `session.admitted`, `session.paused`, `session.resumed`, `session.completed`, `session.tags_released` | Durable lifecycle changes. Completion refers to the simulated transport, not a production Historian receipt. |
@@ -144,5 +145,5 @@ exclusive ownership, logging outages/recovery, and throwing providers/stderr.
 
 Uses the standard [.NET logging abstractions](https://learn.microsoft.com/en-us/dotnet/core/extensions/logging).
 A future host can supply its own provider without changing the runtime state
-contract. Production delivery, centralized collection, and a hosted worker are
-outside this increment.
+contract. The [continuous host](continuous-host.md) uses the same sink. Production
+delivery and centralized collection remain future work.

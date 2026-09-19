@@ -44,6 +44,8 @@ public sealed partial class DurableRuntime
             return BlockGeneration(id, "generation.disk_low", "Disk headroom is low; the checkpoint has not advanced.", "Free space on the state volume before continuing.");
         ClearGenerationBlock(id);
         var model = LoadModelForWork(id);
+        if (session.TotalSlots != GenerationWindow.TotalSlots(model))
+            throw StateIntegrityFailure();
         var window = GenerationWindow.Generate(model, session.NextSlot, limits.CandidateSlotsPerTurn, limits.BatchPoints, limits.BatchBytes);
         if (window.Error is { } error)
         {

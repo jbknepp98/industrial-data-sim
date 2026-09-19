@@ -31,9 +31,8 @@ will proceed under different limits or without queue/disk backpressure.
 ## Ownership and startup effects
 
 Use these commands while no other runtime owns the database. A running owner
-produces `runtime.owner_unavailable` with safe instructions. Live control of a
-future continuously running worker needs a separate communication contract;
-these commands do not bypass the exclusive database owner.
+produces `runtime.owner_unavailable` with safe instructions. Use [live controls](continuous-host.md) while the continuous host owns the database;
+these session commands do not bypass the exclusive database owner.
 
 Every database open performs normal migration and recovery. Status/list/batches
 are inspection commands, but opening their database is not a read-only SQLite
@@ -90,7 +89,7 @@ sanitized report. Models, credentials, and payload values are not returned.
 | 1 | Model/runtime refusal, missing/inaccessible state, or response-size failure. Read errors[].code/path/message. |
 | 2 | Invalid command syntax, mode, or numeric argument; response explains allowed forms. |
 | 4 | Worker stopped unfinished: Blocked or RoundLimit. Inspect result.stopReason and session state. |
-| 130 | Worker stopped gracefully after Ctrl+C or host stop request. |
+| 130 | Bounded worker stopped gracefully after Ctrl+C. |
 | 3 | Input-file or CLI path/filesystem access failure. Runtime-owned database failures instead use their runtime error code and exit 1. |
 
 An oversized response is replaced by one small failure envelope; no partial JSON
@@ -110,5 +109,5 @@ does not roll back the command or authorize delivery retries.
 See [cancellation](session-cancellation.md) and [durable runtime](durable-runtime-v1.md)
 for state transitions, release, generation recovery, and unresolved-delivery rules.
 The [bounded worker](simulation-worker.md) drives generation and fake delivery.
-Resident/live-control hosting is still future work. Production delivery remains
+The [continuous host](continuous-host.md) supplies resident foreground execution and live controls. Production delivery remains
 blocked on its acceptance contract.

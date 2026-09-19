@@ -42,6 +42,7 @@ public sealed partial class DurableRuntime
             // visible in status, while the delivery round can serve other sessions.
             return null;
         }
+        ValidateBatchPositions(batch);
         InTransaction(() =>
         {
             Execute("UPDATE batches SET state='Sending' WHERE id=$batch", ("$batch", batch.Id));
@@ -62,6 +63,7 @@ public sealed partial class DurableRuntime
             throw new RuntimeFailure("delivery.invalid_transition", "Batch is no longer Sending. Inspect durable state; do not replay or force acknowledgement.");
         bool completed = false;
         bool cancelled = false;
+        ValidateBatchPositions(work.Batch);
         InTransaction(() =>
         {
             if (acknowledged)
@@ -100,7 +102,7 @@ public sealed partial class DurableRuntime
     {
         // Column is selected only by the two internal call sites, never input.
         string json = (string)Scalar("SELECT positions FROM batches WHERE id=$batch", ("$batch", batchId))!;
-        var positions = JsonSerializer.Deserialize<Dictionary<string, long>>(json)!;
+        var positions = ReadPositions(json);
         foreach (var (tag, ticks) in positions)
         {
             SetSessionPosition(session, tag, column, ticks);
@@ -108,4 +110,57 @@ public sealed partial class DurableRuntime
                 ("$ticks", ticks), ("$id", session), ("$tag", Key(tag)));
         }
     }
+
+    private static Dictionary<string, long> ReadPositions(string json)
+    {
+        if (System.Text.Encoding.UTF8.GetByteCount(json) > 4 * 1024 * 1024) throw PositionIntegrityFailure();
+        try
+        {
+            using var document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 4 });
+            if (document.RootElement.ValueKind != JsonValueKind.Object) throw PositionIntegrityFailure();
+            var positions = new Dictionary<string, long>(StringComparer.Ordinal);
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (positions.Count >= 1000 || property.Value.ValueKind != JsonValueKind.Number ||
+                    !property.Value.TryGetInt64(out long ticks) || ticks < 0 || ticks > DateTime.MaxValue.Ticks ||
+                    !positions.TryAdd(property.Name, ticks)) throw PositionIntegrityFailure();
+            }
+            if (positions.Count == 0) throw PositionIntegrityFailure();
+            return positions;
+        }
+        catch (Exception error) when (error is JsonException or InvalidOperationException) { throw PositionIntegrityFailure(); }
+    }
+
+    private void ValidateBatchPositions(BatchSnapshot batch)
+    {
+        // Position metadata drives durable high-water marks. Verify it against
+        // the hash-checked payload before recording intent or submitting anything.
+        var positions = ReadPositions((string)Scalar("SELECT positions FROM batches WHERE id=$batch", ("$batch", batch.Id))!);
+        try
+        {
+            using var document = JsonDocument.Parse(batch.Payload!);
+            if (document.RootElement.ValueKind != JsonValueKind.Object) throw PositionIntegrityFailure();
+            int count = 0;
+            foreach (var tag in document.RootElement.EnumerateObject())
+            {
+                if (!positions.Remove(tag.Name, out long saved) || tag.Value.ValueKind != JsonValueKind.Array ||
+                    tag.Value.GetArrayLength() == 0) throw PositionIntegrityFailure();
+                long previous = -1;
+                foreach (var point in tag.Value.EnumerateArray())
+                {
+                    if (point.ValueKind != JsonValueKind.Object || !point.TryGetProperty("t", out var timestamp) ||
+                        timestamp.ValueKind != JsonValueKind.String || !timestamp.TryGetDateTime(out var utc) ||
+                        utc.Kind != DateTimeKind.Utc || utc.Ticks <= previous) throw PositionIntegrityFailure();
+                    previous = utc.Ticks;
+                    if (++count > 10000) throw PositionIntegrityFailure();
+                }
+                if (saved != previous) throw PositionIntegrityFailure();
+            }
+            if (positions.Count != 0 || count != batch.PointCount) throw PositionIntegrityFailure();
+        }
+        catch (Exception error) when (error is JsonException or InvalidOperationException) { throw PositionIntegrityFailure(); }
+    }
+
+    private static RuntimeFailure PositionIntegrityFailure() => new("runtime.progress_integrity",
+        "Saved batch positions are malformed or disagree with the queued payload. Preserve the database and restore verified batch metadata; do not submit, reset progress, or replay data.");
 }

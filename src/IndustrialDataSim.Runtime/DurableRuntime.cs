@@ -225,9 +225,11 @@ public sealed partial class DurableRuntime : IDisposable
         using var command = Command(QueueQueries.SessionSnapshot, ("$id", id));
         using var reader = command.ExecuteReader();
         if (!reader.Read()) throw new RuntimeFailure("runtime.session_missing", "Session ID was not found. List sessions and use an existing ID, or admit a new configuration.");
-        return new(reader.GetString(0), Enum.Parse<SessionStatus>(reader.GetString(1)), reader.GetInt64(2), reader.GetInt64(3),
+        long next = reader.GetInt64(2), total = reader.GetInt64(3);
+        if (next < 0 || total < 1 || next > total) throw StateIntegrityFailure();
+        return new(reader.GetString(0), ReadState<SessionStatus>(reader.GetString(1)), next, total,
             reader.GetInt64(4), reader.GetInt64(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7))
-        { Cancellation = reader.IsDBNull(8) ? null : Enum.Parse<CancellationMode>(reader.GetString(8)) };
+        { Cancellation = reader.IsDBNull(8) ? null : ReadState<CancellationMode>(reader.GetString(8)) };
     }
 
     private List<string> SessionIds(string? state = null)
@@ -320,8 +322,16 @@ public sealed partial class DurableRuntime : IDisposable
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     private static long? NullableLong(SqliteDataReader reader, int index) => reader.IsDBNull(index) ? null : reader.GetInt64(index);
     private static BatchSnapshot ReadBatch(SqliteDataReader reader) => new(reader.GetInt64(0), reader.GetString(1),
-        Enum.Parse<BatchStatus>(reader.GetString(2)), reader.GetInt64(3), reader.GetInt64(4), reader.GetInt32(5),
+        ReadState<BatchStatus>(reader.GetString(2)), reader.GetInt64(3), reader.GetInt64(4), reader.GetInt32(5),
         reader.GetInt32(6), reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8));
+    private static T ReadState<T>(string text) where T : struct, Enum
+    {
+        if (!Enum.TryParse<T>(text, out var state) || !Enum.IsDefined(state) || state.ToString() != text)
+            throw StateIntegrityFailure();
+        return state;
+    }
+    private static RuntimeFailure StateIntegrityFailure() => new("runtime.state_integrity",
+        "Saved lifecycle state or checkpoint bounds are invalid. Stop work and restore a verified database backup with a compatible runtime; do not edit states, reset checkpoints, or replay batches.");
     private static RuntimeFailure StorageFailure() => new("runtime.storage_failure",
         "State storage could not complete the operation. Check disk space, permissions, and database health; reopen and inspect durable session state before retrying.");
 
