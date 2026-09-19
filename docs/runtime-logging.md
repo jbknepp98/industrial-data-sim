@@ -43,6 +43,7 @@ line and inspect SQLite. Do not infer failed delivery from a missing log record.
 
 | Level | Events | Meaning and next action |
 | --- | --- | --- |
+| Information | `worker.started`, `worker.stopped` | Bounded simulation worker lifecycle and stop reason; inspect session state if unfinished. |
 | Information | `runtime.opened`, `runtime.closed` | Database lifecycle. Startup recovery has committed before the opened event. |
 | Information | `session.admitted`, `session.paused`, `session.resumed`, `session.completed`, `session.tags_released` | Durable lifecycle changes. Completion refers to the simulated transport, not a production Historian receipt. |
 | Information | `session.cancellation_requested`, `session.cancelled` | Generation has stopped under the selected drain/discard policy; terminal cancellation retains ownership until explicit release. See [cancellation](session-cancellation.md). |

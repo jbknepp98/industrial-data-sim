@@ -1,7 +1,8 @@
 # Session cancellation
 
 Runtime-library controls are also exposed by the [session CLI](session-cli.md).
-A continuously hosted worker remains a future increment. All delivery remains simulated.
+The [bounded foreground worker](simulation-worker.md) can drain queued work.
+A continuously hosted service remains a future increment. All delivery remains simulated.
 
 Cancellation stops future generation and is irreversible. Callers must explicitly
 choose what happens to already generated, queued work:

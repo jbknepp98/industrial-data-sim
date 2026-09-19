@@ -110,6 +110,8 @@ See [session cancellation](docs/session-cancellation.md) for explicit drain/disc
 controls and safe release of cancelled sessions.
 The [session CLI](docs/session-cli.md) exposes admission, paginated inspection,
 pause/resume, cancellation, release, and checked generation recovery.
+The [bounded simulation worker](docs/simulation-worker.md) runs generation and fake
+delivery in the foreground, with explicit round limits and graceful Ctrl+C stop.
 
 ## Local configuration
 

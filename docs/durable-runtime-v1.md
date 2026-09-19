@@ -194,7 +194,8 @@ reservations against other processes filling the disk; database write failure
 must leave the transaction uncommitted.
 
 The [session CLI](session-cli.md) exposes bounded inspection and lifecycle controls
-while the runtime owner is stopped. It does not start generation or delivery.
+while the runtime owner is stopped. Its explicit run-simulated command starts a
+[bounded foreground worker](simulation-worker.md) for generation and fake delivery.
 
 ## Library usage and observability
 

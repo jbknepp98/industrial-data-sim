@@ -72,8 +72,9 @@ conservatively to prevent two aliases from bypassing reservations.
 
 The runtime library now implements explicit drain/discard cancellation; see
 [session cancellation](session-cancellation.md). Agent-facing lifecycle commands now exist in the [session CLI](session-cli.md);
-they admit and control state but do not execute generation/delivery. The hosted
-worker remains to implement. Runtime statuses currently use Ready,
+the explicit run-simulated command drives a [bounded foreground worker](simulation-worker.md).
+Other lifecycle commands admit/control state without executing work. Resident
+hosting and live control remain to implement. Runtime statuses currently use Ready,
 Paused, Draining, Complete, Uncertain, Failed, Cancelling, and Cancelled; the
 broader names below are proposed host/model states, not additional implemented states.
 

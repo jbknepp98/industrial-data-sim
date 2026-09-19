@@ -12,10 +12,11 @@ public static partial class CliApplication
         "session status|pause|resume|release <database> <session-id>; " +
         "session cancel <database> <session-id> drain|discard-pending; " +
         "session retry-generation <database> <session-id> <batch-bytes>; " +
+        "session run-simulated <database> <maximum-rounds> [batch-bytes]; " +
         "session batches <database> <session-id> [after-batch-id]. " +
         "Start admits a simulation-only session; it does not launch a worker. Quote arguments containing spaces.";
 
-    private static int RunSessionCommand(string[] args, TextWriter output)
+    private static int RunSessionCommand(string[] args, TextWriter output, CancellationToken stop)
     {
         if (args.Length == 2 && args[1] == "help")
             return WriteSessionResponse(output, "help", new { message = SessionUsage });
@@ -25,17 +26,20 @@ public static partial class CliApplication
             "start" or "status" or "pause" or "resume" or "release" => args.Length == 4,
             "list" => args.Length is 3 or 4,
             "cancel" or "retry-generation" => args.Length == 5,
-            "batches" => args.Length is 4 or 5,
+            "batches" or "run-simulated" => args.Length is 4 or 5,
             _ => false
         };
         int batchBytes = 0;
+        int maximumRounds = 0;
         long afterBatch = 0;
         if (!validShape ||
             (action == "cancel" && args[4] is not ("drain" or "discard-pending")) ||
             (action == "retry-generation" && (!int.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out batchBytes) || batchBytes is < 128 or > 4194304)) ||
+            (action == "run-simulated" && (!int.TryParse(args[3], NumberStyles.None, CultureInfo.InvariantCulture, out maximumRounds) || maximumRounds is < 1 or > 10000 ||
+                (args.Length == 5 && (!int.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out batchBytes) || batchBytes is < 128 or > 4194304)))) ||
             (action == "batches" && args.Length == 5 && (!long.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out afterBatch) || afterBatch < 0)))
         {
-            WriteResult(output, [new("cli.usage", "$", SessionUsage + " Batch bytes must be 128–4194304; batch cursors must be nonnegative integers.")]);
+            WriteResult(output, [new("cli.usage", "$", SessionUsage + " Worker rounds must be 1–10000; batch bytes must be 128–4194304; batch cursors must be nonnegative integers.")]);
             return 2;
         }
 
@@ -64,9 +68,11 @@ public static partial class CliApplication
             // single stdout JSON response; no credentials or payloads are logged.
             using var logs = new RuntimeFileLogger(Path.Combine(Path.GetDirectoryName(database)!, "logs", Path.GetFileName(database)));
             using var runtime = new DurableRuntime(database,
-                action == "retry-generation" ? new() { BatchBytes = batchBytes } : null,
+                batchBytes > 0 ? new() { BatchBytes = batchBytes } : null,
                 logs, createIfMissing: action == "start");
-            result = ExecuteSessionCommand(runtime, action, args, configuration, admittedId, afterBatch);
+            result = action == "run-simulated"
+                ? new SimulationWorker(runtime).RunAsync(maximumRounds, stop).GetAwaiter().GetResult()
+                : ExecuteSessionCommand(runtime, action, args, configuration, admittedId, afterBatch);
         }
         catch (RuntimeFailure failure)
         {
@@ -81,6 +87,17 @@ public static partial class CliApplication
         }
         // Serialize only after the runtime closes. Output failures must not be
         // mislabeled as input/storage errors, and must never trigger a retry.
+        if (result is WorkerRunResult worker)
+        {
+            int writeExit = WriteSessionResponse(output, action, new
+            {
+                stopReason = worker.StopReason.ToString(), worker.RoundsStarted,
+                worker.ProgressingGenerationTurns, worker.AcknowledgedBatches, worker.Message,
+                sessions = worker.Sessions.Select(SessionView).ToArray()
+            });
+            if (writeExit != 0) return writeExit;
+            return worker.StopReason == WorkerStopReason.Completed ? 0 : worker.StopReason == WorkerStopReason.Stopped ? 130 : 4;
+        }
         return WriteSessionResponse(output, action, result);
     }
 

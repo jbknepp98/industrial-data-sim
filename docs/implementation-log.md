@@ -685,3 +685,30 @@ bounded output failure. Seven additional process-level commands exercised the
 built executable through admission/list/status/pause/resume/cancel/release; their
 temporary simulation state was removed. No Historian writes, commit, or push
 performed. A bounded generation/simulated-delivery worker is the next increment.
+
+### Bounded generation and simulated-delivery worker
+
+Saved and pushed the prior 478-test audit/lifecycle/CLI checkpoint as edfdf0c.
+Added SimulationWorker and the explicit session run-simulated command. Runs are
+limited to 1–10000 rounds and 100 total database sessions, with one bounded window
+and one batch per session turn and a rotating first session. No-progress rounds
+stop with guidance instead of spinning. Outcomes distinguish Completed, Blocked,
+RoundLimit, and Stopped; unfinished/stop CLI exits are 4/130. Failed and uncertain
+sessions retain their protections while eligible peers continue.
+
+Ctrl+C requests a graceful stop: finish an in-flight submission under normal
+acknowledgement/uncertainty rules, then stop future work and close the database.
+The initial control workflow is stop/inspect-or-control/restart; resident hosting,
+live IPC, real-time pacing, and production transport remain unimplemented.
+The default fake keeps only latest accepted/retained points per tag to avoid
+accumulating the full backfill history. Its remote-side evidence remains volatile;
+new CLI invocations do not reconstruct it or replay old synthetic acknowledgements.
+Documented limits, stop behavior, ownership, memory/evidence boundaries, and logs.
+
+Verification: 490 Release tests passed (12 new cases), covering fair progress with
+one-batch global capacity, bounded continuation, paused/disk-blocked stopping,
+uncertainty isolation, graceful in-flight stop, overlapping-run refusal, limited
+fake history and ordering, session/round bounds, drain cancellation, unexpected
+failure propagation, and CLI stop/reopen outcomes. A built-executable SIGINT smoke
+test returned exit 130 and reopened state without uncertainty; temporary state was
+removed. No production Historian writes were performed.

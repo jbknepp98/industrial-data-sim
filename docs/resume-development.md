@@ -20,7 +20,7 @@ to leave a terminal or development process running to preserve this work.
 - R5: generation errors identify tag index, candidate slot, and sample time.
 - R6: independent session progress survives release/reuse; schema version 3
   reconstructs old reports transactionally from retained model/batch metadata.
-- Latest verification: 478 Release .NET tests passed. Prior offline/schema/gate
+- Latest verification: 490 Release .NET tests passed. Prior offline/schema/gate
   checks passed. Repository-visible secret-marker/local-link and whitespace
   checks passed after the latest increment.
 
@@ -36,11 +36,11 @@ not part of the source checkpoint. Preserve local storage through shutdown.
 2. Inspect Git status before editing; preserve any newer user changes.
 3. Review the completed audit repairs and inspect uncommitted work before any
    commit/push; R4, R6, cancellation, and the session CLI were completed after the shutdown checkpoint.
-4. Runtime cancellation and the agent-facing session CLI are implemented
-   (docs/session-cancellation.md, docs/session-cli.md). Next, add a bounded worker
-   for generation and simulated delivery, with graceful stop/restart and a clear
-   ownership/control contract. Keep production delivery disabled until its contract
-   is settled.
+4. Runtime cancellation, lifecycle CLI, and bounded foreground worker are implemented
+   (docs/session-cancellation.md, docs/session-cli.md, docs/simulation-worker.md).
+   The worker uses stop/control/restart, not live IPC. Next, review the resident
+   worker/live-control contract before implementing continuous hosting. Keep
+   production delivery disabled until its acceptance contract is settled.
 5. Preserve readability, actionable errors, logging, and incremental verification.
 6. Continue docs/phase-1-plan.md: session controls/worker, remaining conditions and
    patterns, production acceptance contract/adapter, acceptance and capacity

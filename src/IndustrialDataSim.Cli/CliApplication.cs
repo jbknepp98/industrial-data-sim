@@ -22,9 +22,9 @@ public static partial class CliApplication
     /// Writes one JSON response to the supplied output. Exit codes: 0 valid,
     /// 1 validation failure, 2 incorrect command usage, 3 input-file failure.
     /// </summary>
-    public static int Run(string[] args, TextWriter output)
+    public static int Run(string[] args, TextWriter output, CancellationToken stop = default)
     {
-        if (args.Length > 0 && args[0] == "session") return RunSessionCommand(args, output);
+        if (args.Length > 0 && args[0] == "session") return RunSessionCommand(args, output, stop);
         if (args.Length != 2 || args[0] is not ("validate-dataset" or "validate-session" or "validate-simulation" or "dry-run"))
         {
             WriteResult(output, [new("cli.usage", "$",

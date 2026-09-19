@@ -1,8 +1,8 @@
 # Durable session CLI
 
 The `session` command group operates local, simulation-only SQLite state. It does
-not connect to Historian, load credentials, run generation, or start a background
-worker. Existing validate and dry-run commands retain their original behavior.
+not connect to Historian or load credentials. The explicit run-simulated command
+drives generation and fake delivery in the foreground; other commands do not run work. Existing validate and dry-run commands retain their original behavior.
 Run `session help` for the command syntax as a JSON response.
 
 Use the CLI project through `dotnet run --project src/IndustrialDataSim.Cli --`
@@ -11,6 +11,7 @@ followed by a command below. Quote paths and arguments containing spaces.
 | Command | Behavior |
 | --- | --- |
 | `session start <database> <model-file>` | Validate and admit an immutable model; create the database if needed. The session becomes Ready but does not execute. |
+| `session run-simulated <database> <maximum-rounds> [batch-bytes]` | Drive a bounded foreground worker against the fake Historian. See [worker contract](simulation-worker.md) for limits, graceful stop, and outcomes. |
 | `session list <database> [after-session-id]` | Return up to 100 sessions, sorted by ordinal ID. Pass nextCursor to fetch the next page. |
 | `session status <database> <session-id>` | Return lifecycle state, candidate cursor, queue counts, safe saved error, cancellation mode, and session-local tag progress as UTC timestamps. |
 | `session batches <database> <session-id> [after-batch-id]` | Return up to 100 batch metadata entries. Payloads are neither loaded nor returned. Pass nextCursor to continue. |
@@ -88,6 +89,8 @@ sanitized report. Models, credentials, and payload values are not returned.
 | 0 | Command succeeded; inspect session status separately. |
 | 1 | Model/runtime refusal, missing/inaccessible state, or response-size failure. Read errors[].code/path/message. |
 | 2 | Invalid command syntax, mode, or numeric argument; response explains allowed forms. |
+| 4 | Worker stopped unfinished: Blocked or RoundLimit. Inspect result.stopReason and session state. |
+| 130 | Worker stopped gracefully after Ctrl+C or host stop request. |
 | 3 | Input-file or CLI path/filesystem access failure. Runtime-owned database failures instead use their runtime error code and exit 1. |
 
 An oversized response is replaced by one small failure envelope; no partial JSON
@@ -106,5 +109,6 @@ does not roll back the command or authorize delivery retries.
 
 See [cancellation](session-cancellation.md) and [durable runtime](durable-runtime-v1.md)
 for state transitions, release, generation recovery, and unresolved-delivery rules.
-The next increment is a worker that drives bounded generation and simulated
-delivery. Production delivery remains blocked on its acceptance contract.
+The [bounded worker](simulation-worker.md) drives generation and fake delivery.
+Resident/live-control hosting is still future work. Production delivery remains
+blocked on its acceptance contract.

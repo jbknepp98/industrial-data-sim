@@ -18,6 +18,8 @@ public sealed class FakeHistorian
     private readonly Dictionary<string, List<TvqPoint>> retained = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> calls = new(StringComparer.Ordinal);
     public bool SuppressRepeats { get; init; } = true;
+    /// <summary>False keeps only the latest accepted/retained point per tag for bounded worker diagnostics.</summary>
+    public bool KeepHistory { get; init; } = true;
     internal Func<Task>? BeforeWrite { get; set; }
 
     public void NextWrite(string sessionId, FakeWriteBehavior next)
@@ -65,10 +67,15 @@ public sealed class FakeHistorian
                 if (!accepted.ContainsKey(key)) { accepted[key] = []; retained[key] = []; }
                 foreach (var point in points)
                 {
+                    if (!KeepHistory) accepted[key].Clear();
                     accepted[key].Add(point);
                     var history = retained[key];
                     if (!SuppressRepeats || history.Count == 0 || history[^1].Quality != point.Quality ||
-                        history[^1].Value.GetRawText() != point.Value.GetRawText()) history.Add(point);
+                        history[^1].Value.GetRawText() != point.Value.GetRawText())
+                    {
+                        if (!KeepHistory) history.Clear();
+                        history.Add(point);
+                    }
                     if (++applied == 1 && mode == FakeWriteBehavior.PartialAcceptance) throw new TimeoutException();
                 }
             }
