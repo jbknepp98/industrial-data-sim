@@ -117,6 +117,13 @@ After-stop payloads may belong to Pending work; they are reported rather than
 mistakenly treated as a pruning failure. These minute-long runs are still not
 hours/days-long soak tests or measurements with a slow network transport.
 
+The worker now skips execution turns for Complete/Cancelled sessions already
+identified in its round snapshot. Their records still appear in inventory and
+count toward the 100-session cap. Terminal states cannot resume, so this avoids
+redundant generation/delivery database calls without altering recovery or
+ownership. A regression test checks preserved released history and new-session
+completion. This optimization does not establish a maximum control latency.
+
 ## Retention design boundary
 
 Pending, Sending and Uncertain work must retain its payload and recovery context.

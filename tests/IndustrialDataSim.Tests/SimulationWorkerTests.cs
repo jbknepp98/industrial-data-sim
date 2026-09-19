@@ -7,6 +7,37 @@ namespace IndustrialDataSim.Tests;
 public class SimulationWorkerTests
 {
     [Fact]
+    public async Task TerminalHistoryRemainsIntactWhileNewSessionsRun()
+    {
+        using var files = new RuntimeFixture();
+        using var runtime = new DurableRuntime(files.Database, new() { BatchPoints = 3 });
+        runtime.AddSession(RuntimeFixture.Model("finished", "Finished").ToJsonString());
+        var worker = new SimulationWorker(runtime);
+        Assert.Equal(WorkerStopReason.Completed, (await worker.RunAsync(10)).StopReason);
+        runtime.ReleaseCompleted("finished");
+        var finished = runtime.GetSession("finished");
+        var batches = runtime.Batches("finished").ToArray();
+        var progress = runtime.Progress("finished").ToArray();
+        runtime.AddSession(RuntimeFixture.Model("cancelled", "Cancelled").ToJsonString());
+        runtime.Cancel("cancelled", CancellationMode.DiscardPending);
+        runtime.ReleaseCancelled("cancelled");
+        var cancelled = runtime.GetSession("cancelled");
+        runtime.AddSession(RuntimeFixture.Model("active-a", "A").ToJsonString());
+        runtime.AddSession(RuntimeFixture.Model("active-b", "B").ToJsonString());
+
+        var result = await worker.RunAsync(10);
+
+        Assert.Equal(WorkerStopReason.Completed, result.StopReason);
+        Assert.Equal(4, result.Sessions.Count); // History remains part of the inventory.
+        Assert.Equal(finished, runtime.GetSession("finished"));
+        Assert.Equal(cancelled, runtime.GetSession("cancelled"));
+        Assert.Equal(batches, runtime.Batches("finished").ToArray());
+        Assert.Equal(progress, runtime.Progress("finished").ToArray());
+        Assert.Equal(SessionStatus.Complete, runtime.GetSession("active-a").Status);
+        Assert.Equal(SessionStatus.Complete, runtime.GetSession("active-b").Status);
+    }
+
+    [Fact]
     public async Task RepeatedSingleRoundsKeepRotatingFirstSession()
     {
         using var files = new RuntimeFixture();

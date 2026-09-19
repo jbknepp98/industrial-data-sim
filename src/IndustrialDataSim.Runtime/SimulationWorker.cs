@@ -59,11 +59,16 @@ public sealed class SimulationWorker
                 rounds++;
                 for (int offset = 0; offset < sessions.Count; offset++)
                 {
+                    var session = sessions[(start + offset) % sessions.Count];
+                    // Terminal states cannot become runnable again. Retain them
+                    // in inventory/cap checks, but avoid database generation and
+                    // delivery probes for every historical session on each round.
+                    if (session.Status is SessionStatus.Complete or SessionStatus.Cancelled) continue;
                     // The fake often completes synchronously. Yield between turns
                     // so an async host can request stop without a separate thread.
                     await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
                     if (stop.IsCancellationRequested) return Finish(WorkerStopReason.Stopped, "Graceful stop completed. Pending work and checkpoints remain durable.");
-                    string id = sessions[(start + offset) % sessions.Count].SessionId;
+                    string id = session.SessionId;
                     try
                     {
                         if (runtime.Generate(id).Progressed) { progressed = true; generated++; }
