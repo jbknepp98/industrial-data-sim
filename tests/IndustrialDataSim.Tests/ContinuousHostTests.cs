@@ -7,6 +7,13 @@ using IndustrialDataSim.Runtime;
 
 namespace IndustrialDataSim.Tests;
 
+// These tests assert short real pipe deadlines. Run apart from parallel bulk
+// SQLite/crash tests so CI storage/thread contention is not mistaken for a host
+// protocol failure. Separate-process capacity tests still exercise a busy host.
+[CollectionDefinition("Host timing", DisableParallelization = true)]
+public sealed class HostTimingCollection;
+
+[Collection("Host timing")]
 public class ContinuousHostTests
 {
     [Fact]

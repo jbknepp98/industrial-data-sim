@@ -124,6 +124,38 @@ redundant generation/delivery database calls without altering recovery or
 ownership. A regression test checks preserved released history and new-session
 completion. This optimization does not establish a maximum control latency.
 
+### September 19 sustained observations
+
+Local macOS ARM64 / .NET 10.0.12. One 60-second run per history size before
+terminal-turn skipping, then two repeats at 80 finished sessions after it.
+Historical payloads were pruned in every case. All active sessions progressed;
+pause stability, resume and graceful stop passed.
+
+| Finished sessions | History batches | History DB bytes | Inventory p50 / p95 / max ms | Observed cursor advance |
+| ---: | ---: | ---: | --- | ---: |
+| 0, before | 0 | 0 (not created) | 54 / 59 / 70 | 44904000 |
+| 20, before | 620 | 487424 | 56 / 293 / 6569 | 20648000 |
+| 80, before | 2480 | 1724416 | 59 / 129 / 4891 | 17136000 |
+| 80, after, repeat 1 | 2480 | 1724416 | 57 / 63 / 73 | 30300000 |
+| 80, after, repeat 2 | 2480 | 1724416 | 58 / 164 / 4906 | 28252000 |
+
+Observation windows can overrun while a bounded request completes: the final
+repeat lasted 65.2 seconds. These cursor totals span the first-to-last inventory
+samples, not precisely the entire window; do not present them as calibrated
+throughput. One or two runs cannot separate scheduler effects from machine load.
+The targeted optimization removes known redundant calls and progress improved
+in both repeats, but **multi-second control outliers remain unresolved**. Next
+diagnostics should distinguish client startup, pipe connection, host wait and
+storage/GC pauses before changing production timeouts or promising an SLA.
+
+Across the five runs, maximum sampled DB+WAL storage was 13.2–21.6 MiB. The
+no-history run finished with 45459 batches/attempts and an 18567168-byte database
+after processing 45459000 synthetic points. This demonstrates retained audit
+growth despite payload pruning. The 20-to-80 finished-history difference was
+1236992 bytes for 1860 additional batches plus session/tag/configuration records;
+it is not a universal per-batch storage estimate. Measurements justify monitoring
+audit growth and implementing a verified archive, not an automatic deletion age.
+
 ## Retention design boundary
 
 Pending, Sending and Uncertain work must retain its payload and recovery context.

@@ -76,6 +76,11 @@ the workflow has read-only repository permissions and does not persist Git
 credentials. It runs the Release build, full .NET suite, Python unit tests,
 schema/oracle checks, host process smoke, and a synthetic capacity smoke case.
 It also runs the five-second live-control capacity probe against temporary state.
+The short-deadline live-host .NET test collection runs separately from parallel
+bulk SQLite/crash tests. A Windows run exposed a three-second pipe-connect timeout
+under the combined test load; isolating the collection avoids conflating unrelated
+test contention with host protocol checks. Production deadlines are unchanged,
+and the separate-process load probe still exercises controls during generation.
 No Historian configuration, secrets, or network writes are used by these checks.
 Dependency downloads still require network access. A green workflow is platform
 test evidence, not proof of production Historian compatibility.
