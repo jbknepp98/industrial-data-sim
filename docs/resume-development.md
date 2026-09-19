@@ -35,8 +35,9 @@ not part of the source checkpoint. Preserve local storage through shutdown.
 The next verification checkpoint adds a cross-platform CI workflow and a
 [reproducible capacity baseline/retention design](capacity-and-retention.md).
 Local build, 520 .NET tests, eight Python tests, schema/oracle checks, host smoke,
-and twelve capacity runs passed. Check the GitHub workflow result before claiming
-Linux/Windows verification. Archive/deletion and sustained capacity testing remain
+and twelve capacity runs passed. The hosted Linux/macOS/Windows matrix also passed
+for `ee058f4` ([CI evidence](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35452466245)).
+Archive/deletion and sustained capacity testing remain
 future work; the production adapter follows the approved blind-publish policy.
 
 1. Read AGENTS.md, docs/audit-runtime-2026-09-18.md and its follow-up sections,

@@ -779,7 +779,8 @@ only: no runtime changes, new Historian requests, or live writes.
 Added a pinned-action Linux/macOS/Windows CI matrix for Release build, 520 .NET
 tests, Python tests, schema/gate oracle, separate-process host checks, and a
 synthetic capacity smoke. Windows uses the portable host-stop command; its console
-signals are explicitly untested. CI execution evidence will be recorded after push.
+signals are explicitly untested. All three hosted jobs passed for commit `ee058f4`
+([CI run 35452466245](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35452466245)).
 
 Added a standalone bounded capacity probe with four concurrent seven-day sessions,
 constant/gated patterns, delayed fake delivery, queue-bound assertions, expected

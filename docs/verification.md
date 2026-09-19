@@ -81,3 +81,5 @@ test evidence, not proof of production Historian compatibility.
 
 To reproduce the capacity checks, build the entire solution first (dotnet test
 does not build the standalone probe), then follow [capacity and retention](capacity-and-retention.md).
+
+The first full hosted matrix passed on September 19, 2026 for `ee058f4`: [run 35452466245](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35452466245). Each platform passed all 520 .NET tests, eight Python tests, the schema/oracle checks, host smoke, and the capacity smoke. This result does not cover Windows console signals or live Historian delivery.
