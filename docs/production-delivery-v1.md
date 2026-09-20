@@ -92,10 +92,13 @@ and quality with generated samples, and recognizes Boolean 0/1 read-back. It loo
 for relevant non-null records and changes only when the batch's model values change.
 It does not compare submitted/stored point counts or require repeated constants.
 
-Each batch retains Pending, Observed, NotYetObserved, Mismatch or Unavailable
+Each batch retains Pending, Observed, ConsistentWithoutNewArrival, NotYetObserved, Mismatch or Unavailable
 observation status, with counts of matching tags, non-null current tags and tags
 with observed changes. These are partial indicators, never acceptance receipts.
-A pre-existing current value alone is insufficient. Up to three observation
+A pre-existing current value alone is insufficient for arrival. When unchanged
+batch values match current values/quality but no new point appears in the batch
+range, ConsistentWithoutNewArrival reports compatibility without claiming arrival.
+This avoids treating normal repeat suppression as a delivery failure. Up to three observation
 attempts are separated by one second. Read failure cannot undo Published. If the
 process stops after publish and before observation, Pending remains visible for
 manual inspection; observation is not automatically reconstructed after payload

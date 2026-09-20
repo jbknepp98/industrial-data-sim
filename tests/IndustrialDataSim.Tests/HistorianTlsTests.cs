@@ -31,6 +31,11 @@ public class HistorianTlsTests
         leafRequest.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(new OidCollection { new("1.3.6.1.5.5.7.3.1") }, true));
         using var issued = leafRequest.Create(root, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddHours(1), RandomNumberGenerator.GetBytes(16));
         using var leaf = issued.CopyWithPrivateKey(leafKey);
+        // Windows SChannel requires a key container, not the ephemeral key from
+        // CopyWithPrivateKey. Reimport this synthetic certificate without
+        // EphemeralKeySet; disposal removes its temporary key container.
+        // https://github.com/dotnet/runtime/issues/23749
+        using var serverCertificate = X509CertificateLoader.LoadPkcs12(leaf.Export(X509ContentType.Pkcs12), null, X509KeyStorageFlags.UserKeySet);
         string pem = Path.Combine(files.Folder, "trust.pem");
         File.WriteAllText(pem, root.ExportCertificatePem());
         using var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -43,7 +48,7 @@ public class HistorianTlsTests
             {
                 using var tcp = await listener.AcceptTcpClientAsync(deadline.Token);
                 using var tls = new SslStream(tcp.GetStream());
-                await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = leaf }, deadline.Token);
+                await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = serverCertificate }, deadline.Token);
                 using var reader = new StreamReader(tls, leaveOpen: true);
                 while (await reader.ReadLineAsync(deadline.Token) is { Length: > 0 }) { }
                 const string body = "{\"access_token\":\"synthetic\",\"expires_in\":3600}";

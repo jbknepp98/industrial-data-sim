@@ -89,7 +89,7 @@ public sealed class ProductionDelivery
                 {
                     if (attempt > 0) await Task.Delay(ObservationDelay, stop);
                     observation = await Observe(batch.Id, work.Dataset, expected, stop);
-                    if (observation.Status is "Observed" or "Mismatch") break;
+                    if (observation.Status is "Observed" or "ConsistentWithoutNewArrival" or "Mismatch") break;
                 }
             }
             catch (Exception error) when (IsTransportFailure(error) || error is RuntimeFailure)
@@ -107,28 +107,35 @@ public sealed class ProductionDelivery
         var last = expected.Values.Max(points => points[^1].Timestamp);
         var range = await historian.Read(dataset, expected.Keys, first, last, stop);
         var current = await historian.Read(dataset, expected.Keys, null, null, stop);
-        int matching = 0, changed = 0;
+        int matching = 0, changed = 0, unchangedCompatible = 0;
         bool mismatch = false;
-        foreach (var tag in range)
+        foreach (var (name, expectedPoints) in expected)
         {
-            var points = expected[tag.Name].ToDictionary(point => point.Timestamp);
+            var points = expectedPoints.ToDictionary(point => point.Timestamp);
             var matches = new List<ObservedPoint>();
-            foreach (var actual in tag.Points.Where(point => point.Timestamp >= first && point.Timestamp <= last))
+            var tag = range.SingleOrDefault(item => item.Name == name);
+            foreach (var actual in (tag?.Points ?? Array.Empty<ObservedPoint>()).Where(point => point.Timestamp >= first && point.Timestamp <= last))
                 if (points.TryGetValue(actual.Timestamp, out var wanted))
                 {
                     if (Equivalent(wanted.Value, actual.Value) && wanted.Quality == actual.Quality && actual.Value.ValueKind != JsonValueKind.Null) matches.Add(actual);
                     else mismatch = true;
                 }
                 else mismatch = true;
-            if (matches.Count > 0) matching++;
-            bool expectsChange = expected[tag.Name].Any(point => !Equivalent(expected[tag.Name][0].Value, point.Value));
+            bool expectsChange = expectedPoints.Any(point => !Equivalent(expectedPoints[0].Value, point.Value));
             bool sawChange = matches.Count > 1 && matches.Any(point => !Equivalent(matches[0].Value, point.Value));
+            if (matches.Count > 0 && (!expectsChange || sawChange)) matching++;
             if (sawChange) changed++;
-            if (expectsChange && !sawChange) matching -= matches.Count > 0 ? 1 : 0;
+            // Repeat suppression can leave only a leading point outside this
+            // batch. Report compatibility separately, never call that new arrival.
+            var latest = current.SingleOrDefault(item => item.Name == name)?.Points.OrderBy(point => point.Timestamp).LastOrDefault();
+            if (matches.Count == 0 && !expectsChange && latest is not null &&
+                latest.Value.ValueKind != JsonValueKind.Null && Equivalent(expectedPoints[^1].Value, latest.Value) &&
+                latest.Quality == expectedPoints[^1].Quality) unchangedCompatible++;
         }
         int nonNull = current.Count(tag => tag.Points.Any(point => point.Value.ValueKind != JsonValueKind.Null));
-        return new(batchId, mismatch ? "Mismatch" : matching == expected.Count && nonNull == expected.Count ? "Observed" : "NotYetObserved",
-            matching, nonNull, changed, mismatch ? "historian.pattern_mismatch" : null, "NotReviewed");
+        string status = mismatch ? "Mismatch" : matching == expected.Count && nonNull == expected.Count ? "Observed" :
+            unchangedCompatible > 0 && matching + unchangedCompatible == expected.Count && nonNull == expected.Count ? "ConsistentWithoutNewArrival" : "NotYetObserved";
+        return new(batchId, status, matching, nonNull, changed, mismatch ? "historian.pattern_mismatch" : null, "NotReviewed");
     }
 
     private static Dictionary<string, List<ObservedPoint>> ParseExpected(string payload)

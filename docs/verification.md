@@ -103,7 +103,7 @@ do not reproduce or resolve the intermittent control delay. The corrected
 [diagnosis](control-latency-diagnosis-2026-09-20.md) retracts earlier empty-log
 inferences caused by the collector's directory error.
 
-The operational/archival/production increment passed locally with 544 .NET tests
+The operational/archival/production increment passed locally with 545 .NET tests
 and 20 Python tests, schema comparisons, 100 independent gate scenarios (3722
 samples), host process checks, a fifteen-minute mixed-load run and an explicit
 two-session Test Dataset smoke. The .NET suite includes real local TLS trust and

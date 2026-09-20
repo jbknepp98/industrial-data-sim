@@ -85,7 +85,7 @@ public sealed partial class DurableRuntime
         if (observation.Status != "Pending" && (!observationStates.TryGetValue(session, out var previous) || previous != observation.Status))
         {
             observationStates[session] = observation.Status;
-            Log(observation.Status == "Observed" ? LogLevel.Information : LogLevel.Warning, "delivery.observation", "Observe",
+            Log(observation.Status is "Observed" or "ConsistentWithoutNewArrival" ? LogLevel.Information : LogLevel.Warning, "delivery.observation", "Observe",
                 $"Arrival observation changed to {observation.Status}. This is not a per-point receipt.",
                 "Inspect the session tags and intended pattern. Missing samples never authorize replay; user review remains separate.", session);
         }

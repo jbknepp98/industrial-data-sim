@@ -78,9 +78,17 @@ These limitations do not permit weaker ordering, silent checkpoint resets or rep
 
 ## Local verification checkpoint
 
-Release build: zero warnings/errors. All 544 .NET tests and 20 Python tests passed.
+Release build: zero warnings/errors. All 545 .NET tests and 20 Python tests passed.
 Schema verification covered eight examples and six invalid shapes; the independent
 gate oracle checked 100 scenarios and 3722 samples. Host process verification
 passed on macOS, including SIGINT. Real local TLS tests verified custom-root success,
 hostname rejection and untrusted-root rejection. Git diff whitespace and changed
 Markdown links passed inspection. Hosted cross-platform verification follows push.
+
+The first hosted run passed Linux/macOS but exposed a Windows-only synthetic TLS
+server setup issue: the test's ephemeral private key could not complete the
+handshake. The fixture now imports its generated certificate into a temporary
+key container compatible with SChannel, retaining the same trust/hostname checks
+([.NET issue](https://github.com/dotnet/runtime/issues/23749)). No deployment key
+or trust-store change is involved. The final review also added a multi-batch
+repeat-suppression test and a distinct ConsistentWithoutNewArrival observation.

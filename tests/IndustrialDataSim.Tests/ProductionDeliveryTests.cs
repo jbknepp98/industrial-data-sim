@@ -16,7 +16,7 @@ public class ProductionDeliveryTests
     {
         public int Writes, Tokens;
         public HttpStatusCode PublishStatus = HttpStatusCode.OK;
-        public bool FailPublish, FailReadAfterPublish, Mismatch, Existing, NullCurrent, FlatInventory;
+        public bool FailPublish, FailReadAfterPublish, Mismatch, Existing, NullCurrent, FlatInventory, SuppressRepeats;
         public readonly Dictionary<string, JsonArray> Stored = new();
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken stop)
         {
@@ -27,7 +27,16 @@ public class ProductionDeliveryTests
             {
                 Writes++;
                 var payload = JsonNode.Parse(await request.Content!.ReadAsStringAsync(stop))!.AsObject();
-                foreach (var (name, data) in payload) Stored[name] = (JsonArray)data!.DeepClone();
+                foreach (var (name, data) in payload)
+                {
+                    if (!SuppressRepeats) Stored[name] = (JsonArray)data!.DeepClone();
+                    else
+                    {
+                        if (!Stored.TryGetValue(name, out var retained)) Stored[name] = retained = new();
+                        foreach (var point in data!.AsArray())
+                            if (retained.Count == 0 || !JsonNode.DeepEquals(retained[^1]!["v"], point!["v"])) retained.Add(point!.DeepClone());
+                    }
+                }
                 if (FailPublish) throw new HttpRequestException("PRIVATE_TRANSPORT_DETAILS");
                 return new(PublishStatus) { Content = new StringContent("") };
             }
@@ -232,6 +241,22 @@ public class ProductionDeliveryTests
         runtime.RetryProductionPreflight("session-a");
         Assert.True(await delivery.DeliverOneAsync("session-a"));
         Assert.Equal(1, server.Writes);
+    }
+
+    [Fact]
+    public async Task SuppressedConstantBatchesReportCompatibilityWithoutClaimingArrival()
+    {
+        using var files = new RuntimeFixture();
+        using var runtime = new DurableRuntime(files.Database, new() { BatchPoints = 3 }, mode: ExecutionMode.Production);
+        using var client = new HistorianClient(Profile(), new HttpClient(new Server { SuppressRepeats = true }));
+        var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+        await delivery.AdmitAsync(RuntimeFixture.Model().ToJsonString());
+        await new ProductionWorker(runtime, delivery).RunAsync(10);
+        var observations = runtime.Observations("session-a");
+        Assert.Equal(new[] { "Observed", "ConsistentWithoutNewArrival", "ConsistentWithoutNewArrival" }, observations.Select(item => item.Status));
+        Assert.Equal(0, observations[1].MatchingTags);
+        Assert.Equal(3, observations[1].NonNullCurrentTags);
+        Assert.All(observations, item => Assert.Equal("NotReviewed", item.UserReview));
     }
 
     [Fact]
