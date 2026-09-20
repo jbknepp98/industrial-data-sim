@@ -107,3 +107,12 @@ its temporary database with a sharing violation. Test-fixture cleanup now retrie
 only Windows sharing/lock violations for at most two seconds, then still fails
 on a persistent handle leak. No runtime mutation, HTTP write or production timeout
 was changed; the process holding the transient lock was not identified.
+
+## Final hosted checkpoint
+
+Code checkpoint `370eb8f` passed the complete Linux/macOS/Windows workflow:
+[run 35544826514](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35544826514).
+Each platform passed 545 .NET tests, 20 Python tests, schema/oracle checks, host
+process checks (including Windows CTRL_BREAK), diagnostic load smoke and capacity
+smoke. This includes archive filename durability and repeat-suppression handling.
+The subsequent documentation checkpoint only records this result.

@@ -115,3 +115,10 @@ Checkpoint `722868f` passed all three hosted platforms with 545 .NET tests and
 verification: [run 35544324314](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35544324314).
 The first Windows attempt exposed the synthetic certificate key-container issue
 described in the increment report; production TLS verification was not weakened.
+
+Final code checkpoint `370eb8f` passed the full hosted matrix, including archive
+directory persistence and bounded Windows test cleanup: [run 35544826514](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35544826514).
+All three platforms passed 545 .NET and 20 Python tests plus the schema, host,
+diagnostic-load and capacity checks. Remaining operational limits are recorded
+in the current increment report; a green matrix does not resolve the intermittent
+control latency or establish per-point Historian acceptance.
