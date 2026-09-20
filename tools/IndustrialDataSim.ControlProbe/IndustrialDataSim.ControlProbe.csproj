@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/IndustrialDataSim.Runtime/IndustrialDataSim.Runtime.csproj" />
+    <!-- Compile the actual wire contract, avoiding a drifting diagnostic copy. -->
+    <Compile Include="../../src/IndustrialDataSim.Cli/LocalControlProtocol.cs" Link="LocalControlProtocol.cs" />
+  </ItemGroup>
+</Project>

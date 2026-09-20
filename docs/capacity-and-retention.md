@@ -156,6 +156,28 @@ growth despite payload pruning. The 20-to-80 finished-history difference was
 it is not a universal per-batch storage estimate. Measurements justify monitoring
 audit growth and implementing a verified archive, not an automatic deletion age.
 
+## Phase-level control diagnosis
+
+Build the entire solution, then add `--diagnose` to the host measurement command.
+Inventory reads use `IndustrialDataSim.ControlProbe`, a separate read-only client
+compiled with the actual local wire contract. Admission and lifecycle operations
+still use the normal CLI and are never retried. The JSON identifies the inventory
+client and includes bounded per-request timing samples. CI exercises diagnostic
+mode; `verify_host.py` continues to exercise the standard CLI.
+
+Timings separate client setup, pipe connection, request write, reply wait and
+total in-process time. Python measures end-to-end subprocess time. The residual
+(`processOverheadMs`) includes launch/JIT before Main, output serialization and
+exit; it must not be described as pure startup time. Reply wait includes host
+queue/round wait, execution, response serialization and transport. It cannot by
+itself distinguish SQLite, GC or operating-system scheduling stalls. Inconsistent
+timings fail validation rather than silently misattribute a delay.
+
+This changes the inventory client used by the experiment, so a clean diagnostic
+run alone does not clear a problem observed with the normal CLI. Compare an
+ordinary run and retain the original outlier evidence. Production protocol,
+timeouts and scheduling are unchanged by the diagnostic client.
+
 ## Retention design boundary
 
 Pending, Sending and Uncertain work must retain its payload and recovery context.

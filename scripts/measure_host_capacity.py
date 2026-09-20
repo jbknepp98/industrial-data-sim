@@ -29,6 +29,17 @@ def summarize_latency(samples):
             "p95Ms": ordered[math.ceil(len(samples) * .95) - 1], "maximumMs": ordered[-1]}
 
 
+def control_timing_sample(timing, elapsed_ms):
+    fields = ("setupMs", "connectMs", "writeMs", "replyMs", "clientMs")
+    require(all(isinstance(timing.get(key), (int, float)) and not isinstance(timing[key], bool)
+                and math.isfinite(timing[key]) and timing[key] >= 0 for key in fields)
+            and math.isfinite(elapsed_ms) and elapsed_ms >= timing["clientMs"]
+            and sum(timing[key] for key in fields[:-1]) <= timing["clientMs"] + .1,
+            "capacity.invalid_timing", "Diagnostic timing fields are missing or inconsistent. Rebuild matching tools and rerun before attributing latency to any phase.")
+    return {key: timing[key] for key in fields} | {
+        "totalMs": elapsed_ms, "processOverheadMs": elapsed_ms - timing["clientMs"]}
+
+
 def make_model(template, session_id, historical):
     model = copy.deepcopy(template)
     session = model["session"]
@@ -66,23 +77,34 @@ def audit_snapshot(database):
             "points": points, "retainedPayloadBatches": payloads or 0, "attempts": attempts}
 
 
-def measure(dotnet, history_count, seconds):
+def measure(dotnet, history_count, seconds, diagnose=False):
     root = Path(__file__).resolve().parents[1]
     dll = root / "src/IndustrialDataSim.Cli/bin/Release/net10.0/IndustrialDataSim.Cli.dll"
     require(dll.exists(), "capacity.build_missing", "Build IndustrialDataSim.slnx in Release before measuring host capacity.")
     command = [dotnet, str(dll)]
+    diagnostic_dll = root / "tools/IndustrialDataSim.ControlProbe/bin/Release/net10.0/IndustrialDataSim.ControlProbe.dll"
+    require(not diagnose or diagnostic_dll.exists(), "capacity.probe_missing", "Build the entire solution in Release to include the control diagnostic probe.")
+    timing_samples = []
     constant = json.loads((root / "examples/constant-simulation.json").read_text())
     sequence = json.loads((root / "examples/sequence-simulation.json").read_text())
 
     def invoke(*arguments, timeout=40):
         start = time.monotonic()
-        result = subprocess.run(command + list(arguments), capture_output=True, text=True, timeout=timeout)
+        diagnostic = diagnose and arguments[:2] == ("live", "list")
+        invocation = [dotnet, str(diagnostic_dll), arguments[2]] if diagnostic else command + list(arguments)
+        result = subprocess.run(invocation, capture_output=True, text=True, timeout=timeout)
+        elapsed_ms = (time.monotonic() - start) * 1000
         operation = ".".join(arguments[:2])  # Fixed command words only, never paths or configuration.
         require(result.returncode == 0, "capacity.command_failed",
                 f"{operation} did not return success. Run the host verification suite and inspect local storage/pipe permissions. This probe will not retry the operation.")
         reply = json.loads(result.stdout)
+        if diagnostic:
+            timing = reply["timings"]
+            # Residual includes process launch/JIT before Main, output encoding
+            # and process exit; it is not a pure startup measurement.
+            timing_samples.append(control_timing_sample(timing, elapsed_ms))
         require(reply["valid"], "capacity.invalid_reply", f"{operation} returned an invalid response. Run the CLI tests before repeating this probe.")
-        return reply["result"], (time.monotonic() - start) * 1000
+        return reply["result"], elapsed_ms
 
     with tempfile.TemporaryDirectory(prefix="sim-host-capacity-") as folder:
         database = Path(folder) / "state.db"
@@ -162,9 +184,11 @@ def measure(dotnet, history_count, seconds):
         # Resume and stop can leave Pending work, so payloads here are reported,
         # not required to be zero. Only the finished-history snapshot must prune.
         return {"schemaVersion": 1, "mode": "simulation-only", "historySessions": history_count,
+                "inventoryClient": "diagnostic-probe" if diagnose else "standard-cli",
                 "historyGenerationMs": history_ms, "history": history, "activeSessions": 4,
                 "patterns": ["constant", "sequence"], "requestedSeconds": seconds,
                 "observedSeconds": observed_seconds, "liveListLatency": summarize_latency(latencies),
+                "controlTimingSamples": timing_samples,
                 "pauseMs": pause_ms, "resumeMs": resume_ms, "stopReplyMs": stop_ms,
                 "observedCandidateSlotAdvance": sum(last_positions.values()) - sum(first_positions.values()),
                 "maximumSampledStorageBytes": maximum_storage, "afterStop": final}
@@ -175,9 +199,10 @@ if __name__ == "__main__":
     parser.add_argument("--dotnet", default="dotnet")
     parser.add_argument("--history", type=int, choices=(0, 20, 80), default=0)
     parser.add_argument("--seconds", type=int, choices=(5, 30, 60), default=30)
+    parser.add_argument("--diagnose", action="store_true", help="Use the read-only diagnostic client to separate control timing phases.")
     args = parser.parse_args()
     try:
-        print(json.dumps(measure(args.dotnet, args.history, args.seconds), indent=2))
+        print(json.dumps(measure(args.dotnet, args.history, args.seconds, args.diagnose), indent=2))
     except RuntimeError as error:
         parser.exit(1, f"{error}\n")
     except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, subprocess.TimeoutExpired):

@@ -4,10 +4,19 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from measure_host_capacity import audit_snapshot, make_model, summarize_latency
+from measure_host_capacity import audit_snapshot, control_timing_sample, make_model, summarize_latency
 
 
 class CapacityMeasurementTests(unittest.TestCase):
+    def test_phase_timings_preserve_outlier_and_separate_process_overhead(self):
+        timing = {"setupMs": 2, "connectMs": 1, "writeMs": 1, "replyMs": 4900, "clientMs": 4905}
+        sample = control_timing_sample(timing, 4930)
+        self.assertEqual(sample["replyMs"], 4900)
+        self.assertEqual(sample["processOverheadMs"], 25)
+        for broken in ({}, timing | {"replyMs": float("nan")}, timing | {"clientMs": 1}):
+            with self.assertRaisesRegex(RuntimeError, "capacity.invalid_timing:.*Rebuild"):
+                control_timing_sample(broken, 4930)
+
     def test_snapshot_reads_checkpointed_state_without_creating_sidecars(self):
         with tempfile.TemporaryDirectory() as folder:
             database = Path(folder) / "state.db"
