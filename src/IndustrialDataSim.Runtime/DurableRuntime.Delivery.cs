@@ -55,7 +55,7 @@ public sealed partial class DurableRuntime
         return new(batch with { Status = BatchStatus.Sending }, model.Session.ConnectionProfile, model.Session.Dataset);
     }, sessionId: id);
 
-    internal void Finish(DeliveryWork work, bool acknowledged) => Access(() =>
+    internal void Finish(DeliveryWork work, bool acknowledged, RuntimeFailure? transportFailure = null) => Access(() =>
     {
         long batchId = work.Batch.Id;
         string id = work.Batch.SessionId;
@@ -68,9 +68,9 @@ public sealed partial class DurableRuntime
         {
             if (acknowledged)
             {
-                UpdatePositions(batchId, id, "acknowledged_ticks");
-                Execute("UPDATE batches SET state='Acknowledged',payload=NULL WHERE id=$batch", ("$batch", batchId));
-                Execute("UPDATE attempts SET state='Acknowledged' WHERE batch_id=$batch", ("$batch", batchId));
+                UpdatePositions(batchId, id, Mode == ExecutionMode.Production ? "published_ticks" : "acknowledged_ticks");
+                Execute("UPDATE batches SET state=$state,payload=NULL WHERE id=$batch", ("$state", Mode == ExecutionMode.Production ? "Published" : "Acknowledged"), ("$batch", batchId));
+                Execute("UPDATE attempts SET state=$state WHERE batch_id=$batch", ("$state", Mode == ExecutionMode.Production ? "Published" : "Acknowledged"), ("$batch", batchId));
                 completed = CompleteIfDrained(id);
                 cancelled = CancelIfDrained(id);
                 FaultPoint?.Invoke("before_acknowledgement_commit");
@@ -78,17 +78,18 @@ public sealed partial class DurableRuntime
             else
             {
                 Execute("UPDATE batches SET state='Uncertain' WHERE id=$batch", ("$batch", batchId));
-                Execute("UPDATE attempts SET state='Uncertain',error_code='delivery.uncertain' WHERE batch_id=$batch", ("$batch", batchId));
+                Execute("UPDATE attempts SET state='Uncertain',error_code=$code WHERE batch_id=$batch", ("$code", transportFailure?.Error.Code ?? "delivery.uncertain"), ("$batch", batchId));
                 Execute("""
                     UPDATE sessions SET state='Uncertain',error_code='delivery.uncertain',
-                    error_message='Batch acceptance is uncertain. Preserve the payload and tag ownership; investigate transport evidence. Do not resend missing samples.' WHERE id=$id
-                    """, ("$id", id));
+                    error_message=$message WHERE id=$id
+                    """, ("$id", id), ("$message", "Batch acceptance is uncertain. Preserve payload and ownership; do not resend missing samples. " +
+                        (transportFailure is null ? "Investigate transport evidence." : transportFailure.Error.Code + ": " + transportFailure.Message)));
             }
         });
         if (acknowledged)
         {
             FaultPoint?.Invoke("after_acknowledgement_commit");
-            Log(LogLevel.Debug, "delivery.acknowledged", "Finish", "Simulated transport acknowledgement committed; queued payload released.", sessionId: id, batch: work.Batch);
+            Log(LogLevel.Debug, Mode == ExecutionMode.Production ? "delivery.published" : "delivery.acknowledged", "Finish", Mode == ExecutionMode.Production ? "HTTP publish completion committed; this does not verify individual stored points. Inspect observations and request user review." : "Simulated transport acknowledgement committed; queued payload released.", sessionId: id, batch: work.Batch);
             LogCompletion(id, "Finish", completed);
             if (cancelled) LogCancellationFinished(id, "Finish");
         }

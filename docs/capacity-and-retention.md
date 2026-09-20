@@ -215,14 +215,18 @@ Both log readers now use `logs/state.db/`, matching the synthetic database name.
 results used the wrong directory and cannot establish absence of warnings; see
 [the corrected diagnosis](control-latency-diagnosis-2026-09-20.md).
 
-## Retention design boundary
+## Retention design and implemented boundary
+
+The first [explicit archival operation](audit-archival.md) now implements verified
+export and pruning for eligible completed sessions. The requirements below remain
+the basis for broader retention policy; partitioned export and import are pending.
 
 Pending, Sending and Uncertain work must retain its payload and recovery context.
 Never delete unresolved work to meet a storage budget. Logs cannot substitute for
 SQLite state. Preserve per-tag timestamp high-water marks and ownership semantics
 even after a finished session is archived; archive must not permit older reuse.
 
-For finished sessions, a future explicit archive operation should preserve the
+For finished sessions, the explicit archive operation preserves the
 configuration hash/version, final session and tag positions, immutable batch
 hashes/ranges/counts, delivery attempts/outcomes, and user-review/arrival evidence
 when production delivery exists. Export a versioned manifest with checksums,
@@ -231,13 +235,17 @@ Crash recovery must distinguish incomplete archive from completed pruning.
 Failed archive must leave source records usable and return an actionable error.
 
 No age-based or count-based deletion default is justified by these short runs.
-Keep the present metadata-retention behavior and 100-total-session host limit
-until archive semantics, listing/pagination, restore/inspection tooling, and
-failure tests are implemented. Do not manually delete finished sessions to bypass
+Keep the present metadata-retention behavior and 100-unarchived-session host limit
+for unarchived sessions. Explicit archival removes eligible sessions from that
+inventory without deleting their identity or timestamp limits; restore/import tooling remains pending. Do not manually delete finished sessions to bypass
 the cap. Keep log rotation separate from audit retention.
 
 Next, instrument the unresolved control-latency outliers, then extend to longer
-soak workloads and sustained backpressure. Measure production HTTP behavior once
-the blind-publish adapter exists. Use those results to propose explicit storage
+soak workloads and sustained backpressure. Measure sustained production HTTP behavior using the new adapter; its small
+live smoke is not a capacity measurement. Use those results to propose explicit storage
 warnings and archive budgets. These synthetic measurements alone must not change
 production timeouts or runtime defaults.
+
+A later [fifteen-minute mixed-load run](phases-1-3-verification-2026-09-20.md)
+retained actual slow-host events. The probe now also accepts 300 or 900 seconds,
+with the same 256 MiB storage budget. These longer cases are manual, not CI defaults.

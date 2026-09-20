@@ -18,6 +18,7 @@ public sealed class SimulatedDelivery(DurableRuntime runtime, FakeHistorian hist
 
     public async Task<bool> DeliverOneAsync(string sessionId, CancellationToken cancellationToken = default)
     {
+        runtime.RequireMode(ExecutionMode.Simulation);
         cancellationToken.ThrowIfCancellationRequested(); // No durable Sending yet.
         var work = runtime.Claim(sessionId);
         if (work is null) return false;

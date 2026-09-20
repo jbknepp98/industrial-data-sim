@@ -1,6 +1,6 @@
 # Industrial Data Simulator
 
-A planned industrial data simulation tool that writes Timestamp Value Quality
+An agent-operated industrial data simulation tool that writes Timestamp Value Quality
 (TVQ) points to Timebase Historian Datasets.
 
 ## Status
@@ -12,7 +12,7 @@ offline Dataset-name, session-header, and simulation-model validation commands.
 A bounded dry-run generates deterministic constant, ramp, staircase, and random-integer-hold TVQ data, including finite sequences and local Boolean triggers. A library runtime now persists concurrent sessions, tag reservations, checkpoints,
 and bounded TVQ queues in SQLite. Delivery and crash recovery are exercised against
 a sealed in-memory fake Historian. A bounded worker and a continuous foreground host provide simulation execution
-and local live controls. Production Historian delivery remains unimplemented.
+and local live controls. A separate production CLI now provides authenticated blind publishing and arrival observations; see [production delivery](docs/production-delivery-v1.md). Explicit [audit archival](docs/audit-archival.md) preserves completed history before pruning.
 
 See [API findings](docs/timebase-api-findings.md) for payloads, observed behavior,
 and unresolved questions.
@@ -115,17 +115,17 @@ delivery in the foreground, with explicit round limits and graceful Ctrl+C stop.
 The [continuous host](docs/continuous-host.md) adds local live controls and remains
 available while idle or blocked.
 
-See the [latest full audit](docs/audit-2026-09-19.md) for repaired defects,
+See the [latest historical full audit](docs/audit-2026-09-19.md) for repaired defects,
 verification evidence, and remaining Phase 1 concerns.
 
 ## Local configuration
 
-Copy `.env.example` to `.env` and populate it locally. Connection-profile loading
-has not been implemented yet. Keep `.env` owner-readable only. For deployments,
+Copy `.env.example` to `.env` and populate it locally. The production CLI reads process environment variables; it does not automatically source `.env`. Keep `.env` owner-readable only. For deployments,
 supply credentials through a secret manager or environment variables.
 
 | Variable | Purpose |
 | --- | --- |
+| `TIMEBASE_PROFILE` | Connection-profile identifier matching the model |
 | `TIMEBASE_BASE_URL` | HTTPS origin of the Historian service |
 | `TIMEBASE_PULSE_URL` | HTTPS origin of the Pulse service |
 | `TIMEBASE_CLIENT_ID` | OAuth client identifier configured in Pulse |
@@ -152,8 +152,7 @@ sequentially per tag and coordinate writers to prevent races. After an ambiguous
 write response or timeout, stop the affected session and preserve its payload and
 tag ownership. Missing read-back points cannot authorize replay. See the
 [delivery recovery policy](docs/delivery-recovery.md). Local durable reservations, forward progress, and conservative uncertainty handling
-are implemented for simulated delivery. Server preflight and production transport
-remain future work. The owner-approved production policy is blind publishing:
+are implemented for simulated and production delivery, with separate database modes and progress fields. The owner-approved production policy is blind publishing:
 track request completion separately from observed arrival and user review. Do not
 require count equality or a per-point receipt, and do not replay ambiguous writes.
 

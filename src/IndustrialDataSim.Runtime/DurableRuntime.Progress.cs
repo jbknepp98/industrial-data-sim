@@ -34,7 +34,11 @@ public sealed partial class DurableRuntime
         // metadata, never from the current owner or global high-water marks.
         // The caller wraps the entire migration and version change in a transaction.
         Execute(Schema.VersionThree);
-        foreach (string id in SessionIds())
+        var ids = new List<string>();
+        using (var command = Command("SELECT id FROM sessions ORDER BY id"))
+        using (var reader = command.ExecuteReader())
+            while (reader.Read()) ids.Add(reader.GetString(0));
+        foreach (string id in ids)
         {
             InsertSessionProgress(LoadModel(id));
             using var command = Command("SELECT state,positions FROM batches WHERE session_id=$id ORDER BY id", ("$id", id));

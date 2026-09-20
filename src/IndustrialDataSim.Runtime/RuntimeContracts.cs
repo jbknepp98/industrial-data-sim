@@ -2,8 +2,9 @@ using IndustrialDataSim.Core.Validation;
 
 namespace IndustrialDataSim.Runtime;
 
+public enum ExecutionMode { Simulation, Production }
 public enum SessionStatus { Ready, Paused, Draining, Complete, Uncertain, Failed, Cancelling, Cancelled }
-public enum BatchStatus { Pending, Sending, Acknowledged, Uncertain, Discarded }
+public enum BatchStatus { Pending, Sending, Acknowledged, Uncertain, Discarded, Published }
 public enum CancellationMode { Drain, DiscardPending }
 
 public sealed record SessionSnapshot(string SessionId, SessionStatus Status, long NextSlot,
@@ -13,7 +14,10 @@ public sealed record SessionSnapshot(string SessionId, SessionStatus Status, lon
 }
 public sealed record BatchSnapshot(long Id, string SessionId, BatchStatus Status, long StartSlot,
     long EndSlot, int PointCount, int ByteCount, string Hash, string? Payload);
-public sealed record TagProgress(string Tag, long? BufferedTicks, long? SubmittedTicks, long? AcknowledgedTicks);
+public sealed record TagProgress(string Tag, long? BufferedTicks, long? SubmittedTicks, long? AcknowledgedTicks)
+{
+    public long? PublishedTicks { get; init; }
+}
 public sealed record GenerationTurn(string SessionId, bool Progressed, string? Reason);
 
 /// <summary>Errors are safe for callers to display. Do not attach raw database or transport exceptions.</summary>

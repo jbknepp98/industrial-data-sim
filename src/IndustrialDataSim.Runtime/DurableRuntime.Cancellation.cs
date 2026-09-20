@@ -70,7 +70,7 @@ public sealed partial class DurableRuntime
         using var command = Command("""
             UPDATE sessions SET state='Cancelled' WHERE id=$id AND state='Cancelling'
             AND NOT EXISTS(SELECT 1 FROM batches INDEXED BY batch_outstanding
-              WHERE session_id=$id AND state NOT IN ('Acknowledged','Discarded'))
+              WHERE session_id=$id AND state NOT IN ('Acknowledged','Discarded','Published'))
             """, ("$id", id));
         return command.ExecuteNonQuery() > 0;
     }
@@ -84,7 +84,7 @@ public sealed partial class DurableRuntime
     {
         var session = ReadSession(id);
         if (session.Status != SessionStatus.Cancelled ||
-            Scalar("SELECT id FROM batches INDEXED BY batch_outstanding WHERE session_id=$id AND state NOT IN ('Acknowledged','Discarded') LIMIT 1", ("$id", id)) is not null)
+            Scalar("SELECT id FROM batches INDEXED BY batch_outstanding WHERE session_id=$id AND state NOT IN ('Acknowledged','Discarded','Published') LIMIT 1", ("$id", id)) is not null)
             throw new RuntimeFailure("runtime.cannot_release_cancelled",
                 "Only a Cancelled session with no outstanding work can release tags. Finish draining or investigate failed/uncertain delivery first.");
         Execute("UPDATE tags SET owner=NULL WHERE owner=$id", ("$id", id));

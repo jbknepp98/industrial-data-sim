@@ -21,6 +21,7 @@ public sealed class SimulationWorker
 
     public SimulationWorker(DurableRuntime runtime, FakeHistorian? historian = null)
     {
+        runtime.RequireMode(ExecutionMode.Simulation);
         this.runtime = runtime;
         // Full histories are useful in small tests, but must not grow with a
         // long worker run. An explicitly supplied test fake owns its own limits.
@@ -104,7 +105,7 @@ public sealed class SimulationWorker
         var page = runtime.ListSessions();
         if (page.Count == 100 && runtime.ListSessions(page[^1].SessionId, 1).Count > 0)
             throw new RuntimeFailure("worker.session_limit",
-                "This initial worker supports at most 100 total sessions per database, including finished sessions. Use separate simulation databases with disjoint tags for larger workloads; do not delete recovery state to bypass the limit.");
+                "This initial worker supports at most 100 unarchived sessions per database, including finished sessions. Archive eligible finished sessions or use separate simulation databases with disjoint tags; do not delete unresolved recovery state.");
         return page;
     }
 }

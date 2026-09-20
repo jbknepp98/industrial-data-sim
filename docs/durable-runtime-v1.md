@@ -20,9 +20,9 @@ hash, per-tag generated/buffered positions, and the next cursor in one transacti
 A crash before commit leaves the old cursor; a crash after commit leaves both
 payload and checkpoint. No generated checkpoint can outrun its durable payload.
 
-Every database is explicitly marked `simulation-only`. A future production runtime
-must refuse these fake acknowledgements; it must not reuse this database as real
-delivery evidence. SQLite user_version is the migration boundary. Unknown newer versions are
+This contract describes the default `simulation-only` mode. The separate
+[production mode](production-delivery-v1.md) refuses simulation databases and uses
+Published progress instead of fake acknowledgements. Modes cannot be converted. SQLite user_version is the migration boundary. Unknown newer versions are
 rejected. Database schema version 2 added a partial covering index containing only
 unacknowledged batches. Opening a version 1 database creates the index and advances
 its version in one transaction; configurations, payloads, checkpoints, attempts,
@@ -48,7 +48,7 @@ Retain per-tag progress after release to reject backward reuse.
 
 ## Session progress and schema version 3
 
-Schema version 3 introduced independent progress; the current schema is version 4.
+Schema version 3 introduced independent progress; the current schema is version 6. Version 5 adds [archival](audit-archival.md); version 6 adds separate production progress, baselines and observations.
 `Progress(id)` reports that session's own tags
 and buffered/submitted/acknowledged positions from `session_tag_progress`.
 Every declared tag has a row, with null positions until that session reaches the

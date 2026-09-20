@@ -235,7 +235,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dotnet", default="dotnet")
     parser.add_argument("--history", type=int, choices=(0, 20, 80), default=0)
-    parser.add_argument("--seconds", type=int, choices=(5, 30, 60), default=30)
+    parser.add_argument("--seconds", type=int, choices=(5, 30, 60, 300, 900), default=30)
     parser.add_argument("--diagnose", action="store_true", help="Use the read-only diagnostic client to separate control timing phases.")
     args = parser.parse_args()
     try:

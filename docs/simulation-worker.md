@@ -13,7 +13,7 @@ dotnet run --project src/IndustrialDataSim.Cli -- session run-simulated state/si
 `run-simulated <database> <maximum-rounds> [batch-bytes]` requires an existing
 database. Round limits are 1–10000. Optional batch bytes are 128–4194304 and apply
 only to this invocation; other runtime limits use their defaults. Repeat compatible
-limits when resuming. The first worker supports at most 100 total sessions per
+limits when resuming. The first worker supports at most 100 unarchived sessions per
 database, including finished sessions, to bound scheduling and response snapshots.
 It refuses larger inventories before doing work. Reservations remain local to
 one database; do not split overlapping tags among databases to evade ownership.

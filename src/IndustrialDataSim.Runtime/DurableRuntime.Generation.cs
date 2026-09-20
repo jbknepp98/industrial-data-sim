@@ -95,7 +95,7 @@ public sealed partial class DurableRuntime
     {
         if (completed)
             Log(LogLevel.Information, "session.completed", operation,
-                "Session completed; all emitted batches were acknowledged by the simulated transport.", sessionId: id);
+                Mode == ExecutionMode.Simulation ? "Session completed; all emitted batches were acknowledged by the simulated transport." : "Publishing finished. Inspect arrival observations and obtain user review; per-point storage is not verified.", sessionId: id);
     }
 
     private (long Points, long Bytes) QueueUsage()
@@ -118,7 +118,7 @@ public sealed partial class DurableRuntime
     {
         using var command = Command("""
             UPDATE sessions SET state='Complete' WHERE id=$id AND state='Draining'
-            AND NOT EXISTS(SELECT 1 FROM batches INDEXED BY batch_outstanding WHERE session_id=$id AND state NOT IN ('Acknowledged','Discarded'))
+            AND NOT EXISTS(SELECT 1 FROM batches INDEXED BY batch_outstanding WHERE session_id=$id AND state NOT IN ('Acknowledged','Discarded','Published'))
             """, ("$id", id));
         return command.ExecuteNonQuery() > 0;
     }

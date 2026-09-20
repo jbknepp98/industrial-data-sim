@@ -2,6 +2,27 @@ namespace IndustrialDataSim.Runtime;
 
 internal static class Schema
 {
+    internal const string VersionSix = """
+        ALTER TABLE tags ADD COLUMN published_ticks INTEGER;
+        ALTER TABLE session_tag_progress ADD COLUMN published_ticks INTEGER;
+        CREATE TABLE production_preflight(session_id TEXT PRIMARY KEY REFERENCES sessions(id),settings TEXT NOT NULL,baseline TEXT NOT NULL);
+        CREATE TABLE observations(batch_id INTEGER PRIMARY KEY REFERENCES batches(id),
+          status TEXT NOT NULL, matching_tags INTEGER NOT NULL DEFAULT 0,
+          nonnull_current_tags INTEGER NOT NULL DEFAULT 0, changed_tags INTEGER NOT NULL DEFAULT 0,
+          error_code TEXT, user_review TEXT NOT NULL DEFAULT 'NotReviewed');
+        DROP INDEX batch_outstanding;
+        CREATE INDEX batch_outstanding ON batches(session_id,point_count,byte_count)
+          WHERE state NOT IN ('Acknowledged','Discarded','Published');
+        PRAGMA user_version=6;
+        """;
+
+    internal const string VersionFive = """
+        ALTER TABLE sessions ADD COLUMN archive_id TEXT;
+        CREATE TABLE archives(id TEXT PRIMARY KEY,session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id),
+          sha256 TEXT NOT NULL,bytes INTEGER NOT NULL,batches INTEGER NOT NULL);
+        PRAGMA user_version=5;
+        """;
+
     internal const string VersionFour = """
         ALTER TABLE sessions ADD COLUMN cancellation_mode TEXT;
         DROP INDEX batch_outstanding;

@@ -109,5 +109,8 @@ does not roll back the command or authorize delivery retries.
 See [cancellation](session-cancellation.md) and [durable runtime](durable-runtime-v1.md)
 for state transitions, release, generation recovery, and unresolved-delivery rules.
 The [bounded worker](simulation-worker.md) drives generation and fake delivery.
-The [continuous host](continuous-host.md) supplies resident foreground execution and live controls. Production delivery remains unimplemented; its next increment follows the
+The [continuous host](continuous-host.md) supplies resident foreground execution and live controls. Separate [production commands](production-delivery-v1.md) now implement the
 [owner-approved blind-publish policy](delivery-recovery.md).
+
+Completed history can be explicitly exported and pruned using `session archive`;
+see [audit archival](audit-archival.md) for eligibility, verification and crash behavior.

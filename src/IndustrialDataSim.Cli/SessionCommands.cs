@@ -10,6 +10,7 @@ public static partial class CliApplication
     private const string SessionUsage =
         "Usage: session start <database> <model-file>; session list <database> [after-session-id]; " +
         "session status|pause|resume|release <database> <session-id>; " +
+        "session archive|verify-archive <database> <session-id> <archive-directory>; session archive-info <database> <session-id>; " +
         "session cancel <database> <session-id> drain|discard-pending; " +
         "session retry-generation <database> <session-id> <batch-bytes>; " +
         "session run-simulated <database> <maximum-rounds> [batch-bytes]; " +
@@ -23,9 +24,9 @@ public static partial class CliApplication
         string action = args.Length > 1 ? args[1] : "";
         bool validShape = action switch
         {
-            "start" or "status" or "pause" or "resume" or "release" => args.Length == 4,
+            "start" or "status" or "pause" or "resume" or "release" or "archive-info" => args.Length == 4,
             "list" => args.Length is 3 or 4,
-            "cancel" or "retry-generation" => args.Length == 5,
+            "cancel" or "retry-generation" or "archive" or "verify-archive" => args.Length == 5,
             "batches" or "run-simulated" => args.Length is 4 or 5,
             _ => false
         };
@@ -110,6 +111,13 @@ public static partial class CliApplication
             return new { sessions = sessions.Select(SessionView).ToArray(), nextCursor = sessions.Count == 100 ? sessions[^1].SessionId : null };
         }
         string id = action == "start" ? admittedId! : args[3];
+        if (action == "archive") return runtime.Archive(id, args[4]);
+        if (action == "archive-info") return runtime.GetArchive(id);
+        if (action == "verify-archive")
+        {
+            runtime.VerifyArchive(id, args[4]);
+            return new { message = "Archive matches its durable receipt. This is audit evidence, not permission to replay data." };
+        }
         if (action == "batches")
         {
             var batches = runtime.Batches(id, afterBatch, 100, includePayload: false);

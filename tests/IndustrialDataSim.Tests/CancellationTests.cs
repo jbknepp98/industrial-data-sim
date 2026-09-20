@@ -176,7 +176,7 @@ public class CancellationTests
             db.Open();
             using var command = db.CreateCommand();
             command.CommandText = """
-                ALTER TABLE sessions DROP COLUMN cancellation_mode;
+                DROP TABLE production_preflight; DROP TABLE observations; ALTER TABLE tags DROP COLUMN published_ticks; ALTER TABLE session_tag_progress DROP COLUMN published_ticks; DROP TABLE archives; ALTER TABLE sessions DROP COLUMN archive_id; ALTER TABLE sessions DROP COLUMN cancellation_mode;
                 DROP INDEX batch_outstanding;
                 CREATE INDEX batch_outstanding ON batches(session_id,point_count,byte_count) WHERE state!='Acknowledged';
                 PRAGMA user_version=3;

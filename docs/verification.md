@@ -60,8 +60,9 @@ follow the [recovery policy](delivery-recovery.md).
 After the Release build, `python3 scripts/verify_host.py --dotnet <sdk-executable>`
 starts the CLI host and clients as separate processes, checks exclusive ownership,
 live admission/pause/resume/status, disjoint peer completion, retained pause across
-restart and graceful control stop. Unix also checks SIGINT; Windows console signals
-remain untested because Python subprocess SIGINT delivery is not portable. It uses temporary simulation-only state
+restart and graceful control stop. Unix checks SIGINT; Windows now checks CTRL_BREAK in a child process group sharing
+a test console (allocated when absent). It does not substitute a control stop for
+a console-signal test. It uses temporary simulation-only state
 and deletes it on completion. It requires local process and pipe access. No mutation
 is retried; only read-only host readiness probes may repeat. The .NET suite also
 checks malformed control frames, inventory limits, lifecycle errors, and corrupted
@@ -101,3 +102,10 @@ log discovery and event retention after an injected command timeout. These check
 do not reproduce or resolve the intermittent control delay. The corrected
 [diagnosis](control-latency-diagnosis-2026-09-20.md) retracts earlier empty-log
 inferences caused by the collector's directory error.
+
+The operational/archival/production increment passed locally with 544 .NET tests
+and 20 Python tests, schema comparisons, 100 independent gate scenarios (3722
+samples), host process checks, a fifteen-minute mixed-load run and an explicit
+two-session Test Dataset smoke. The .NET suite includes real local TLS trust and
+hostname rejection tests. Hosted results are recorded in the
+[current increment report](phases-1-3-verification-2026-09-20.md).

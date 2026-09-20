@@ -5,7 +5,7 @@ the header is well-formed, not that a complete simulation can execute. Generator
 definitions, sampling, seeds, and preview limits belong to the implemented
 simulation wrapper. Durable resource budgets and tag reservations are implemented
 in the [runtime library](durable-runtime-v1.md), not this header validator.
-Production-target end conditions and production connection resolution remain future work.
+Production-target end conditions remain future work. [Production commands](production-delivery-v1.md) resolve the connection profile separately from the model through environment settings.
 
 The [constant simulation v1 wrapper](constant-simulation-v1.md) now provides the
 first executable dry-run format while leaving this header contract unchanged.

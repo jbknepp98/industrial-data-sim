@@ -853,3 +853,16 @@ Local checks: 20 Python tests passed. A successful five-second diagnostic run re
 one host log; an injected timeout on a real synthetic host retained 15 events and
 the failing stage. The profiler smoke recorded launch timings for nine requests.
 The intermittent multi-second latency remains unresolved.
+
+## Operational, archival and production increments — September 20, 2026
+
+Implemented explicit verified audit export/pruning and separate production database
+semantics, authenticated TLS publishing, durable preflight baselines, Published
+progress, bounded arrival indicators and user review. Added crash/failure tests and
+an explicitly invoked Test-only live helper. Expanded operational verification to
+900 seconds and added Windows CTRL_BREAK coverage for the hosted matrix.
+
+The [verification report](phases-1-3-verification-2026-09-20.md) records the reproduced
+latency, corrected all-new-tag preflight handling, live test tag names and remaining
+limits. These are bounded first implementations, not a claim that every Phase 1
+capability, production hosting option or retention policy is complete.

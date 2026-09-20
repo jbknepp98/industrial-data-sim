@@ -9,7 +9,7 @@ process must resume from durable state without silently losing data or moving
 backward in a tag's timeline.
 
 This is an implementation plan, not a description of existing functionality.
-API connectivity is established; a production simulator has not been built.
+The finite runtime and first production adapter are implemented; this plan also includes capabilities still pending. See the current handoff and production contract for scope.
 
 ## Architecture and boundaries
 
@@ -189,8 +189,7 @@ and process restarts preserve exact generator state and pending payloads.
 Durable delivery transitions and failure injection are implemented against the
 sealed fake Historian. Production authentication, preflight, and HTTP delivery
 will follow the owner-approved [blind-publish policy](delivery-recovery.md).
-Per-point acceptance receipts are not a prerequisite. The real adapter and arrival
-monitor are still unimplemented; fake acknowledgements remain synthetic evidence.
+Per-point acceptance receipts are not a prerequisite. The [first adapter and bounded arrival monitor](production-delivery-v1.md) are implemented in a separate production mode; fake acknowledgements remain synthetic evidence.
 
 **Recovery policy:** follow the [delivery and recovery decision](delivery-recovery.md).
 Historian can omit repeated values. Publish completion, arrival indicators, and

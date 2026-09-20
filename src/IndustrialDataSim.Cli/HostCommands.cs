@@ -166,5 +166,5 @@ public static partial class CliApplication
     }
 
     private static RuntimeFailure HostSessionLimit() => new("host.session_limit",
-        "The continuous host supports at most 100 total sessions per database, including finished sessions. Use separate databases only for disjoint tags; preserve all existing recovery state.");
+        "The continuous host supports at most 100 unarchived sessions per database, including finished sessions. Archive eligible finished sessions or use separate databases only for disjoint tags; preserve unresolved recovery state.");
 }

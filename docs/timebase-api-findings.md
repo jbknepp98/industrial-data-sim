@@ -164,8 +164,7 @@ mismatch; the subsequent check handled the observed grouping.
 - Timestamp precision, range boundaries, and persistence after service restart.
 - Concurrency control when other writers share a tag.
 
-The generator and offline CLI are implemented; production delivery and recovery
-remain pending. These observations do not constitute a complete integration suite.
+The generator and offline CLI are implemented; the first production adapter now implements the conservative blind-publish recovery policy. See [its contract](production-delivery-v1.md). These observations do not constitute a complete integration suite.
 
 ## Unchanged values in a 24-hour live run
 
@@ -180,3 +179,7 @@ HTTP success does not prove individual retention of repeated samples. Latest
 stored timestamps can lag submission progress. Recovery needs an explicit policy
 for unverifiable repeats and must not blindly replay them or mark them individually
 verified from value equality alone. See [test details](live-verification-24h.md).
+
+September 20 production preflight confirmed HTTP 404 for an all-new tag data query.
+The adapter confirms absence using a successful tag inventory read before omitting
+absent tags from a data query; it never treats an unexplained 404 as proof of absence.

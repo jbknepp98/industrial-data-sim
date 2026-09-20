@@ -15,6 +15,8 @@ namespace IndustrialDataSim.Runtime;
 /// </summary>
 public sealed partial class DurableRuntime : IDisposable
 {
+    public ExecutionMode Mode { get; }
+    internal string ModeName => Mode == ExecutionMode.Simulation ? "simulation-only" : "production";
     private readonly object sync = new();
     private readonly SqliteConnection connection;
     private readonly FileStream owner;
@@ -27,8 +29,10 @@ public sealed partial class DurableRuntime : IDisposable
     internal Action<string>? FaultPoint { get; set; }
     internal Func<long>? FreeDiskBytes { get; set; }
 
-    public DurableRuntime(string path, RuntimeLimits? limits = null, ILogger<DurableRuntime>? logger = null, bool createIfMissing = true)
+    public DurableRuntime(string path, RuntimeLimits? limits = null, ILogger<DurableRuntime>? logger = null, bool createIfMissing = true, ExecutionMode mode = ExecutionMode.Simulation)
     {
+        if (!Enum.IsDefined(mode)) throw new RuntimeFailure("runtime.execution_mode", "Choose Simulation or Production with a dedicated database; modes cannot be converted.");
+        Mode = mode;
         this.logger = logger ?? NullLogger<DurableRuntime>.Instance;
         this.limits = limits ?? new();
         this.limits.Validate();
@@ -61,17 +65,23 @@ public sealed partial class DurableRuntime : IDisposable
             connection.Open();
             Execute("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=1000;");
             long version = Convert.ToInt64(Scalar("PRAGMA user_version;"));
-            if (version is not (0 or 1 or 2 or 3 or 4))
+            if (version is not (0 or 1 or 2 or 3 or 4 or 5 or 6))
                 throw new RuntimeFailure("runtime.schema_version", "Unsupported state database version. Open it with the matching simulator version; do not reset or overwrite it.");
             long interrupted = 0;
             InTransaction(() =>
             {
-                if (version == 0) Execute(Schema.VersionOne);
-                if ((string?)Scalar("SELECT value FROM runtime_metadata WHERE key='execution_mode'") != "simulation-only")
-                    throw new RuntimeFailure("runtime.execution_mode", "This database is not marked simulation-only. Use a dedicated simulation state database; fake delivery must not share production checkpoints.");
+                if (version == 0)
+                {
+                    Execute(Schema.VersionOne);
+                    Execute("UPDATE runtime_metadata SET value=$mode WHERE key='execution_mode'", ("$mode", ModeName));
+                }
+                if ((string?)Scalar("SELECT value FROM runtime_metadata WHERE key='execution_mode'") != ModeName)
+                    throw new RuntimeFailure("runtime.execution_mode", "Database execution mode differs from the requested mode. Use the matching simulation or production command; never convert or share their checkpoints.");
                 if (version < 2) Execute(Schema.VersionTwo);
                 if (version < 3) MigrateSessionProgress();
                 if (version < 4) Execute(Schema.VersionFour);
+                if (version < 5) Execute(Schema.VersionFive);
+                if (version < 6) Execute(Schema.VersionSix);
                 interrupted = Convert.ToInt64(Scalar("SELECT COUNT(*) FROM batches WHERE state='Sending'"));
                 Execute("""
                     UPDATE sessions SET state='Uncertain',error_code='delivery.interrupted',
@@ -81,7 +91,7 @@ public sealed partial class DurableRuntime : IDisposable
                     UPDATE batches SET state='Uncertain' WHERE state='Sending';
                     """);
             });
-            Log(LogLevel.Information, "runtime.opened", "Open", "Simulation state database opened; startup recovery has committed.");
+            Log(LogLevel.Information, "runtime.opened", "Open", "State database opened in its verified execution mode; startup recovery has committed.");
             if (interrupted > 0)
                 Log(LogLevel.Warning, "delivery.interrupted", "Open",
                     $"Startup marked {interrupted} interrupted batches and their sessions Uncertain.",
@@ -97,7 +107,18 @@ public sealed partial class DurableRuntime : IDisposable
         }
     }
 
-    public void AddSession(string configuration) => Access(() =>
+    public void AddSession(string configuration)
+    {
+        RequireMode(ExecutionMode.Simulation);
+        AdmitSession(configuration);
+    }
+
+    internal void RequireMode(ExecutionMode expected)
+    {
+        if (Mode != expected) throw new RuntimeFailure("runtime.execution_mode", "This operation belongs to another execution mode. Use the matching production or simulation command and database; checkpoints cannot be converted.");
+    }
+
+    internal void AdmitSession(string configuration, ProductionPreflight? preflight = null) => Access(() =>
     {
         if (Encoding.UTF8.GetByteCount(configuration) > 1024 * 1024)
             throw new RuntimeFailure("runtime.configuration_limit", "Configuration exceeds 1 MiB. Split it into smaller sessions.");
@@ -140,6 +161,10 @@ public sealed partial class DurableRuntime : IDisposable
                     ON CONFLICT(profile_key,dataset_key,tag_key) DO UPDATE SET owner=$id,tag_name=$name
                     """, ("$p", profile), ("$d", dataset), ("$t", Key(tag.Name)), ("$name", tag.Name), ("$id", model.Session.SessionId));
             InsertSessionProgress(model);
+            if (preflight is not null)
+                Execute("INSERT INTO production_preflight(session_id,settings,baseline) VALUES($id,$settings,$baseline)",
+                    ("$id", model.Session.SessionId), ("$settings", JsonSerializer.Serialize(preflight.Settings)),
+                    ("$baseline", JsonSerializer.Serialize(preflight.BaselineTicks)));
             FaultPoint?.Invoke("before_admission_commit");
         });
         Log(LogLevel.Information, "session.admitted", "AddSession", "Session admitted; configuration and tag ownership are durable.", sessionId: model.Session.SessionId);
@@ -155,7 +180,7 @@ public sealed partial class DurableRuntime : IDisposable
         if (limit is < 1 or > 100)
             throw new RuntimeFailure("runtime.invalid_session_page", "Use a session page size from 1 through 100 and the previous page's last session ID as the cursor.");
         var ids = new List<string>();
-        using (var command = Command("SELECT id FROM sessions WHERE ($after IS NULL OR id>$after) ORDER BY id LIMIT $limit",
+        using (var command = Command("SELECT id FROM sessions WHERE archive_id IS NULL AND ($after IS NULL OR id>$after) ORDER BY id LIMIT $limit",
             ("$after", afterId), ("$limit", limit)))
         using (var reader = command.ExecuteReader())
             while (reader.Read()) ids.Add(reader.GetString(0));
@@ -178,9 +203,9 @@ public sealed partial class DurableRuntime : IDisposable
     {
         _ = ReadSession(id);
         var result = new List<TagProgress>();
-        using var command = Command("SELECT tag_name,buffered_ticks,submitted_ticks,acknowledged_ticks FROM session_tag_progress WHERE session_id=$id ORDER BY tag_key", ("$id", id));
+        using var command = Command("SELECT tag_name,buffered_ticks,submitted_ticks,acknowledged_ticks,published_ticks FROM session_tag_progress WHERE session_id=$id ORDER BY tag_key", ("$id", id));
         using var reader = command.ExecuteReader();
-        while (reader.Read()) result.Add(new(reader.GetString(0), NullableLong(reader, 1), NullableLong(reader, 2), NullableLong(reader, 3)));
+        while (reader.Read()) result.Add(new(reader.GetString(0), NullableLong(reader, 1), NullableLong(reader, 2), NullableLong(reader, 3)) { PublishedTicks = NullableLong(reader, 4) });
         return result;
     }, sessionId: id);
 
@@ -213,7 +238,7 @@ public sealed partial class DurableRuntime : IDisposable
     public void ReleaseCompleted(string id) => Access(() =>
     {
         if (ReadSession(id).Status != SessionStatus.Complete)
-            throw new RuntimeFailure("runtime.cannot_release", "Only completed, fully acknowledged sessions can release tags. Resolve pending or uncertain delivery first.");
+            throw new RuntimeFailure("runtime.cannot_release", "Only completed, fully drained sessions can release tags. Resolve pending or uncertain delivery first.");
         Execute("UPDATE tags SET owner=NULL WHERE owner=$id", ("$id", id));
         blockedReasons.Remove(id);
         Log(LogLevel.Information, "session.tags_released", "ReleaseCompleted", "Completed session tag reservations released; durable tag history remains protected.", sessionId: id);
@@ -235,7 +260,7 @@ public sealed partial class DurableRuntime : IDisposable
     private List<string> SessionIds(string? state = null)
     {
         var result = new List<string>();
-        using var command = Command("SELECT id FROM sessions WHERE ($state IS NULL OR state=$state) ORDER BY id", ("$state", state));
+        using var command = Command("SELECT id FROM sessions WHERE archive_id IS NULL AND ($state IS NULL OR state=$state) ORDER BY id", ("$state", state));
         using var reader = command.ExecuteReader();
         while (reader.Read()) result.Add(reader.GetString(0));
         return result;
@@ -344,7 +369,7 @@ public sealed partial class DurableRuntime : IDisposable
             try { Execute("PRAGMA wal_checkpoint(TRUNCATE);"); }
             catch (SqliteException) { throw StorageFailure(); }
             finally { connection.Dispose(); owner.Dispose(); }
-            Log(LogLevel.Information, "runtime.closed", "Dispose", "Simulation state database closed.");
+            Log(LogLevel.Information, "runtime.closed", "Dispose", "State database closed.");
         }
     }
 }

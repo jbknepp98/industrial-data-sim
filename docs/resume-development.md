@@ -13,6 +13,9 @@ and dated [audit](audit-2026-09-19.md), rather than serving as competing instruc
 - Bounded operational logging with actionable errors and slow-host observations.
 - Linux/macOS/Windows CI, reproducible capacity and history-growth measurements,
   a read-only control timing probe and bounded macOS native profiling.
+- Explicit verified audit archival retains identity and timestamp protections.
+- Separate production mode supplies Pulse authentication, verified TLS, ordered blind
+  publishing, arrival observations and explicit user-review recording.
 - Diagnostic reports now retain selected evidence on failure. Process-launch
   time is measured separately; missed launch capture opportunities are explicit.
 
@@ -29,12 +32,14 @@ Next, capture a slow occurrence with the repaired tooling and correlate launch,
 client and host timing with any available native traces. Do not infer that an
 uncaptured interval was fast or increase timeouts without evidence.
 
-Archive/deletion, hours/days-long soak tests, Windows console-signal testing,
-richer typed conditions and the production adapter remain unfinished. The
+A fifteen-minute mixed-load test and a two-session live Test smoke passed; see
+[the current verification report](phases-1-3-verification-2026-09-20.md).
+Hours/days-long soaks, richer typed conditions, partitioned archives and resident
+production live controls remain unfinished. The
 [blind-publish policy](delivery-recovery.md) is approved: publish completion,
 arrival indicators and user feedback are separate evidence. Per-point receipts
-are not required. Real authentication, HTTP writes and arrival monitoring still
-need implementation and a separate production state boundary.
+are not required. Real authentication, HTTP publishing and bounded arrival checks now run behind a
+separate production state boundary; see [production v1](production-delivery-v1.md).
 
 ## Resuming work safely
 
@@ -47,8 +52,8 @@ need implementation and a separate production state boundary.
 4. Preserve local configuration and state through shutdown. Do not delete owner
    files, reset Uncertain batches or infer recovery authority from logs.
 
-Development and CI use a sealed fake Historian. No production service or automatic
-job restart is configured by this project. Credentials, certificates, state,
+Offline development and CI use fake or scripted transports. Explicit production
+commands perform real writes; no production service or automatic job restart is configured. Credentials, certificates, state,
 profiles and logs remain local and ignored; never include them in public commits.
 Stop a running host gracefully before shutdown. Restart it explicitly against
 its existing database; do not re-admit existing sessions.

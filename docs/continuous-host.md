@@ -20,7 +20,7 @@ dotnet run --project src/IndustrialDataSim.Cli -- host stop state/simulation.db
 `host run <existing-database> [batch-bytes]` holds exclusive SQLite ownership until
 exit. Batch bytes default to 1048576; allowed range is 128–4194304. Other runtime
 limits retain their defaults. Repeat compatible limits on restart; limits are not
-persisted. At most 100 total sessions, including finished sessions, may inhabit a
+persisted. At most 100 unarchived sessions, including finished sessions, may inhabit a
 hosted database. Live admission refuses the 101st before reserving its tags.
 
 | Command | Meaning |

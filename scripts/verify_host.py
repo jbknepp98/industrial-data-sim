@@ -21,6 +21,27 @@ def require(condition, message):
 
 
 def verify(dotnet):
+    # Hosted Windows runners may have no console. CTRL_BREAK can reach only a
+    # child sharing our console; allocate one when absent, then release only the
+    # console created by this test. The child's process group isolates the signal.
+    allocated = False
+    kernel = None
+    if os.name == "nt":
+        import ctypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        processes = (ctypes.c_ulong * 1)()
+        if kernel.GetConsoleProcessList(processes, 1) == 0:
+            if not kernel.AllocConsole():
+                raise RuntimeError("Windows console allocation failed; cannot verify CTRL_BREAK. Check runner console permissions rather than substituting control stop.")
+            allocated = True
+    try:
+        _verify(dotnet)
+    finally:
+        if allocated:
+            kernel.FreeConsole()
+
+
+def _verify(dotnet):
     root = Path(__file__).resolve().parents[1]
     dll = root / "src/IndustrialDataSim.Cli/bin/Release/net10.0/IndustrialDataSim.Cli.dll"
     if not dll.exists():
@@ -47,7 +68,8 @@ def verify(dotnet):
 
         def start_host():
             process = subprocess.Popen(command + ["host", "run", database], stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE, text=True)
+                                       stderr=subprocess.PIPE, text=True,
+                                       creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
             try:
                 # Inspect liveness through the read-only control endpoint. Only
                 # this safe probe is retried; lifecycle mutations below run once.
@@ -101,14 +123,12 @@ def verify(dotnet):
         try:
             resumed = invoke("live", "status", database, "host-check-a")["result"]["session"]
             require(resumed["status"] == "Paused" and resumed["nextSlot"] == paused["nextSlot"], 'Pause state or cursor changed after host restart.')
-            # Windows subprocesses do not support sending SIGINT. Verify the
-            # portable control stop there; Unix additionally exercises SIGINT.
-            if os.name == "nt":
-                invoke("host", "stop", database)
-            else:
-                host.send_signal(signal.SIGINT)
+            # Windows CTRL_BREAK targets the child process group; unlike SIGINT
+            # it does not signal the CI runner itself. .NET handles both through
+            # Console.CancelKeyPress and must preserve the same durable state.
+            host.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
             stdout, _ = host.communicate(timeout=10)
-            expected_exit = 0 if os.name == "nt" else 130
+            expected_exit = 130
             require(host.returncode == expected_exit and json.loads(stdout)["valid"], 'Restarted host did not produce a graceful exit.')
         finally:
             if host.poll() is None:
@@ -118,7 +138,7 @@ def verify(dotnet):
         require(final["status"] == "Paused" and final["nextSlot"] == paused["nextSlot"], 'State changed after graceful shutdown.')
         invoke("session", "cancel", database, "host-check-a", "discard-pending")
         invoke("session", "release", database, "host-check-a")
-    signal_check = "Windows console signals not tested" if os.name == "nt" else "SIGINT checked"
+    signal_check = "Windows CTRL_BREAK checked" if os.name == "nt" else "SIGINT checked"
     print(f"Host verification passed: ownership, live controls, peer completion, pause persistence, process restart, graceful control stop; {signal_check}.")
 
 

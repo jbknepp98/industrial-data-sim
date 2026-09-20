@@ -7,9 +7,9 @@ using IndustrialDataSim.Core.Simulation;
 namespace IndustrialDataSim.Cli;
 
 /// <summary>
-/// CLI boundary shared by offline validation and simulation-only lifecycle commands.
+/// CLI boundary for offline validation, simulation lifecycle and explicit production commands.
 /// Keeping it separate from process startup lets tests exercise the actual JSON
-/// and exit codes. Lifecycle commands reserve tags locally; none contact a server.
+/// and exit codes. Only the production command group can authenticate or contact a Historian.
 /// </summary>
 public static partial class CliApplication
 {
@@ -24,6 +24,7 @@ public static partial class CliApplication
     /// </summary>
     public static int Run(string[] args, TextWriter output, CancellationToken stop = default)
     {
+        if (args.Length > 0 && args[0] == "production") return RunProductionCommand(args, output, stop);
         if (args.Length > 0 && args[0] is "host" or "live") return RunHostCommand(args, output, stop);
         if (args.Length > 0 && args[0] == "session") return RunSessionCommand(args, output, stop);
         if (args.Length != 2 || args[0] is not ("validate-dataset" or "validate-session" or "validate-simulation" or "dry-run"))

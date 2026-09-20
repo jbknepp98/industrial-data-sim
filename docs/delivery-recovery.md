@@ -8,8 +8,9 @@ cannot verify submitted counts. User feedback verifies whether the resulting
 simulation is what was intended. Automated checks must still look for arriving
 data, non-null current values, and expected changes as indicators of success.
 We no longer require a durable per-batch acceptance guarantee before implementing
-the production adapter. The adapter remains unimplemented; this decision changes
-the plan, not the existing simulation-only executable or its database semantics.
+the production adapter. The first adapter is now implemented in a separate production mode; see
+[production delivery v1](production-delivery-v1.md). Simulation acknowledgements
+retain their synthetic meaning.
 
 The owner also confirmed first-in-wins per tag/timestamp: a duplicate is ignored
 even when its value or quality differs. This is owner-supplied contract information;
@@ -29,8 +30,7 @@ uncertain batch or proof that its intended value replaced an existing point.
 | Arrival observed | Reads found relevant session-tag data in the submitted simulated range. This is partial observational evidence. |
 | Intended behavior reviewed | The user reviewed the output/pattern and supplied feedback. This remains separate from transport progress and does not authorize replay. |
 
-`Published` and the observation/review fields are design terms, not implemented
-schema states. The current fake-only runtime's `Acknowledged` state retains its
+`Published` and the observation/review fields are implemented in schema version 6. The current fake-only runtime's `Acknowledged` state retains its
 synthetic whole-batch meaning. Do not relabel or reuse that database as production
 evidence. A production schema/mode boundary must distinguish the two explicitly.
 

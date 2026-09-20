@@ -127,7 +127,7 @@ public class SessionProgressTests
         Assert.Equal(1L, command.ExecuteScalar());
     }
 
-    private static void Downgrade(string database) => Edit(database, "ALTER TABLE sessions DROP COLUMN cancellation_mode; DROP TABLE session_tag_progress; PRAGMA user_version=2;");
+    private static void Downgrade(string database) => Edit(database, "DROP TABLE production_preflight; DROP TABLE observations; ALTER TABLE tags DROP COLUMN published_ticks; ALTER TABLE session_tag_progress DROP COLUMN published_ticks; DROP TABLE archives; ALTER TABLE sessions DROP COLUMN archive_id; ALTER TABLE sessions DROP COLUMN cancellation_mode; DROP TABLE session_tag_progress; PRAGMA user_version=2;");
     private static SqliteConnection Open(string path)
     {
         var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
