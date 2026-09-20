@@ -829,3 +829,7 @@ verifies the warning and normal reply. No timeout or retry policy was changed.
 Six instrumented minute-long runs, an ordinary-CLI comparison and two armed
 profiling runs completed. Neither profiling window triggered a native sample.
 The cause remains open; see [diagnostic evidence and reproduction](control-latency-diagnosis-2026-09-20.md).
+
+Checkpoint `3fdc1a5` passed the full three-platform CI matrix with 522 .NET tests
+and 14 Python tests; see [verification evidence](verification.md). No stack-level
+root cause or latency fix is claimed.

@@ -75,6 +75,8 @@ outliers. The collector is saved so the same bounded experiment can be repeated.
 - A controlled delayed-execution test checks that the normal response still works
   and the warning explains troubleshooting and prohibits inferred replay.
 
+The `3fdc1a5` checkpoint passed 522 .NET tests, 14 Python tests and the full
+Linux/macOS/Windows workflow ([CI run 35524198322](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35524198322)).
 CI exercises the diagnostic load smoke; normal host process verification continues
 to exercise the standard CLI. See [verification](verification.md) for the final
 test evidence. The [capacity guide](capacity-and-retention.md) provides reproduction

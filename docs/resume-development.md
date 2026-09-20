@@ -32,11 +32,12 @@ not part of the source checkpoint. Preserve local storage through shutdown.
 
 ## Resume here
 
-Latest increment: 521 local .NET tests and 12 Python tests pass. A tracked
+Latest increment: 522 .NET tests and 14 Python tests pass locally and across all
+three CI platforms at `3fdc1a5`. A tracked
 separate-process capacity probe measured 0/20/80 completed sessions and four active
 constant/sequence sessions over minute-long windows. The worker now skips terminal
 execution turns without removing history. A timed-host test collection is isolated
-after a Windows CI pipe-connect timeout. All three platforms passed at `141a031`; see [verification evidence](verification.md).
+after a Windows CI pipe-connect timeout. See [verification evidence](verification.md).
 **Next: capture runtime/OS evidence during a multi-second control outlier before archive work.**
 The [September 20 diagnosis](control-latency-diagnosis-2026-09-20.md) reproduced
 a 3.3-second request with 3.2 seconds of reply wait and a 5.1-second ordinary-CLI request. Phase timing and
