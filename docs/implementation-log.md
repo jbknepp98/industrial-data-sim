@@ -833,3 +833,23 @@ The cause remains open; see [diagnostic evidence and reproduction](control-laten
 Checkpoint `3fdc1a5` passed the full three-platform CI matrix with 522 .NET tests
 and 14 Python tests; see [verification evidence](verification.md). No stack-level
 root cause or latency fix is claimed.
+
+## Diagnostic review repairs — September 20, 2026
+
+Closed the profiler launch blind spot by recording launch time separately and
+charging it against the total command deadline. The report explicitly identifies
+launch intervals that a later stack sample cannot capture. Failed/interrupted
+runs now retain bounded, selected evidence and finalize sampler results, with
+safe troubleshooting guidance if evidence cannot be written.
+
+A real failure smoke exposed an additional wrong-directory bug in log collection.
+Both readers now match the CLI's `logs/state.db/` layout. Earlier empty warning
+results were invalid as evidence; the diagnosis document explicitly corrects that
+claim without discarding valid client timings. The restart guide now presents one
+current handoff, linking dated history instead of mixing completed work with next
+steps. No production behavior, timeout policy or replay policy changed.
+
+Local checks: 20 Python tests passed. A successful five-second diagnostic run read
+one host log; an injected timeout on a real synthetic host retained 15 events and
+the failing stage. The profiler smoke recorded launch timings for nine requests.
+The intermittent multi-second latency remains unresolved.

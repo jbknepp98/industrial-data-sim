@@ -93,3 +93,11 @@ The first full hosted matrix passed on September 19, 2026 for `ee058f4`: [run 35
 Latest code checkpoint `141a031` passed the complete Ubuntu/macOS/Windows matrix: [run 35453423029](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35453423029). Each platform passed 521 .NET tests, 12 Python tests, schema/oracle checks, process verification, the loaded-control smoke, and the original capacity smoke. The preceding two Windows runs had the timed-host connect failure; the isolated collection passed here. This does not establish latency guarantees under arbitrary host or machine load.
 
 The September 20 diagnostic checkpoint `3fdc1a5` passed Linux, macOS and Windows: [CI run 35524198322](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35524198322). Each platform passed 522 .NET tests, 14 Python tests, the schema/oracle checks, standard host process verification, diagnostic load smoke and capacity smoke. Native profiling is macOS-only and was exercised locally; neither armed window triggered a stack sample.
+
+The diagnostic review repairs on September 20 passed locally: 522 .NET tests and
+20 Python tests, including launch-delay accounting, timeout cleanup, safe partial
+evidence and sampler finalization. Real synthetic host checks verified successful
+log discovery and event retention after an injected command timeout. These checks
+do not reproduce or resolve the intermittent control delay. The corrected
+[diagnosis](control-latency-diagnosis-2026-09-20.md) retracts earlier empty-log
+inferences caused by the collector's directory error.

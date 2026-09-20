@@ -190,6 +190,31 @@ may already have removed earlier events. Absence of a retained warning cannot
 prove a phase was fast. Request start timestamps help correlate events; durations
 use monotonic clocks, while timestamps use wall time and may reflect clock changes.
 
+## Failed-run evidence
+
+Failed or interrupted synthetic measurements save `report.json` in a unique,
+ignored `.tools/capacity-evidence-*` directory; the error names that directory.
+Profiling uses its `.tools/control-profile-*` directory on success and failure.
+Reports identify status, failing stage, a safe error code and troubleshooting
+action. No mutation is automatically retried. Evidence-write failure emits its
+own warning without replacing the original failure.
+
+The collector preserves the latest 200 operation records, 200 diagnostic timing
+samples and 100 selected host events before temporary state is removed. It reads
+at most five rotating log files, taking at most the final 128 KiB of each. Omission
+counters, malformed-line counts and `logFilesRead` expose collection limits.
+Free-text logs, command arguments, raw exceptions, stdout, configuration and
+values are not copied into the report. Selected events contain only event codes,
+validated timestamps and recognized slow-operation phase/duration fields.
+The JSON report is capped at 256 KiB; exceeding that cap preserves failure context
+with `evidenceTruncated`, rather than writing partial JSON. Native stack files
+remain local and require review before sharing.
+
+Both log readers now use `logs/state.db/`, matching the synthetic database name.
+`slowHostLogFilesRead` makes successful-run collection visible. Earlier empty log
+results used the wrong directory and cannot establish absence of warnings; see
+[the corrected diagnosis](control-latency-diagnosis-2026-09-20.md).
+
 ## Retention design boundary
 
 Pending, Sending and Uncertain work must retain its payload and recovery context.

@@ -14,6 +14,7 @@ import sqlite3
 import subprocess
 import tempfile
 import time
+from diagnostic_evidence import DiagnosticEvidence, synthetic_log_directory
 
 
 def require(condition, code, message):
@@ -77,7 +78,18 @@ def audit_snapshot(database):
             "points": points, "retainedPayloadBatches": payloads or 0, "attempts": attempts}
 
 
-def measure(dotnet, history_count, seconds, diagnose=False, command_runner=None, host_started=None):
+def measure(dotnet, history_count, seconds, diagnose=False, command_runner=None, host_started=None, evidence=None):
+    evidence = evidence or DiagnosticEvidence()
+    try:
+        result = _measure(dotnet, history_count, seconds, diagnose, command_runner, host_started, evidence)
+        evidence.report["status"] = "complete"
+        return result
+    except BaseException as error:
+        evidence.fail(error)
+        raise
+
+
+def _measure(dotnet, history_count, seconds, diagnose, command_runner, host_started, evidence):
     root = Path(__file__).resolve().parents[1]
     dll = root / "src/IndustrialDataSim.Cli/bin/Release/net10.0/IndustrialDataSim.Cli.dll"
     require(dll.exists(), "capacity.build_missing", "Build IndustrialDataSim.slnx in Release before measuring host capacity.")
@@ -90,13 +102,19 @@ def measure(dotnet, history_count, seconds, diagnose=False, command_runner=None,
 
     def invoke(*arguments, timeout=40):
         start = time.monotonic()
+        operation = ".".join(arguments[:2])
+        evidence.report["stage"] = operation
         started_unix_ms = time.time() * 1000
         diagnostic = diagnose and arguments[:2] == ("live", "list")
         invocation = [dotnet, str(diagnostic_dll), arguments[2]] if diagnostic else command + list(arguments)
-        result = (command_runner(invocation, timeout) if command_runner else
-                  subprocess.run(invocation, capture_output=True, text=True, timeout=timeout))
+        try:
+            result = (command_runner(invocation, timeout) if command_runner else
+                      subprocess.run(invocation, capture_output=True, text=True, timeout=timeout))
+        except BaseException:
+            evidence.operation(operation, (time.monotonic() - start) * 1000, "failed")
+            raise
         elapsed_ms = (time.monotonic() - start) * 1000
-        operation = ".".join(arguments[:2])  # Fixed command words only, never paths or configuration.
+        evidence.operation(operation, elapsed_ms, "returned" if result.returncode == 0 else "nonzero-exit")
         require(result.returncode == 0, "capacity.command_failed",
                 f"{operation} did not return success. Run the host verification suite and inspect local storage/pipe permissions. This probe will not retry the operation.")
         reply = json.loads(result.stdout)
@@ -105,10 +123,12 @@ def measure(dotnet, history_count, seconds, diagnose=False, command_runner=None,
             # Residual includes process launch/JIT before Main, output encoding
             # and process exit; it is not a pure startup measurement.
             timing_samples.append(control_timing_sample(timing, elapsed_ms) | {"startedUnixMs": started_unix_ms})
+            evidence.report["controlTimingSamples"] = timing_samples[-200:]
+            evidence.report["controlTimingSamplesOmitted"] = max(0, len(timing_samples) - 200)
         require(reply["valid"], "capacity.invalid_reply", f"{operation} returned an invalid response. Run the CLI tests before repeating this probe.")
         return reply["result"], elapsed_ms
 
-    with tempfile.TemporaryDirectory(prefix="sim-host-capacity-") as folder:
+    with tempfile.TemporaryDirectory(prefix="sim-host-capacity-") as folder, evidence.retain_logs(folder):
         database = Path(folder) / "state.db"
         model_path = Path(folder) / "model.json"
         for index in range(history_count):
@@ -133,8 +153,10 @@ def measure(dotnet, history_count, seconds, diagnose=False, command_runner=None,
         # Files avoid blocking the child on full stdout/stderr pipes. Runtime
         # diagnostics already rotate; only the terminal result goes to stdout.
         with (Path(folder) / "host-output.txt").open("w+") as output, (Path(folder) / "host-errors.txt").open("w+") as errors:
+            evidence.report["stage"] = "host.launch"
             host = subprocess.Popen(command + ["host", "run", str(database)], stdout=output, stderr=errors)
             try:
+                evidence.report["stage"] = "host.readiness"
                 if host_started:
                     host_started(host.pid)
                 deadline = time.monotonic() + 15
@@ -175,6 +197,7 @@ def measure(dotnet, history_count, seconds, diagnose=False, command_runner=None,
                         "capacity.pause_changed", "Paused state advanced after acknowledgement. Inspect host pause-boundary tests before continuing development.")
                 _, resume_ms = invoke("live", "resume", str(database), active_ids[0])
                 _, stop_ms = invoke("host", "stop", str(database))
+                evidence.report["stage"] = "host.exit_wait"
                 host.wait(timeout=15)
                 require(host.returncode == 0, "capacity.stop_failed", "Host did not exit successfully after control stop. Inspect graceful-shutdown tests; no command is retried.")
                 output.seek(0)
@@ -184,9 +207,11 @@ def measure(dotnet, history_count, seconds, diagnose=False, command_runner=None,
                     host.kill()
                     host.wait(timeout=15)
 
+        evidence.report["stage"] = "audit.snapshot"
         final = audit_snapshot(database)
         slow_operations = []
-        for log in sorted((Path(folder) / "logs").glob("runtime*.jsonl")):
+        log_files = sorted(synthetic_log_directory(folder).glob("runtime*.jsonl"))[:5]
+        for log in log_files:
             for line in log.read_text().splitlines():
                 entry = json.loads(line)
                 if entry.get("eventCode") == "host.slow_operation":
@@ -200,6 +225,7 @@ def measure(dotnet, history_count, seconds, diagnose=False, command_runner=None,
                 "observedSeconds": observed_seconds, "liveListLatency": summarize_latency(latencies),
                 "controlTimingSamples": timing_samples,
                 "slowHostOperations": slow_operations[:100], "slowHostOperationsOmitted": max(0, len(slow_operations) - 100),
+                "slowHostLogFilesRead": len(log_files),
                 "pauseMs": pause_ms, "resumeMs": resume_ms, "stopReplyMs": stop_ms,
                 "observedCandidateSlotAdvance": sum(last_positions.values()) - sum(first_positions.values()),
                 "maximumSampledStorageBytes": maximum_storage, "afterStop": final}
@@ -214,6 +240,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     try:
         print(json.dumps(measure(args.dotnet, args.history, args.seconds, args.diagnose), indent=2))
+    except KeyboardInterrupt:
+        parser.exit(130, "capacity.interrupted: Synthetic run interrupted; inspect saved diagnostic evidence before rerunning. No mutation was retried.\n")
     except RuntimeError as error:
         parser.exit(1, f"{error}\n")
     except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, subprocess.TimeoutExpired):

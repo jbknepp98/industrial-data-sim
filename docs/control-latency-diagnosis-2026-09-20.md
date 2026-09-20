@@ -36,15 +36,19 @@ not establish two independent root causes.
 Added bounded `host.slow_operation` warnings for worker rounds, control queue
 wait/execution, reply handoff and reply writes exceeding one second. Three further
 instrumented runs measured 323 requests with maxima of 98.3, 67.9 and 197.4 ms.
-No slow-host warnings were retained. Those runs did not reproduce the earlier
-delay, so they cannot clear the host or establish that instrumentation fixed it.
-Retained rotating logs can also omit older evidence; absence is not proof.
+Those runs did not reproduce the earlier delay, so they cannot clear the host
+or establish that instrumentation fixed it.
 
 A separate ordinary-CLI comparison reproduced a **5147.3 ms** maximum among
-99 requests (p50 55.8 ms, p95 63.4 ms), with no retained slow-host warnings.
-Thus switching diagnostic clients did not explain away the original symptom.
-No warning only limits what was observed in the instrumented host phases; client
-scheduling and uninstrumented intervals remain possible.
+99 requests (p50 55.8 ms, p95 63.4 ms). Switching diagnostic clients did not
+explain away the original symptom.
+
+**Review correction:** the original collector searched `logs/` instead of
+`logs/state.db/`. Its empty event lists provide no evidence about host warnings;
+the temporary logs from those runs are no longer available. Client timings above
+remain valid. Both log readers now use the actual directory, and reports expose
+the number of log files read. A real host failure smoke retained 15 events from
+one log file after the correction. This verifies collection, not the latency cause.
 
 ## Bounded native profiling
 
@@ -57,6 +61,14 @@ Profiling perturbs timing: these results are diagnostic, not capacity benchmarks
 Reports and traces remain in a uniquely named ignored `.tools/control-profile-*`
 directory; native process metadata must be reviewed before any public sharing.
 The report distinguishes successful trace writes from failed sampling attempts.
+Each inventory record now includes `launchMs` and `totalMs`; launch time counts
+toward the command deadline. A launch exceeding 500 ms sets
+`launchCaptureUnavailable`: Python cannot sample the child until `Popen` returns,
+and a later sample cannot reconstruct that interval. `captureStatus` distinguishes
+a started capture, an exited client, a capture limit, and a sampling failure.
+Process creation itself cannot be interrupted by this Python deadline. Failed
+and interrupted runs also retain a partial report and sampler manifest; see the
+[bounded evidence rules](capacity-and-retention.md#failed-run-evidence).
 Unsupported platforms receive guidance to use portable `--diagnose` instead.
 
 The first armed profiling run made 108 requests with a 68.9 ms maximum and did

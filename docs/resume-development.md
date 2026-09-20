@@ -1,93 +1,72 @@
-# Restart after the planned shutdown
+# Current development handoff
 
-Development resumed after the shutdown checkpoint; logging and audit R1–R5
-repairs and R6 are complete, with the listed documentation drift corrected.
-No production Historian writer or resident simulator service has been started
-by these increments. No Historian writes were performed. There is no requirement
-to leave a terminal or development process running to preserve this work.
+This page describes current status and the next work. Historical shutdown notes,
+repair milestones and test counts belong in the [implementation log](implementation-log.md)
+and dated [audit](audit-2026-09-19.md), rather than serving as competing instructions.
 
-## Completed and verified
+## Implemented
 
-- Optional operational logging: readable explanations/actions, bounded rotating
-  files, safe context, and isolation of logger failures from durable operations.
-- R1: explicit RetryGeneration after an oversized-point failure, with checked
-  limits, immutable configuration, retained ownership, and no unresolved writes.
-- R2: corrected the example driver to account for delivery progress.
-- R3: schema version 2 indexes only outstanding batches for queue accounting.
-  Existing version 1 databases upgrade transactionally.
-- R4: configuration-integrity failures stop the affected session while eligible
-  peers continue; storage failures still propagate.
-- R5: generation errors identify tag index, candidate slot, and sample time.
-- R6: independent session progress survives release/reuse; schema version 3
-  reconstructs old reports transactionally from retained model/batch metadata.
-- Previous clean-export verification: 520 Release .NET tests passed.
-  Details are recorded in [the September 19 audit](audit-2026-09-19.md)
-  and the implementation log, including continuous-host process checks. Repository-visible secret-marker/local-link and whitespace
-  checks passed after the latest increment.
+- Deterministic finite generators, sequences, local Boolean triggers and pause/continue gates.
+- SQLite checkpoints, bounded queues, disjoint tag ownership, cancellation,
+  recovery and separate per-session progress. Uncertain work is never replayed.
+- A fake Historian, bounded worker, continuous foreground host and local live controls.
+- Bounded operational logging with actionable errors and slow-host observations.
+- Linux/macOS/Windows CI, reproducible capacity and history-growth measurements,
+  a read-only control timing probe and bounded macOS native profiling.
+- Diagnostic reports now retain selected evidence on failure. Process-launch
+  time is measured separately; missed launch capture opportunities are explicit.
 
-These increments use a sealed fake Historian. The owner has selected blind publishing with arrival indicators and user review;
-see docs/delivery-recovery.md. Production delivery is not yet implemented. Local configuration,
-certificates, state databases, tooling, and logs remain ignored by Git; they are
-not part of the source checkpoint. Preserve local storage through shutdown.
+The latest verified code checkpoints and exact test counts are recorded in the
+[verification guide](verification.md). The older clean-source-export run is
+historical evidence, not a claim that every subsequent increment was re-exported.
 
-## Resume here
+## Current limitation and next step
 
-Latest increment: 522 .NET tests and 14 Python tests pass locally and across all
-three CI platforms at `3fdc1a5`. A tracked
-separate-process capacity probe measured 0/20/80 completed sessions and four active
-constant/sequence sessions over minute-long windows. The worker now skips terminal
-execution turns without removing history. A timed-host test collection is isolated
-after a Windows CI pipe-connect timeout. See [verification evidence](verification.md).
-**Next: capture runtime/OS evidence during a multi-second control outlier before archive work.**
 The [September 20 diagnosis](control-latency-diagnosis-2026-09-20.md) reproduced
-a 3.3-second request with 3.2 seconds of reply wait and a 5.1-second ordinary-CLI request. Phase timing and
-bounded slow-host warnings are implemented, but the underlying cause remains
-unconfirmed. Two armed native profiling windows did not reproduce the delay.
-The scheduler optimization improved observed progress but did not eliminate those
-outliers. No Historian writes, archival or deletion were introduced.
+multi-second control delays. The underlying runtime/OS cause remains unconfirmed.
+The diagnostic-helper fixes preserve better evidence; they are not a latency fix.
+Next, capture a slow occurrence with the repaired tooling and correlate launch,
+client and host timing with any available native traces. Do not infer that an
+uncaptured interval was fast or increase timeouts without evidence.
 
-The next verification checkpoint adds a cross-platform CI workflow and a
-[reproducible capacity baseline/retention design](capacity-and-retention.md).
-Local build, 520 .NET tests, eight Python tests, schema/oracle checks, host smoke,
-and twelve capacity runs passed. The hosted Linux/macOS/Windows matrix also passed
-for `ee058f4` ([CI evidence](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35452466245)).
-Archive/deletion and sustained capacity testing remain
-future work; the production adapter follows the approved blind-publish policy.
+Archive/deletion, hours/days-long soak tests, Windows console-signal testing,
+richer typed conditions and the production adapter remain unfinished. The
+[blind-publish policy](delivery-recovery.md) is approved: publish completion,
+arrival indicators and user feedback are separate evidence. Per-point receipts
+are not required. Real authentication, HTTP writes and arrival monitoring still
+need implementation and a separate production state boundary.
 
-1. Read AGENTS.md, docs/audit-runtime-2026-09-18.md and its follow-up sections,
-   docs/durable-runtime-v1.md, and docs/runtime-logging.md.
-2. Inspect Git status before editing; preserve any newer user changes.
-3. Review the completed audit repairs and inspect uncommitted work before any
-   commit/push; R4, R6, cancellation, and the session CLI were completed after the shutdown checkpoint.
-4. Runtime cancellation, lifecycle CLI, and bounded foreground worker are implemented
-   (docs/session-cancellation.md, docs/session-cli.md, docs/simulation-worker.md).
-   The [continuous host](continuous-host.md) now supports same-user local live
-   controls. Review [the September 19 audit](audit-2026-09-19.md) before the next
-   feature increment. Next model work should define general typed conditions and
-   richer sequence behavior in small tested increments. The owner-approved blind-
-   publish contract now permits production adapter/arrival-monitor implementation;
-   preserve a separate production state boundary and no automatic replay.
-5. Preserve readability, actionable errors, logging, and incremental verification.
-6. Continue docs/phase-1-plan.md: session controls/worker, remaining conditions and
-   patterns, blind-publish adapter and arrival monitoring, acceptance and capacity
-   testing, and final code/documentation review. Work in small tested increments.
+## Resuming work safely
 
-Do not replay Uncertain batches or force acknowledgement. Recovery uses SQLite,
-not logs or missing retained samples. No automatic job restart is configured by
-this project. Existing credentials should remain local and must not be repeated
-in public-facing documents, logs, or commits.
+1. Read [AGENTS.md](../AGENTS.md), inspect Git status and preserve newer user changes.
+2. Review the current [runtime contract](durable-runtime-v1.md),
+   [host contract](continuous-host.md), [logging](runtime-logging.md) and the
+   diagnostic report before changing those components.
+3. Work in small increments with useful errors, appropriate tests and matching docs.
+   Follow the remaining [Phase 1 plan](phase-1-plan.md).
+4. Preserve local configuration and state through shutdown. Do not delete owner
+   files, reset Uncertain batches or infer recovery authority from logs.
 
-## Verification command
+Development and CI use a sealed fake Historian. No production service or automatic
+job restart is configured by this project. Credentials, certificates, state,
+profiles and logs remain local and ignored; never include them in public commits.
+Stop a running host gracefully before shutdown. Restart it explicitly against
+its existing database; do not re-admit existing sessions.
 
-With the existing project-local SDK/cache available:
+## Verification
+
+With the project-local SDK/cache already restored:
 
 ```sh
 DOTNET_CLI_HOME="$PWD/.tools/cli-home" NUGET_PACKAGES="$PWD/.tools/nuget" \
-  .tools/dotnet/dotnet test IndustrialDataSim.slnx --configuration Release \
+  .tools/dotnet/dotnet build IndustrialDataSim.slnx --configuration Release \
   --no-restore --disable-build-servers
+DOTNET_CLI_HOME="$PWD/.tools/cli-home" NUGET_PACKAGES="$PWD/.tools/nuget" \
+  .tools/dotnet/dotnet test IndustrialDataSim.slnx --configuration Release \
+  --no-build --no-restore
+python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-If caches are absent, restore dependencies first with a .NET 10 SDK. No live
-Historian is needed for these tests. The new R1 recovery boundary tests use
-injected exceptions and reopen; existing process recovery tests kill child
-processes at durable boundaries.
+Restore dependencies first if caches are absent. Building the entire solution is
+necessary for standalone diagnostic tools. See the verification guide for schema,
+host-process and capacity checks; no Historian connection is required.
