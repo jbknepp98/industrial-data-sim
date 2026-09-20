@@ -147,3 +147,17 @@ Uses the standard [.NET logging abstractions](https://learn.microsoft.com/en-us/
 A future host can supply its own provider without changing the runtime state
 contract. The [continuous host](continuous-host.md) uses the same sink. Production
 delivery and centralized collection remain future work.
+
+## Slow host operations
+
+`host.slow_operation` is a Warning emitted when a worker round, control queue
+wait, control execution, reply handoff or reply write exceeds one second. The
+message identifies the phase and elapsed milliseconds and recommends comparing
+client timings, workload, disk activity and process scheduling. It never records
+request contents or values. A slow response does not authorize mutation replay.
+
+This threshold is diagnostic, not a timeout or service guarantee. Phases can
+overlap across tasks, and logging/scheduling overhead can fall outside a measured
+phase; do not add unrelated event durations to reconstruct one request. Existing
+rotation and logger-failure isolation apply. Ordinary rounds and idle polling
+do not emit these warnings.

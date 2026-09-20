@@ -17,6 +17,35 @@ public sealed class HostTimingCollection;
 public class ContinuousHostTests
 {
     [Fact]
+    public async Task SlowControlExecutionLogsTroubleshootingWithoutChangingReply()
+    {
+        using var files = new RuntimeFixture();
+        string logFolder = Path.Combine(files.Folder, "logs");
+        using var logger = new RuntimeFileLogger(logFolder);
+        using var runtime = new DurableRuntime(files.Database, logger: logger);
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        string pipe = LocalControlProtocol.PipeName(files.Database);
+        var host = new ContinuousSimulationHost(runtime, pipe, request =>
+        {
+            if (request.Action == "host-status") Thread.Sleep(1100);
+            return CliApplication.ExecuteLiveRequest(runtime, request);
+        });
+        var running = host.RunAsync(stop.Token);
+        try
+        {
+            Result(await CliApplication.SendControlAsync(pipe, new(1, "host-status"), stop.Token));
+            Result(await CliApplication.SendControlAsync(pipe, new(1, "stop"), stop.Token));
+            await running.WaitAsync(TimeSpan.FromSeconds(5));
+            var entries = File.ReadLines(Path.Combine(logFolder, "runtime.jsonl"))
+                .Select(line => JsonSerializer.Deserialize<JsonElement>(line)).ToArray();
+            var entry = Assert.Single(entries, item => item.GetProperty("eventCode").GetString() == "host.slow_operation" &&
+                item.GetProperty("message").GetString()!.Contains("control execution"));
+            Assert.Contains("does not authorize repeating", entry.GetProperty("action").GetString());
+        }
+        finally { stop.Cancel(); await running; }
+    }
+
+    [Fact]
     public async Task DisconnectedMutationIsNotRetriedAndIdleLogsStayBounded()
     {
         using var files = new RuntimeFixture();

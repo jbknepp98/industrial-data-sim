@@ -811,3 +811,21 @@ test amid parallel bulk SQLite tests. Isolated the host timing collection instea
 of changing production deadlines. The final `141a031` checkpoint passed all three hosted platforms; evidence is in
 the verification guide. No deployment credentials, production writes or archive/delete
 behavior were added.
+
+## Control latency diagnosis — September 20, 2026
+
+Added a read-only timing client compiled with the actual local protocol, optional
+diagnostic measurements, consistency checks and bounded native profiling for
+synthetic macOS child processes. Reproduced 3.3-second diagnostic and 5.1-second
+ordinary-CLI requests. One captured delay was mostly reply wait; another mostly
+process overhead. Neither observation alone identifies the runtime/OS cause.
+
+Added `host.slow_operation` warnings for worker rounds, queue wait/execution,
+reply handoff and reply writes exceeding one second. Warnings contain phase and
+milliseconds with troubleshooting guidance, never request data. Existing bounded
+rotation and logger failure isolation apply. A controlled delayed-execution test
+verifies the warning and normal reply. No timeout or retry policy was changed.
+
+Six instrumented minute-long runs, an ordinary-CLI comparison and two armed
+profiling runs completed. Neither profiling window triggered a native sample.
+The cause remains open; see [diagnostic evidence and reproduction](control-latency-diagnosis-2026-09-20.md).

@@ -37,7 +37,11 @@ separate-process capacity probe measured 0/20/80 completed sessions and four act
 constant/sequence sessions over minute-long windows. The worker now skips terminal
 execution turns without removing history. A timed-host test collection is isolated
 after a Windows CI pipe-connect timeout. All three platforms passed at `141a031`; see [verification evidence](verification.md).
-**Next: diagnose occasional multi-second live-control outliers before archive work.**
+**Next: capture runtime/OS evidence during a multi-second control outlier before archive work.**
+The [September 20 diagnosis](control-latency-diagnosis-2026-09-20.md) reproduced
+a 3.3-second request with 3.2 seconds of reply wait and a 5.1-second ordinary-CLI request. Phase timing and
+bounded slow-host warnings are implemented, but the underlying cause remains
+unconfirmed. Two armed native profiling windows did not reproduce the delay.
 The scheduler optimization improved observed progress but did not eliminate those
 outliers. No Historian writes, archival or deletion were introduced.
 

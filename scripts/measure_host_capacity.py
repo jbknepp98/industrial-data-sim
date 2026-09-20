@@ -77,7 +77,7 @@ def audit_snapshot(database):
             "points": points, "retainedPayloadBatches": payloads or 0, "attempts": attempts}
 
 
-def measure(dotnet, history_count, seconds, diagnose=False):
+def measure(dotnet, history_count, seconds, diagnose=False, command_runner=None, host_started=None):
     root = Path(__file__).resolve().parents[1]
     dll = root / "src/IndustrialDataSim.Cli/bin/Release/net10.0/IndustrialDataSim.Cli.dll"
     require(dll.exists(), "capacity.build_missing", "Build IndustrialDataSim.slnx in Release before measuring host capacity.")
@@ -90,9 +90,11 @@ def measure(dotnet, history_count, seconds, diagnose=False):
 
     def invoke(*arguments, timeout=40):
         start = time.monotonic()
+        started_unix_ms = time.time() * 1000
         diagnostic = diagnose and arguments[:2] == ("live", "list")
         invocation = [dotnet, str(diagnostic_dll), arguments[2]] if diagnostic else command + list(arguments)
-        result = subprocess.run(invocation, capture_output=True, text=True, timeout=timeout)
+        result = (command_runner(invocation, timeout) if command_runner else
+                  subprocess.run(invocation, capture_output=True, text=True, timeout=timeout))
         elapsed_ms = (time.monotonic() - start) * 1000
         operation = ".".join(arguments[:2])  # Fixed command words only, never paths or configuration.
         require(result.returncode == 0, "capacity.command_failed",
@@ -102,7 +104,7 @@ def measure(dotnet, history_count, seconds, diagnose=False):
             timing = reply["timings"]
             # Residual includes process launch/JIT before Main, output encoding
             # and process exit; it is not a pure startup measurement.
-            timing_samples.append(control_timing_sample(timing, elapsed_ms))
+            timing_samples.append(control_timing_sample(timing, elapsed_ms) | {"startedUnixMs": started_unix_ms})
         require(reply["valid"], "capacity.invalid_reply", f"{operation} returned an invalid response. Run the CLI tests before repeating this probe.")
         return reply["result"], elapsed_ms
 
@@ -133,6 +135,8 @@ def measure(dotnet, history_count, seconds, diagnose=False):
         with (Path(folder) / "host-output.txt").open("w+") as output, (Path(folder) / "host-errors.txt").open("w+") as errors:
             host = subprocess.Popen(command + ["host", "run", str(database)], stdout=output, stderr=errors)
             try:
+                if host_started:
+                    host_started(host.pid)
                 deadline = time.monotonic() + 15
                 while True:
                     probe = subprocess.run(command + ["host", "status", str(database)], capture_output=True, timeout=5)
@@ -181,6 +185,12 @@ def measure(dotnet, history_count, seconds, diagnose=False):
                     host.wait(timeout=15)
 
         final = audit_snapshot(database)
+        slow_operations = []
+        for log in sorted((Path(folder) / "logs").glob("runtime*.jsonl")):
+            for line in log.read_text().splitlines():
+                entry = json.loads(line)
+                if entry.get("eventCode") == "host.slow_operation":
+                    slow_operations.append({"timestampUtc": entry["timestampUtc"], "message": entry["message"]})
         # Resume and stop can leave Pending work, so payloads here are reported,
         # not required to be zero. Only the finished-history snapshot must prune.
         return {"schemaVersion": 1, "mode": "simulation-only", "historySessions": history_count,
@@ -189,6 +199,7 @@ def measure(dotnet, history_count, seconds, diagnose=False):
                 "patterns": ["constant", "sequence"], "requestedSeconds": seconds,
                 "observedSeconds": observed_seconds, "liveListLatency": summarize_latency(latencies),
                 "controlTimingSamples": timing_samples,
+                "slowHostOperations": slow_operations[:100], "slowHostOperationsOmitted": max(0, len(slow_operations) - 100),
                 "pauseMs": pause_ms, "resumeMs": resume_ms, "stopReplyMs": stop_ms,
                 "observedCandidateSlotAdvance": sum(last_positions.values()) - sum(first_positions.values()),
                 "maximumSampledStorageBytes": maximum_storage, "afterStop": final}

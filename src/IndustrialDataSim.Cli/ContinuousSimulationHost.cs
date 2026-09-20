@@ -1,4 +1,6 @@
 using System.IO.Pipes;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Threading.Channels;
 using IndustrialDataSim.Runtime;
@@ -13,7 +15,8 @@ namespace IndustrialDataSim.Cli;
 internal sealed class ContinuousSimulationHost(DurableRuntime runtime, string pipeName,
     Func<ControlRequest, ControlResponse> execute)
 {
-    private sealed record Pending(ControlRequest Request, TaskCompletionSource<ControlResponse> Completion);
+    private sealed record PreparedReply(ControlResponse Response, long ReadyAt);
+    private sealed record Pending(ControlRequest Request, long ReceivedAt, TaskCompletionSource<PreparedReply> Completion);
     private readonly Channel<Pending> commands = Channel.CreateBounded<Pending>(1);
 
     internal async Task RunAsync(CancellationToken stop)
@@ -36,8 +39,11 @@ internal sealed class ContinuousSimulationHost(DurableRuntime runtime, string pi
                 {
                     // Once queued, a command may commit even if its client has left.
                     // Completing the reply never retries or rolls back a mutation.
+                    ReportDelay("control queue wait", command.ReceivedAt);
+                    long executionStarted = Stopwatch.GetTimestamp();
                     var response = execute(command.Request);
-                    command.Completion.TrySetResult(response);
+                    ReportDelay("control execution", executionStarted);
+                    command.Completion.TrySetResult(new(response, Stopwatch.GetTimestamp()));
                     if (command.Request.Action == "stop" && response.ExitCode == 0)
                     {
                         // Let the stop acknowledgement leave before closing the pipe.
@@ -45,7 +51,9 @@ internal sealed class ContinuousSimulationHost(DurableRuntime runtime, string pi
                         break;
                     }
                 }
+                long roundStarted = Stopwatch.GetTimestamp();
                 var result = await worker.RunRoundAsync(lifetime.Token);
+                ReportDelay("worker round", roundStarted);
                 if (result.StopReason != previous)
                 {
                     runtime.WorkerEvent("host.progress_state", $"Host worker state: {result.StopReason}.",
@@ -83,12 +91,16 @@ internal sealed class ContinuousSimulationHost(DurableRuntime runtime, string pi
                 var frame = await LocalControlProtocol.ReadAsync(pipe, LocalControlProtocol.MaximumRequestBytes, deadline.Token);
                 if (frame.ExitCode != 0) throw LocalControlProtocol.InvalidFrame();
                 var request = LocalControlProtocol.ParseRequest(frame.Json);
-                var completion = new TaskCompletionSource<ControlResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
-                await commands.Writer.WriteAsync(new(request, completion), deadline.Token);
-                var response = await completion.Task.WaitAsync(deadline.Token);
+                var completion = new TaskCompletionSource<PreparedReply>(TaskCreationOptions.RunContinuationsAsynchronously);
+                await commands.Writer.WriteAsync(new(request, Stopwatch.GetTimestamp(), completion), deadline.Token);
+                var prepared = await completion.Task.WaitAsync(deadline.Token);
+                ReportDelay("reply handoff", prepared.ReadyAt);
+                var response = prepared.Response;
                 shutdown = request.Action == "stop" && response.ExitCode == 0;
+                long writeStarted = Stopwatch.GetTimestamp();
                 await LocalControlProtocol.WriteAsync(pipe, response.Json, response.ExitCode,
                     LocalControlProtocol.MaximumResponseBytes, deadline.Token);
+                ReportDelay("reply write", writeStarted);
             }
             catch (Exception error) when (error is IOException or JsonException or RuntimeFailure ||
                 error is OperationCanceledException && !stop.IsCancellationRequested)
@@ -105,5 +117,17 @@ internal sealed class ContinuousSimulationHost(DurableRuntime runtime, string pi
             }
             if (shutdown) return;
         }
+    }
+
+    private void ReportDelay(string phase, long started)
+    {
+        var elapsed = Stopwatch.GetElapsedTime(started);
+        // Only unusually slow operations produce a record, bounded by the
+        // existing rotating logger. Timings are observations, never receipts.
+        if (elapsed < TimeSpan.FromSeconds(1)) return;
+        runtime.WorkerEvent("host.slow_operation",
+            FormattableString.Invariant($"Host {phase} took {elapsed.TotalMilliseconds:F0} ms."),
+            "Compare control-client timings with host workload, disk activity and process scheduling. A slow reply does not authorize repeating a mutation.",
+            LogLevel.Warning);
     }
 }

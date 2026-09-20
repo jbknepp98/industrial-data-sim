@@ -111,9 +111,9 @@ public sealed class SimulationWorker
 
 public sealed partial class DurableRuntime
 {
-    internal void WorkerEvent(string code, string message, string action) => Access(() =>
+    internal void WorkerEvent(string code, string message, string action, LogLevel level = LogLevel.Information) => Access(() =>
     {
-        Log(LogLevel.Information, code, "Worker", message, action);
+        Log(level, code, "Worker", message, action);
         return true;
     });
 }

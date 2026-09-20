@@ -43,7 +43,7 @@ try
     return 0;
 }
 catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or
-    UnauthorizedAccessException or ArgumentException or JsonException or RuntimeFailure)
+    UnauthorizedAccessException or ArgumentException or JsonException or RuntimeFailure or KeyNotFoundException or InvalidOperationException)
 {
     Console.Error.WriteLine($"control_probe.failed: Inventory measurement failed during {phase}. Check host availability, matching builds, pipe permissions and machine load. No request was retried.");
     return 1;

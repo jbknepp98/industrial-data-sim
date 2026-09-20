@@ -158,6 +158,10 @@ audit growth and implementing a verified archive, not an automatic deletion age.
 
 ## Phase-level control diagnosis
 
+The [September 20 diagnosis](control-latency-diagnosis-2026-09-20.md) reproduces
+slow requests and separates the measured intervals; the underlying cause remains
+unconfirmed. It records both slow captures and clean profiling attempts.
+
 Build the entire solution, then add `--diagnose` to the host measurement command.
 Inventory reads use `IndustrialDataSim.ControlProbe`, a separate read-only client
 compiled with the actual local wire contract. Admission and lifecycle operations
@@ -177,6 +181,14 @@ This changes the inventory client used by the experiment, so a clean diagnostic
 run alone does not clear a problem observed with the normal CLI. Compare an
 ordinary run and retain the original outlier evidence. Production protocol,
 timeouts and scheduling are unchanged by the diagnostic client.
+
+The host also records `host.slow_operation` warnings for phases taking over one
+second: worker round, control queue wait/execution, reply handoff and reply write.
+Diagnostic reports include up to 100 such events from the retained rotating logs.
+`slowHostOperationsOmitted` counts truncation within those retained files; rotation
+may already have removed earlier events. Absence of a retained warning cannot
+prove a phase was fast. Request start timestamps help correlate events; durations
+use monotonic clocks, while timestamps use wall time and may reflect clock changes.
 
 ## Retention design boundary
 

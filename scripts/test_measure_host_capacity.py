@@ -1,13 +1,20 @@
 """Check percentile semantics and isolated fixture construction without a host."""
 import unittest
+from unittest.mock import patch
 import sqlite3
 import tempfile
 from pathlib import Path
 
 from measure_host_capacity import audit_snapshot, control_timing_sample, make_model, summarize_latency
+from profile_control_macos import profile
 
 
 class CapacityMeasurementTests(unittest.TestCase):
+    def test_native_collector_refuses_unsupported_platform_with_alternative(self):
+        with patch("profile_control_macos.platform.system", return_value="Linux"):
+            with self.assertRaisesRegex(RuntimeError, "profile.unsupported:.*portable --diagnose"):
+                profile("dotnet")
+
     def test_phase_timings_preserve_outlier_and_separate_process_overhead(self):
         timing = {"setupMs": 2, "connectMs": 1, "writeMs": 1, "replyMs": 4900, "clientMs": 4905}
         sample = control_timing_sample(timing, 4930)
