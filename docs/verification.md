@@ -109,3 +109,9 @@ samples), host process checks, a fifteen-minute mixed-load run and an explicit
 two-session Test Dataset smoke. The .NET suite includes real local TLS trust and
 hostname rejection tests. Hosted results are recorded in the
 [current increment report](phases-1-3-verification-2026-09-20.md).
+
+Checkpoint `722868f` passed all three hosted platforms with 545 .NET tests and
+20 Python tests, including the real TLS fixtures and Windows CTRL_BREAK process
+verification: [run 35544324314](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35544324314).
+The first Windows attempt exposed the synthetic certificate key-container issue
+described in the increment report; production TLS verification was not weakened.

@@ -24,7 +24,7 @@ remain pending. No timeout was increased to hide these delays.
 
 The process verifier now tests Windows CTRL_BREAK in an isolated child process
 group, allocating a console when a hosted runner lacks one; Unix still tests SIGINT.
-A Windows CI result is required before claiming that path verified.
+Windows CTRL_BREAK and durable pause preservation passed in the hosted matrix.
 
 ## Audit history
 
@@ -83,7 +83,9 @@ Schema verification covered eight examples and six invalid shapes; the independe
 gate oracle checked 100 scenarios and 3722 samples. Host process verification
 passed on macOS, including SIGINT. Real local TLS tests verified custom-root success,
 hostname rejection and untrusted-root rejection. Git diff whitespace and changed
-Markdown links passed inspection. Hosted cross-platform verification follows push.
+Markdown links passed inspection. Checkpoint `722868f` passed the complete Linux/macOS/Windows matrix with 545 .NET
+tests and 20 Python tests: [run 35544324314](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35544324314).
+The final archive directory-flush refinement is covered by the next checkpoint.
 
 The first hosted run passed Linux/macOS but exposed a Windows-only synthetic TLS
 server setup issue: the test's ephemeral private key could not complete the
@@ -92,3 +94,9 @@ key container compatible with SChannel, retaining the same trust/hostname checks
 ([.NET issue](https://github.com/dotnet/runtime/issues/23749)). No deployment key
 or trust-store change is involved. The final review also added a multi-batch
 repeat-suppression test and a distinct ConsistentWithoutNewArrival observation.
+
+The final archival review strengthened filename durability: flushed partial exports
+are renamed before verification/pruning, with directory/ancestor fsync on Unix and
+a write-through move on Windows. Unsupported storage refuses pruning. This covers
+the directory-entry boundary that a file-content flush alone does not address;
+physical power-loss guarantees still depend on the storage stack honoring flushes.

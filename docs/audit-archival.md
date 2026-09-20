@@ -24,7 +24,10 @@ are intentional archive content; keep the files private and out of Git.
 Completed payloads were already pruned by normal delivery and cannot be recovered
 from their hashes. Archives are audit records, not instructions to regenerate or replay.
 
-The export is capped at 128 MiB per operation. It is flushed to storage, reopened,
+The export is capped at 128 MiB per operation. A new `.partial` file is flushed,
+then renamed without replacement. Unix flushes the directory and its ancestors;
+Windows uses a [write-through move](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw).
+Failure to durably publish the filename refuses pruning. The final file is reopened
 and compared with the hash computed while writing. Only then does one SQLite
 transaction record the receipt and remove batch, attempt and observation rows.
 The verified file remains open through commit. Original session/configuration,

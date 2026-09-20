@@ -9,6 +9,12 @@ public sealed record ArchiveReceipt(string ArchiveId, string Sha256, long Bytes,
 
 public sealed partial class DurableRuntime
 {
+    private static readonly JsonSerializerOptions ArchiveJson = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+    };
+
     /// <summary>
     /// Export before pruning. The session tombstone, configuration and tag progress
     /// remain in SQLite forever; archival never permits ID or timestamp reuse.
@@ -30,16 +36,17 @@ public sealed partial class DurableRuntime
         Directory.CreateDirectory(directory);
         string archiveId = Guid.NewGuid().ToString("N");
         string path = Path.Combine(directory, archiveId + ".jsonl");
+        string temporary = path + ".partial";
         long count = 0;
         long bytes = 0;
         // CreateNew prevents replacing an existing archive. Flush(true) and a
         // second read validate the file before the database can lose audit rows.
         using var writtenHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
             void Write(object record)
             {
-                byte[] data = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(record) + "\n");
+                byte[] data = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(record, ArchiveJson) + "\n");
                 if (bytes + data.Length > 128L * 1024 * 1024)
                     throw new RuntimeFailure("archive.size_limit", "Archive exceeds the 128 MiB operation limit. Original audit rows are unchanged; retain them and use a future streaming partition export. An incomplete export may remain.");
                 file.Write(data);
@@ -72,6 +79,7 @@ public sealed partial class DurableRuntime
             Write(new { kind = "complete", batches = count });
             file.Flush(flushToDisk: true);
         }
+        ArchiveStorage.Publish(temporary, path);
         string checksum = Convert.ToHexString(writtenHash.GetHashAndReset());
         FaultPoint?.Invoke("before_archive_verify");
         // Hold the export open without write/delete sharing until pruning commits.
