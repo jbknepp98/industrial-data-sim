@@ -19,7 +19,26 @@ public sealed class RuntimeFixture : IDisposable
         }
         return model;
     }
-    public void Dispose() { if (Directory.Exists(Folder)) Directory.Delete(Folder, true); }
+    public void Dispose()
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                if (Directory.Exists(Folder)) Directory.Delete(Folder, true);
+                return;
+            }
+            catch (IOException error) when (OperatingSystem.IsWindows() &&
+                (error.HResult & 0xffff) is 32 or 33 && attempt < 20)
+            {
+                // Only our uniquely owned test directory, after runtime/child
+                // disposal. Windows sharing/lock violations can be transient.
+                // Persistent leaked handles still fail after two seconds; never
+                // retry permissions errors or any production state mutation.
+                Thread.Sleep(100);
+            }
+        }
+    }
 }
 
 public class DurableOwnershipTests

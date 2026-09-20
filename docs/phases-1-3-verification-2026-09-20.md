@@ -100,3 +100,10 @@ are renamed before verification/pruning, with directory/ancestor fsync on Unix a
 a write-through move on Windows. Unsupported storage refuses pruning. This covers
 the directory-entry boundary that a file-content flush alone does not address;
 physical power-loss guarantees still depend on the storage stack honoring flushes.
+
+The archive-flush checkpoint passed every archive test on all three platforms.
+One Windows process-crash test completed its recovery assertions but failed deleting
+its temporary database with a sharing violation. Test-fixture cleanup now retries
+only Windows sharing/lock violations for at most two seconds, then still fails
+on a persistent handle leak. No runtime mutation, HTTP write or production timeout
+was changed; the process holding the transient lock was not identified.
