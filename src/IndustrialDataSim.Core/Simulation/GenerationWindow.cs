@@ -28,7 +28,7 @@ public static class GenerationWindow
     }
 
     public static GenerationWindowResult Generate(SimulationDefinition model, long nextSlot,
-        int maximumSlots, int maximumPoints, int maximumBytes)
+        int maximumSlots, int maximumPoints, int maximumBytes, DateTimeOffset? notAfterUtc = null)
     {
         long total = TotalSlots(model);
         if (nextSlot < 0 || nextSlot > total || maximumSlots < 1 || maximumPoints < 1 || maximumBytes < 2)
@@ -46,6 +46,10 @@ public static class GenerationWindow
             long sample = cursor / model.Session.OutputTags.Count;
             long elapsed = sample * (model.SamplingIntervalMs * TimeSpan.TicksPerMillisecond);
             var sampleUtc = model.Session.StartUtc.UtcDateTime.AddTicks(elapsed);
+            // A wall-clock fence only limits which slots may be committed; it
+            // never changes the original sample grid or a generator's local clock.
+            // Leave the first future slot unconsumed, even within a partial row.
+            if (notAfterUtc is { } fence && sampleUtc.Ticks > fence.UtcTicks) break;
             var generator = model.Generators[tag.Name];
             if (!generator.EmitsAt(elapsed)) continue;
             var value = generator.Evaluate(elapsed);

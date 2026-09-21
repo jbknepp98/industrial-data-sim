@@ -169,3 +169,7 @@ staged content before each commit; ignore rules alone are not a secret scanner.
 The [verification guide](docs/verification.md) describes the offline CI matrix.
 [Capacity measurements and retention requirements](docs/capacity-and-retention.md)
 provide a reproducible synthetic baseline and identify remaining load/retention work.
+
+The two-cell [packaging demonstration](docs/packaging-demo-2026-09-20.md) combines
+[string SKU routing](docs/sku-routing-v1.md) with a 72-hour backfill and
+[wall-clock paced production](docs/production-follow.md).

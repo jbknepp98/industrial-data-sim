@@ -28,7 +28,7 @@ public sealed class ProductionDelivery
         catch (Exception error) when (IsTransportFailure(error)) { throw SafeFailure(error); }
     }
 
-    public async Task<bool> DeliverOneAsync(string id, CancellationToken stop = default)
+    public async Task<bool> DeliverOneAsync(string id, CancellationToken stop = default, DateTimeOffset? notAfterUtc = null)
     {
         if (Interlocked.CompareExchange(ref running, 1, 0) != 0)
             throw new RuntimeFailure("delivery.concurrent_publish", "This publisher already has an operation in flight. Wait for it to finish; do not submit concurrent requests for the same queue.");
@@ -43,6 +43,9 @@ public sealed class ProductionDelivery
             {
                 historian.ValidateProfile(model);
                 expected = ParseExpected(batch.Payload!);
+                // A pending batch may predate the paced invocation. Never send
+                // it early, split it, or alter its durable payload/hash to catch up.
+                if (notAfterUtc is { } fence && expected.Values.Any(points => points[^1].Timestamp > fence)) return false;
                 // Read-before-write also catches obvious external-writer conflicts
                 // after admission/restart. It cannot exclude a racing external writer.
                 var latest = await historian.Read(model.Session.Dataset, expected.Keys, null, null, stop);
@@ -114,7 +117,12 @@ public sealed class ProductionDelivery
             var points = expectedPoints.ToDictionary(point => point.Timestamp);
             var matches = new List<ObservedPoint>();
             var tag = range.SingleOrDefault(item => item.Name == name);
-            foreach (var actual in (tag?.Points ?? Array.Empty<ObservedPoint>()).Where(point => point.Timestamp >= first && point.Timestamp <= last))
+            // Batch boundaries can split one timestamp's tag row. The query
+            // spans every tag, but only this tag's own interval is comparable.
+            // A prior-batch point at the global first timestamp is not a mismatch.
+            var tagFirst = expectedPoints[0].Timestamp;
+            var tagLast = expectedPoints[^1].Timestamp;
+            foreach (var actual in (tag?.Points ?? Array.Empty<ObservedPoint>()).Where(point => point.Timestamp >= tagFirst && point.Timestamp <= tagLast))
                 if (points.TryGetValue(actual.Timestamp, out var wanted))
                 {
                     if (Equivalent(wanted.Value, actual.Value) && wanted.Quality == actual.Quality && actual.Value.ValueKind != JsonValueKind.Null) matches.Add(actual);
@@ -122,7 +130,14 @@ public sealed class ProductionDelivery
                 }
                 else mismatch = true;
             bool expectsChange = expectedPoints.Any(point => !Equivalent(expectedPoints[0].Value, point.Value));
-            bool sawChange = matches.Count > 1 && matches.Any(point => !Equivalent(matches[0].Value, point.Value));
+            // Repeat suppression may retain the initial value only before this
+            // batch. It can establish a baseline, but never counts as new arrival.
+            // Require a matching value/quality and a genuinely new matched point.
+            var leading = tag?.Points.Where(point => point.Timestamp < tagFirst).OrderBy(point => point.Timestamp).LastOrDefault();
+            bool baselineMatches = leading is not null && leading.Quality == expectedPoints[0].Quality &&
+                leading.Value.ValueKind != JsonValueKind.Null && Equivalent(leading.Value, expectedPoints[0].Value);
+            bool sawChange = matches.Count > 1 && matches.Any(point => !Equivalent(matches[0].Value, point.Value)) ||
+                baselineMatches && matches.Any(point => !Equivalent(leading!.Value, point.Value));
             if (matches.Count > 0 && (!expectsChange || sawChange)) matching++;
             if (sawChange) changed++;
             // Repeat suppression can leave only a leading point outside this

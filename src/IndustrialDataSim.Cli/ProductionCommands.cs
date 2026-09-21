@@ -6,7 +6,7 @@ namespace IndustrialDataSim.Cli;
 
 public static partial class CliApplication
 {
-    private const string ProductionUsage = "Usage: production start <database> <model-file>; production run <database> <rounds>; " +
+    private const string ProductionUsage = "Usage: production start <database> <model-file>; production run <database> <rounds>; production follow <database> <seconds 1–604800>; " +
         "production list <database> [after-session-id]; production status|pause|resume|release|retry-preflight|archive-info <database> <session-id>; " +
         "production observations <database> <session-id> [after-batch-id]; production review <database> <session-id> accepted|needs-attention; " +
         "production cancel <database> <session-id> drain|discard-pending; production archive|verify-archive <database> <session-id> <directory>. " +
@@ -17,7 +17,7 @@ public static partial class CliApplication
         if (args.Length == 2 && args[1] == "help") return WriteProductionResponse(output, new { message = ProductionUsage });
         string action = args.Length > 1 ? args[1] : "";
         bool shape = action switch {
-            "start" or "run" or "status" or "pause" or "resume" or "release" or "retry-preflight" or "archive-info" => args.Length == 4,
+            "start" or "run" or "follow" or "status" or "pause" or "resume" or "release" or "retry-preflight" or "archive-info" => args.Length == 4,
             "list" => args.Length is 3 or 4,
             "observations" => args.Length is 4 or 5,
             "archive" or "verify-archive" => args.Length == 5,
@@ -25,8 +25,10 @@ public static partial class CliApplication
             "review" => args.Length == 5 && args[4] is "accepted" or "needs-attention",
             _ => false };
         int rounds = 0;
+        int seconds = 0;
         long cursor = 0;
         if (!shape || action == "run" && (!int.TryParse(args[3], NumberStyles.None, CultureInfo.InvariantCulture, out rounds) || rounds is < 1 or > 10000) ||
+            action == "follow" && (!int.TryParse(args[3], NumberStyles.None, CultureInfo.InvariantCulture, out seconds) || seconds is < 1 or > 604800) ||
             action == "observations" && args.Length == 5 && (!long.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out cursor) || cursor < 0))
         { WriteResult(output, [new("cli.usage", "$", ProductionUsage)]); return 2; }
         string? configuration = null;
@@ -45,7 +47,7 @@ public static partial class CliApplication
             string database = Path.GetFullPath(args[2]);
             using var logs = new RuntimeFileLogger(Path.Combine(Path.GetDirectoryName(database)!, "logs", Path.GetFileName(database)));
             using var runtime = new DurableRuntime(database, logger: logs, createIfMissing: action == "start", mode: ExecutionMode.Production);
-            if (action is "start" or "run")
+            if (action is "start" or "run" or "follow")
             {
                 using var client = new HistorianClient(HistorianConnection.FromEnvironment());
                 var delivery = new ProductionDelivery(runtime, client);
@@ -53,7 +55,9 @@ public static partial class CliApplication
                     message = "Production session admitted after read-only preflight. No TVQ write has started. Inspect Dataset retention settings before production run." };
                 else
                 {
-                    var run = new ProductionWorker(runtime, delivery).RunAsync(rounds, stop).GetAwaiter().GetResult();
+                    var run = action == "follow"
+                        ? new ProductionFollower(runtime, delivery).FollowAsync(TimeSpan.FromSeconds(seconds), stop).GetAwaiter().GetResult()
+                        : new ProductionWorker(runtime, delivery).RunAsync(rounds, stop).GetAwaiter().GetResult();
                     result = new { run.StopReason, run.Rounds, run.PublishedBatches, run.Message, sessions = run.Sessions.Select(SessionView) };
                     exit = run.StopReason == "Completed" ? 0 : run.StopReason == "Stopped" ? 130 : 4;
                 }

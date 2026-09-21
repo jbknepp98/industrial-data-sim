@@ -27,7 +27,7 @@ public sealed partial class DurableRuntime
         return turns;
     });
 
-    public GenerationTurn Generate(string id) => Access(() =>
+    public GenerationTurn Generate(string id, DateTimeOffset? notAfterUtc = null) => Access(() =>
     {
         var session = ReadSession(id);
         if (session.Status != SessionStatus.Ready) return new GenerationTurn(id, false, "Session is not Ready; inspect its status before generating.");
@@ -46,7 +46,7 @@ public sealed partial class DurableRuntime
         var model = LoadModelForWork(id);
         if (session.TotalSlots != GenerationWindow.TotalSlots(model))
             throw StateIntegrityFailure();
-        var window = GenerationWindow.Generate(model, session.NextSlot, limits.CandidateSlotsPerTurn, limits.BatchPoints, limits.BatchBytes);
+        var window = GenerationWindow.Generate(model, session.NextSlot, limits.CandidateSlotsPerTurn, limits.BatchPoints, limits.BatchBytes, notAfterUtc);
         if (window.Error is { } error)
         {
             Execute("UPDATE sessions SET state='Failed',error_code=$code,error_message=$message WHERE id=$id",
@@ -58,6 +58,8 @@ public sealed partial class DurableRuntime
                 id, failure: window.FailureContext);
             return new(id, false, error.Message);
         }
+        if (window.NextSlot == session.NextSlot)
+            return new(id, false, "The next sample is later than the wall-clock fence; wait without advancing the checkpoint.");
         bool completed = false;
         InTransaction(() =>
         {

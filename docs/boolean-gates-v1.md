@@ -93,3 +93,6 @@ or timeline. Unknown/self references, gated sources, invalid policies, missing
 patterns, child tag overrides, and unsupported nesting fail validation. All child
 configuration validates up front even if the gate never opens. No remote Historian
 input polling, durable buffering, or delivery recovery is introduced here.
+
+[SKU routes](sku-routing-v1.md) can now supply the Boolean input. They resolve
+from direct string SKU and Boolean readiness sources before gates/switches bind.

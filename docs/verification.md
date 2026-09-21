@@ -122,3 +122,15 @@ All three platforms passed 545 .NET and 20 Python tests plus the schema, host,
 diagnostic-load and capacity checks. Remaining operational limits are recorded
 in the current increment report; a green matrix does not resolve the intermittent
 control latency or establish per-point Historian acceptance.
+
+
+## SKU routing and paced production increment
+
+The September 20–21 packaging increment passed 562 .NET and 22 Python tests
+locally, plus host/process/SIGINT checks. `verify_offline.py` now includes the
+fixed-date, complete 72-hour packaging model through the DemoPreview tool and an
+independent source/routing/suppression oracle. Build the full solution first.
+See the [live demonstration report](packaging-demo-2026-09-20.md) for observed
+read-back evidence, the corrected observer boundary bug and remaining limits.
+The read-only `scripts/verify_packaging_historian.py` is an explicit local check,
+not part of CI; credentials and reports remain excluded from source control.

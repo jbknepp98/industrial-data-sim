@@ -16,7 +16,7 @@ public class ProductionDeliveryTests
     {
         public int Writes, Tokens;
         public HttpStatusCode PublishStatus = HttpStatusCode.OK;
-        public bool FailPublish, FailReadAfterPublish, Mismatch, Existing, NullCurrent, FlatInventory, SuppressRepeats;
+        public bool FailPublish, FailReadAfterPublish, Mismatch, Existing, NullCurrent, FlatInventory, SuppressRepeats, TrimReadRange;
         public readonly Dictionary<string, JsonArray> Stored = new();
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken stop)
         {
@@ -58,6 +58,14 @@ public class ProductionDeliveryTests
             {
                 JsonArray points = Stored.TryGetValue(name, out var saved) ? (JsonArray)saved.DeepClone() : new();
                 if (Existing && points.Count == 0) points.Add(JsonNode.Parse("{\"t\":\"2026-09-02T00:00:00Z\",\"v\":1,\"q\":192}"));
+                if (range && TrimReadRange)
+                {
+                    var query = request.RequestUri.Query.TrimStart('?').Split('&').Select(p => p.Split('=', 2))
+                        .Where(p => p[0] is "start" or "end").ToDictionary(p => p[0], p => DateTimeOffset.Parse(Uri.UnescapeDataString(p[1])));
+                    var leading = points.LastOrDefault(p => p!["t"]!.GetValue<DateTimeOffset>() < query["start"]);
+                    points = new JsonArray(points.Where(p => p!["t"]!.GetValue<DateTimeOffset>() >= query["start"] && p!["t"]!.GetValue<DateTimeOffset>() <= query["end"]).Select(p => p!.DeepClone()).ToArray());
+                    if (leading is not null) points.Insert(0, leading.DeepClone());
+                }
                 if (!range && points.Count > 0) points = new JsonArray(points[^1]!.DeepClone());
                 if (Mismatch && points.Count > 0) points[0]!["v"] = 99999;
                 if (NullCurrent && !range && points.Count > 0) points[0]!["v"] = null;
@@ -66,6 +74,110 @@ public class ProductionDeliveryTests
             return Json(new JsonObject { ["tl"] = tags }.ToJsonString());
         }
         private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+    }
+
+    [Fact]
+    public async Task ObservationUsesPerTagIntervalWhenBatchSplitsTimestampRow()
+    {
+        using var files = new RuntimeFixture();
+        using var runtime = new DurableRuntime(files.Database, new RuntimeLimits { BatchPoints = 4 }, mode: ExecutionMode.Production);
+        var server = new Server { SuppressRepeats = true, TrimReadRange = true };
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+        var model = RuntimeFixture.Model();
+        model["generators"]![0] = JsonNode.Parse("""{"tag":"A.0","kind":"ramp","startValue":0,"ratePerSecond":1}""");
+        await delivery.AdmitAsync(model.ToJsonString());
+        await new ProductionWorker(runtime, delivery).RunAsync(10);
+        Assert.Equal(3, server.Writes);
+        Assert.All(runtime.Observations("session-a"), o => Assert.Contains(o.Status, new[] { "Observed", "ConsistentWithoutNewArrival" }));
+    }
+
+    [Fact]
+    public async Task LeadingRepeatedValueCanEstablishChangeButNotNewArrival()
+    {
+        using var files = new RuntimeFixture();
+        using var runtime = new DurableRuntime(files.Database, mode: ExecutionMode.Production);
+        var server = new Server { SuppressRepeats = true, TrimReadRange = true };
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+        var model = RuntimeFixture.Model();
+        model["generators"]![0] = JsonNode.Parse("""{"tag":"A.0","kind":"staircase","afterSteps":"holdLast","steps":[{"value":0,"durationMs":2000},{"value":10,"durationMs":1000}]}""");
+        await delivery.AdmitAsync(model.ToJsonString());
+        var worker = new ProductionWorker(runtime, delivery);
+        await worker.RunAsync(10, notAfterUtc: DateTimeOffset.Parse("2026-09-01T00:00:00Z"));
+        await worker.RunAsync(10, notAfterUtc: DateTimeOffset.Parse("2026-09-01T00:00:02Z"));
+        var observation = runtime.Observations("session-a")[1];
+        Assert.Equal("ConsistentWithoutNewArrival", observation.Status); // Other constant tags have no new records.
+        Assert.Equal(1, observation.MatchingTags);
+        Assert.Equal(1, observation.ChangedTags);
+    }
+
+    [Fact]
+    public async Task PacedWorkerCatchesUpAndResumesWithoutFutureWritesOrReplay()
+    {
+        using var files = new RuntimeFixture();
+        var server = new Server();
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        var start = DateTimeOffset.Parse("2026-09-01T00:00:00Z");
+        using (var runtime = new DurableRuntime(files.Database, mode: ExecutionMode.Production))
+        {
+            var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+            await delivery.AdmitAsync(RuntimeFixture.Model().ToJsonString());
+            var worker = new ProductionWorker(runtime, delivery);
+            await worker.RunAsync(10, notAfterUtc: start.AddSeconds(-1));
+            Assert.Equal(0, server.Writes);
+            Assert.Equal(0, runtime.GetSession("session-a").NextSlot);
+            await worker.RunAsync(10, notAfterUtc: start);
+            Assert.Equal(1, server.Writes);
+            Assert.Equal(3, runtime.GetSession("session-a").NextSlot);
+            await worker.RunAsync(10, notAfterUtc: start.AddSeconds(-1));
+            Assert.Equal(1, server.Writes); // Clock rollback neither rewinds nor replays.
+        }
+        using (var runtime = new DurableRuntime(files.Database, mode: ExecutionMode.Production))
+        {
+            var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+            var run = await new ProductionWorker(runtime, delivery).RunAsync(10, notAfterUtc: start.AddSeconds(2));
+            Assert.Equal("Completed", run.StopReason);
+            Assert.Equal(2, server.Writes);
+            Assert.All(runtime.Progress("session-a"), p => Assert.Equal(start.AddSeconds(2).UtcTicks, p.PublishedTicks));
+            Assert.All(server.Stored.Values, points => Assert.Equal(start.AddSeconds(1), points[0]!["t"]!.GetValue<DateTimeOffset>()));
+        }
+    }
+
+    [Fact]
+    public async Task PacedDeliveryAlsoFencesPreviouslyQueuedFuturePayloads()
+    {
+        using var files = new RuntimeFixture();
+        using var runtime = new DurableRuntime(files.Database, mode: ExecutionMode.Production);
+        var server = new Server();
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+        await delivery.AdmitAsync(RuntimeFixture.Model().ToJsonString());
+        runtime.Generate("session-a");
+        Assert.False(await delivery.DeliverOneAsync("session-a", notAfterUtc: DateTimeOffset.Parse("2026-09-01T00:00:00Z")));
+        Assert.Equal(0, server.Writes);
+        Assert.Equal(BatchStatus.Pending, Assert.Single(runtime.Batches("session-a")).Status);
+        Assert.True(await delivery.DeliverOneAsync("session-a", notAfterUtc: DateTimeOffset.Parse("2026-09-01T00:00:02Z")));
+    }
+
+    [Fact]
+    public async Task FollowerStopsWhileWaitingAndPreservesReadyCheckpoint()
+    {
+        using var files = new RuntimeFixture();
+        using var runtime = new DurableRuntime(files.Database, mode: ExecutionMode.Production);
+        var server = new Server();
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        var delivery = new ProductionDelivery(runtime, client);
+        var model = RuntimeFixture.Model();
+        model["session"]!["startUtc"] = "2090-01-01T00:00:00Z";
+        model["session"]!["endUtc"] = "2090-01-01T00:00:03Z";
+        await delivery.AdmitAsync(model.ToJsonString());
+        using var stop = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        var run = await new ProductionFollower(runtime, delivery).FollowAsync(TimeSpan.FromHours(1), stop.Token);
+        Assert.Equal("Stopped", run.StopReason);
+        Assert.Equal(0, server.Writes);
+        Assert.Equal(0, runtime.GetSession("session-a").NextSlot);
+        Assert.Equal(SessionStatus.Ready, runtime.GetSession("session-a").Status);
     }
 
     [Theory]

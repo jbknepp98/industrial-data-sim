@@ -101,6 +101,7 @@ public static class SimulationDefinitionLoader
         // cycles, external reads, and ambiguous/unavailable input values.
         if (errors.ErrorCount == 0 && session is not null)
         {
+            SkuRoutingDefinitionLoader.BindRoutes(definitions, generators, errors);
             for (int i = 0; i < session.OutputTags.Count; i++)
             {
                 string name = session.OutputTags[i].Name;
@@ -122,7 +123,7 @@ public static class SimulationDefinitionLoader
                         generatorIndex++;
                     }
                     errors.Add(new("simulation.invalid_trigger", $"$.generators[{generatorIndex}].triggerTag",
-                        "Reference an existing local Boolean timeline or Boolean constant tag with exact spelling."));
+                        "Reference an existing local Boolean timeline, Boolean constant, or bound SKU route tag with exact spelling."));
                 }
                 else definitions[name] = definitions[name] switch
                 {
@@ -143,6 +144,8 @@ public static class SimulationDefinitionLoader
         string? kind = SessionDefinitionLoader.ReadString(generator, "kind", path, errors);
         string[] fields = kind switch
         {
+            "stringTimeline" => ["kind", "steps", "afterSteps"],
+            "skuRoute" => ["kind", "skuTag", "readyTag", "sku"],
             "booleanGate" => ["kind", "triggerTag", "whenFalse", "pattern"],
             "booleanTimeline" => ["kind", "steps", "afterSteps"],
             "booleanSwitch" => ["kind", "triggerTag", "onChange", "whenFalse", "whenTrue"],
@@ -173,6 +176,8 @@ public static class SimulationDefinitionLoader
         }
         switch (kind)
         {
+            case "stringTimeline": return SkuRoutingDefinitionLoader.LoadTimeline(generator, output, path, errors);
+            case "skuRoute": return SkuRoutingDefinitionLoader.LoadRoute(generator, output, path, errors);
             case "booleanGate": return BooleanGateDefinitionLoader.Load(generator, output, path, errors, ref remainingRandomHolds);
             case "booleanTimeline": return BooleanTriggerDefinitionLoader.LoadTimeline(generator, output, path, errors);
             case "booleanSwitch": return BooleanTriggerDefinitionLoader.LoadSwitch(generator, output, path, errors, ref remainingRandomHolds);
@@ -184,7 +189,7 @@ public static class SimulationDefinitionLoader
             default:
                 if (kind is not null)
                     errors.Add(new("simulation.unsupported_generator", path + ".kind",
-                        "Supported generator kinds are constant, ramp, staircase, randomIntegerHold, sequence, booleanTimeline, booleanSwitch, and booleanGate."));
+                        "Supported generator kinds are constant, ramp, staircase, randomIntegerHold, sequence, booleanTimeline, booleanSwitch, booleanGate, stringTimeline, and skuRoute."));
                 return null;
         }
     }

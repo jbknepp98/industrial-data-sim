@@ -81,3 +81,6 @@ immutable model and candidate cursor; their clocks remain independent of transpo
 
 See [the live trigger test](live-verification-boolean-trigger.md) for the ordered
 24-hour write, exact tag names, transition values, and read-back results.
+
+[SKU routes](sku-routing-v1.md) can now supply the Boolean input. They resolve
+from direct string SKU and Boolean readiness sources before gates/switches bind.

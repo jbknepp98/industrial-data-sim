@@ -24,6 +24,7 @@ Run the built CLI using these arguments:
 ```text
 production start state/production.db model.json
 production run state/production.db 100
+production follow state/production.db 3600
 production list state/production.db [after-session-id]
 production status state/production.db session-id
 production observations state/production.db session-id [after-batch-id]
@@ -59,7 +60,9 @@ supply validated `RuntimeLimits`. Pending data survives reopening. Ctrl+C stops
 between operations and allows in-flight publishing/observation to finish. The
 production worker is bounded foreground execution, not the resident simulation
 host; inspect, pause or cancel after it releases the database. There is no live
-production control endpoint or wall-clock pacing/flush-age scheduler yet.
+production control endpoint. The separate [follow command](production-follow.md)
+adds wall-clock pacing with immediate partial-batch publishing when samples are due.
+An additional flush-age scheduler is not implemented.
 
 ## Publishing and uncertainty
 
@@ -87,10 +90,12 @@ it does not send data or skip the next preflight. Resume only applies to Paused.
 ## Arrival and user review
 
 After Published commits, the adapter reads the actual batch time range and current
-values. It filters boundary placeholders, compares returned timestamps, values
+values. It filters boundary placeholders and each tag's own batch interval, compares returned timestamps, values
 and quality with generated samples, and recognizes Boolean 0/1 read-back. It looks
 for relevant non-null records and changes only when the batch's model values change.
-It does not compare submitted/stored point counts or require repeated constants.
+A matching leading value can establish a change baseline when initial repeated
+samples are suppressed; it never counts as new arrival. The observer does not
+compare submitted/stored point counts or require repeated constants.
 
 Each batch retains Pending, Observed, ConsistentWithoutNewArrival, NotYetObserved, Mismatch or Unavailable
 observation status, with counts of matching tags, non-null current tags and tags

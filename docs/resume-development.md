@@ -7,6 +7,8 @@ and dated [audit](audit-2026-09-19.md), rather than serving as competing instruc
 ## Implemented
 
 - Deterministic finite generators, sequences, local Boolean triggers and pause/continue gates.
+- String SKU timelines and exclusive routes from shared SKU/readiness sources.
+- Wall-clock paced production follow: the same durable session catches up and continues live.
 - SQLite checkpoints, bounded queues, disjoint tag ownership, cancellation,
   recovery and separate per-session progress. Uncertain work is never replayed.
 - A fake Historian, bounded worker, continuous foreground host and local live controls.
@@ -75,3 +77,6 @@ python3 -m unittest discover -s scripts -p 'test_*.py'
 Restore dependencies first if caches are absent. Building the entire solution is
 necessary for standalone diagnostic tools. See the verification guide for schema,
 host-process and capacity checks; no Historian connection is required.
+
+The [packaging demonstration](packaging-demo-2026-09-20.md) records its live process,
+review tags and explicit restart instructions. Inspect that run before starting another publisher.

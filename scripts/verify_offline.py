@@ -137,6 +137,34 @@ def check_gate_clocks(dotnet):
     print(f"100 independent gate scenarios passed; {checked} emitted samples checked.")
 
 
+
+def check_packaging_demo(dotnet):
+    from datetime import datetime, timezone
+    from prepare_packaging_demo import build_model, utc
+    from check_packaging_preview import check
+    start = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    model = build_model(start, "Example.Packaging", "example-packaging")
+    validator("simulation-v1.schema.json").validate(model)
+    tool = ROOT / "tools/IndustrialDataSim.DemoPreview/bin/Release/net10.0/IndustrialDataSim.DemoPreview.dll"
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "model.json"
+        path.write_text(json.dumps(model))
+        result = subprocess.run([dotnet, str(tool), str(path)], capture_output=True, text=True, timeout=30)
+        require(result.returncode == 0, "72-hour packaging preview failed; inspect the model with validate-simulation.")
+        report = check({"startUtc": utc(start), "tagPrefix": "Example.Packaging"}, json.loads(result.stdout))
+        require(report["checkedMinutes"] == 4320, "Packaging preview did not verify all 72 hours.")
+        # Corrupt a single feed point: the independent checker must detect it.
+        changed = json.loads(result.stdout)
+        changed["data"]["Example.Packaging.PackagingB.FeedEnabled.Boolean"][15]["v"] = True
+        try:
+            check({"startUtc": utc(start), "tagPrefix": "Example.Packaging"}, changed)
+        except ValueError as error:
+            require(str(error).startswith("demo.route_mismatch"), "Unexpected packaging diagnostic.")
+        else:
+            raise ValueError("Packaging checker failed to detect simultaneous routing.")
+    print("72-hour packaging preview passed: 4320 routing timestamps, suppression, ordering and both clock policies checked.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dotnet", default="dotnet", help="Path to the .NET 10 executable.")
@@ -144,6 +172,7 @@ def main():
     try:
         check_examples(args.dotnet)
         check_gate_clocks(args.dotnet)
+        check_packaging_demo(args.dotnet)
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f"Offline verification failed: {error}\nCheck prerequisites and rebuild Release before rerunning.\n")
 

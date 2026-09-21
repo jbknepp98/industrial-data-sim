@@ -866,3 +866,17 @@ The [verification report](phases-1-3-verification-2026-09-20.md) records the rep
 latency, corrected all-new-tag preflight handling, live test tag names and remaining
 limits. These are bounded first implementations, not a claim that every Phase 1
 capability, production hosting option or retention policy is complete.
+
+## September 20–21: two-cell SKU demonstration and paced publishing
+
+Added string timelines and exclusive shared-source SKU routes, bound before local
+Boolean gates/switches. Added production follow with a wall-clock fence, pending
+payload eligibility checks, monotonic invocation duration and preserved sample
+grid/checkpoints through catch-up, clock rollback and restart. Added a bounded
+72-hour preview tool and independent packaging checker to offline verification.
+
+Live testing exposed an observation classification bug at split timestamp rows.
+The observer now compares each tag's own interval and recognizes matching leading
+values as change baselines, without counting them as arrival. Tests reproduce both
+cases. No historical writes were replayed or original observations rewritten. See
+the [demonstration report](packaging-demo-2026-09-20.md) for run evidence and limits.
