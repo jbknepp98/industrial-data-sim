@@ -80,3 +80,8 @@ host-process and capacity checks; no Historian connection is required.
 
 The [packaging demonstration](packaging-demo-2026-09-20.md) records its live process,
 review tags and explicit restart instructions. Inspect that run before starting another publisher.
+
+The earlier docs-only `f083814` CI run also exposed Windows owner-file acquisition
+and cleanup failures in crash-recovery tests. They were discovered during the
+packaging review and remain unconfirmed; see the demonstration report. A subsequent
+green run is not proof that this intermittent Windows issue is resolved.

@@ -128,6 +128,20 @@ the browser's local-file URL policy and was not verified.
 
 Release build succeeded with zero warnings; 562 .NET tests and 22 Python tests
 passed locally. Existing host/process/SIGINT verification passed. Offline schema,
-100 gate-oracle scenarios and the 72-hour packaging checker passed. Cross-platform
-CI for this change is recorded separately when available. No user acceptance has
+100 gate-oracle scenarios and the 72-hour packaging checker passed. Code checkpoint `a036dcb` passed Linux, macOS and Windows
+[CI run 35568320181](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35568320181),
+including schema/oracle, host/shutdown and capacity smoke checks. No user acceptance has
 been recorded and no submitted timestamps have been replayed.
+
+
+## Remaining Windows verification concern
+
+Reviewing the previous docs-only checkpoint `f083814` revealed two failures in
+[its Windows CI run](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35545016238):
+`KilledCancellationProcessPreservesAtomicOutcome` could not acquire the owner
+file after the child exited, and `KilledProcessRecoversWithoutRunningCleanup`
+encountered Access Denied removing `state.db-shm` during fixture cleanup. The
+existing bounded sharing-violation cleanup retry does not settle these cases.
+Their cause remains unconfirmed; do not infer data corruption or claim they are
+fixed from a later green run. This is a separate Windows recovery-test reliability
+follow-up. The live demonstration runs on macOS and passed its explicit restart.

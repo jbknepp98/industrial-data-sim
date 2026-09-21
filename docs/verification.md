@@ -134,3 +134,8 @@ See the [live demonstration report](packaging-demo-2026-09-20.md) for observed
 read-back evidence, the corrected observer boundary bug and remaining limits.
 The read-only `scripts/verify_packaging_historian.py` is an explicit local check,
 not part of CI; credentials and reports remain excluded from source control.
+
+Code checkpoint `a036dcb` passed [CI run 35568320181](https://github.com/jbknepp98/industrial-data-sim/actions/runs/35568320181)
+on Linux, macOS and Windows, including the new packaging oracle. An older Windows
+crash-test failure remains a separate documented reliability concern; a green run
+does not establish its root cause or resolution.
