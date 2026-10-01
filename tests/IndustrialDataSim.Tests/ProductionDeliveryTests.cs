@@ -14,18 +14,28 @@ public class ProductionDeliveryTests
 
     private sealed class Server : HttpMessageHandler
     {
-        public int Writes, Tokens;
+        public int Writes, Tokens, Reads, RejectReadCount;
+        public int TokenSeconds = 3600;
+        public Action? OnTokenRequest, OnPublish;
+        public HttpStatusCode ReadStatus = HttpStatusCode.OK, TokenStatus = HttpStatusCode.OK;
         public HttpStatusCode PublishStatus = HttpStatusCode.OK;
         public bool FailPublish, FailReadAfterPublish, Mismatch, Existing, NullCurrent, FlatInventory, SuppressRepeats, TrimReadRange;
         public readonly Dictionary<string, JsonArray> Stored = new();
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken stop)
         {
             string path = request.RequestUri!.AbsolutePath;
-            if (path == "/auth/token") { Tokens++; return Json("{\"access_token\":\"PRIVATE_TOKEN\",\"expires_in\":3600}"); }
+            if (path == "/auth/token")
+            {
+                Tokens++;
+                OnTokenRequest?.Invoke();
+                if (TokenStatus != HttpStatusCode.OK) return new(TokenStatus) { Content = new StringContent("PRIVATE_AUTH_DETAILS") };
+                return Json(JsonSerializer.Serialize(new { access_token = "PRIVATE_TOKEN_" + Tokens, expires_in = TokenSeconds }));
+            }
             Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
             if (request.Method == HttpMethod.Post)
             {
                 Writes++;
+                OnPublish?.Invoke();
                 var payload = JsonNode.Parse(await request.Content!.ReadAsStringAsync(stop))!.AsObject();
                 foreach (var (name, data) in payload)
                 {
@@ -39,6 +49,13 @@ public class ProductionDeliveryTests
                 }
                 if (FailPublish) throw new HttpRequestException("PRIVATE_TRANSPORT_DETAILS");
                 return new(PublishStatus) { Content = new StringContent("") };
+            }
+            Reads++;
+            if (ReadStatus != HttpStatusCode.OK) return new(ReadStatus) { Content = new StringContent("PRIVATE_READ_DETAILS") };
+            if (RejectReadCount > 0)
+            {
+                RejectReadCount--;
+                return new(HttpStatusCode.Unauthorized) { Content = new StringContent("PRIVATE_READ_DETAILS") };
             }
             if (path.EndsWith("/exists")) return Json("true");
             if (path.EndsWith("/tags"))
@@ -74,6 +91,129 @@ public class ProductionDeliveryTests
             return Json(new JsonObject { ["tl"] = tags }.ToJsonString());
         }
         private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+    }
+
+    [Fact]
+    public async Task RejectedObservationCanRefreshWithoutPublishingAgain()
+    {
+        using var files = new RuntimeFixture();
+        using var runtime = new DurableRuntime(files.Database, mode: ExecutionMode.Production);
+        var server = new Server();
+        server.OnPublish = () => server.RejectReadCount = 1;
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+        await delivery.AdmitAsync(RuntimeFixture.Model().ToJsonString());
+        runtime.Generate("session-a");
+        Assert.True(await delivery.DeliverOneAsync("session-a"));
+        Assert.Equal(2, server.Tokens);
+        Assert.Equal(1, server.Writes);
+        Assert.Equal("Observed", Assert.Single(runtime.Observations("session-a")).Status);
+        Assert.Equal(BatchStatus.Published, Assert.Single(runtime.Batches("session-a")).Status);
+    }
+
+    [Fact]
+    public async Task CancellationDuringRefreshPreventsSecondRead()
+    {
+        var server = new Server();
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        await client.Authenticate(default);
+        using var stop = new CancellationTokenSource();
+        server.RejectReadCount = 1;
+        server.OnTokenRequest = () => stop.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.Read("Test", ["A.0"], null, null, stop.Token));
+        Assert.Equal(2, server.Tokens);
+        Assert.Equal(1, server.Reads);
+        Assert.Equal(0, server.Writes);
+    }
+
+    [Fact]
+    public async Task RejectedReadRefreshesOnceBeforeClaimAndPublishesOnlyOnce()
+    {
+        using var files = new RuntimeFixture();
+        using var runtime = new DurableRuntime(files.Database, mode: ExecutionMode.Production);
+        var server = new Server();
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+        await delivery.AdmitAsync(RuntimeFixture.Model().ToJsonString());
+        runtime.Generate("session-a");
+        server.RejectReadCount = 1;
+        Assert.True(await delivery.DeliverOneAsync("session-a"));
+        Assert.Equal(2, server.Tokens);
+        Assert.Equal(1, server.Writes);
+        Assert.Equal(BatchStatus.Published, Assert.Single(runtime.Batches("session-a")).Status);
+    }
+
+    [Fact]
+    public async Task RepeatedReadRejectionPreservesUnsentPayloadAndExplainsRecovery()
+    {
+        using var files = new RuntimeFixture();
+        using var runtime = new DurableRuntime(files.Database, mode: ExecutionMode.Production);
+        var server = new Server();
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+        await delivery.AdmitAsync(RuntimeFixture.Model().ToJsonString());
+        runtime.Generate("session-a");
+        var original = Assert.Single(runtime.Batches("session-a"));
+        int reads = server.Reads;
+        server.ReadStatus = HttpStatusCode.Unauthorized;
+        Assert.False(await delivery.DeliverOneAsync("session-a"));
+        Assert.Equal(2, server.Tokens);
+        Assert.Equal(2, server.Reads - reads);
+        Assert.Equal(0, server.Writes);
+        Assert.Equal(original, Assert.Single(runtime.Batches("session-a")));
+        var session = runtime.GetSession("session-a");
+        Assert.Equal(SessionStatus.Failed, session.Status);
+        Assert.Equal("historian.http_status", session.ErrorCode);
+        Assert.Contains("after one token refresh", session.ErrorMessage);
+        Assert.Contains("audience and Dataset permissions", session.ErrorMessage);
+        Assert.DoesNotContain("PRIVATE", session.ErrorMessage);
+        server.ReadStatus = HttpStatusCode.OK;
+        runtime.RetryProductionPreflight("session-a");
+        Assert.True(await delivery.DeliverOneAsync("session-a"));
+        Assert.Equal(1, server.Writes);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task OtherReadErrorsDoNotRefreshOrRetry(HttpStatusCode status)
+    {
+        var server = new Server { ReadStatus = status };
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        var failure = await Assert.ThrowsAsync<RuntimeFailure>(() => client.Read("Test", ["A.0"], null, null, default));
+        Assert.Equal("historian.http_status", failure.Error.Code);
+        Assert.Equal("$", failure.Error.Path);
+        Assert.DoesNotContain("PRIVATE", failure.Message);
+        Assert.Equal(1, server.Reads);
+        Assert.Equal(1, server.Tokens);
+        Assert.Equal(0, server.Writes);
+    }
+
+    [Fact]
+    public async Task TokenRefreshFailureIsNotRetriedAndDoesNotWrite()
+    {
+        var server = new Server();
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        await client.Authenticate(default);
+        server.RejectReadCount = 1;
+        server.TokenStatus = HttpStatusCode.Unauthorized;
+        var failure = await Assert.ThrowsAsync<RuntimeFailure>(() => client.Read("Test", ["A.0"], null, null, default));
+        Assert.Contains("authentication returned HTTP 401", failure.Message);
+        Assert.DoesNotContain("PRIVATE", failure.Message);
+        Assert.Equal(2, server.Tokens);
+        Assert.Equal(1, server.Reads);
+        Assert.Equal(0, server.Writes);
+    }
+
+    [Fact]
+    public async Task TokenEndpointLatencyDoesNotExtendCachedLifetime()
+    {
+        var now = DateTimeOffset.Parse("2026-10-01T00:00:00Z");
+        var server = new Server { TokenSeconds = 10, OnTokenRequest = () => now = now.AddSeconds(6) };
+        using var client = new HistorianClient(Profile(), new HttpClient(server)) { UtcNow = () => now };
+        await client.Authenticate(default);
+        await client.Authenticate(default);
+        Assert.Equal(2, server.Tokens);
     }
 
     [Fact]
@@ -306,6 +446,7 @@ public class ProductionDeliveryTests
         var session = runtime.GetSession("session-a");
         Assert.Equal(SessionStatus.Uncertain, session.Status);
         Assert.Contains("HTTP 401", session.ErrorMessage);
+        Assert.Equal(1, server.Tokens); // Publish rejection never refreshes or replays.
         Assert.DoesNotContain("PRIVATE", session.ErrorMessage);
         Assert.Equal(1, server.Writes);
         Assert.Equal("production.cannot_retry_preflight", Assert.Throws<RuntimeFailure>(() => runtime.RetryProductionPreflight("session-a")).Error.Code);

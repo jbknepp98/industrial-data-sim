@@ -25,7 +25,24 @@ The latest verified code checkpoints and exact test counts are recorded in the
 [verification guide](verification.md). The older clean-source-export run is
 historical evidence, not a claim that every subsequent increment was re-exported.
 
-## Current limitation and next step
+## October 1 checkpoint
+
+The packaging demo stopped on September 21 with a read HTTP 401, seven unsent
+samples and Failed state; it did not finish its scheduled seven-day run. Its
+expired model and retained queue have not been restarted. See the updated
+[demonstration report](packaging-demo-2026-09-20.md).
+
+The client now checks authentication before each GET, refreshes/retries once on a
+GET 401 within the original deadline, and measures expiry from token-request
+start. Persistent failures preserve unsent work; no write is automatically retried.
+The original 401's cause remains unconfirmed. A current read-only Pulse check
+failed certificate-chain verification with the configured CA bundle. Next: verify
+the current trusted CA chain, then use a fresh bounded Test session to validate
+live connectivity/recovery before another long run. Continue the Windows recovery
+investigation and the next simulation-feature increment after this reliability
+checkpoint; do not label the previous demonstration accepted.
+
+## Other current limitations
 
 The [September 20 diagnosis](control-latency-diagnosis-2026-09-20.md) reproduced
 multi-second control delays. The underlying runtime/OS cause remains unconfirmed.

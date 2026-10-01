@@ -880,3 +880,22 @@ The observer now compares each tag's own interval and recognizes matching leadin
 values as change baselines, without counting them as arrival. Tests reproduce both
 cases. No historical writes were replayed or original observations rewritten. See
 the [demonstration report](packaging-demo-2026-09-20.md) for run evidence and limits.
+
+
+## October 1: read authentication recovery and demo follow-up
+
+Reviewed retained demo results and found a pre-submission read 401 that stopped
+the long-running session with seven unsent samples. Preserved its expired model,
+payload and state. Added one bounded token refresh/GET retry for HTTP 401, with
+cancellation and both attempts sharing the original GET deadline. Publish and
+authentication POST requests are never automatically retried. Repeated rejection
+returns actionable, redacted guidance and leaves unsent work intact.
+
+Token lifetime now starts at request initiation, avoiding extension by token
+endpoint latency. Tests cover successful and repeated read rejection, unchanged
+pending payloads, explicit recovery, non-401 failures, token-endpoint failure,
+cancellation, observation recovery and no refresh/replay after publish rejection.
+Release build and 570 .NET tests passed locally. A read-only live probe was blocked
+by certificate-chain verification with the configured CA; no live data was written.
+Neither the original 401 nor the earlier Windows intermittent issue is claimed
+root-caused or fixed by this hardening.

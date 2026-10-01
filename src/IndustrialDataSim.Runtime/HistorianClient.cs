@@ -29,6 +29,9 @@ public sealed class HistorianClient : IDisposable
         deadline.CancelAfter(TimeSpan.FromSeconds(20));
         stop = deadline.Token;
         if (token is not null && UtcNow() < renewAt) return;
+        // Count token lifetime from request start, not response completion. A
+        // slow token endpoint must not extend our estimate of server validity.
+        var requestedAt = UtcNow();
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(Connection.Pulse, "auth/token"))
         {
             Content = new FormUrlEncodedContent(new Dictionary<string, string> {
@@ -44,7 +47,7 @@ public sealed class HistorianClient : IDisposable
             !expiry.TryGetInt32(out int seconds) || seconds < 1 || seconds > 604800)
             throw ProtocolFailure();
         token = value.GetString();
-        renewAt = UtcNow().AddSeconds(seconds - Math.Min(60, seconds / 2.0));
+        renewAt = requestedAt.AddSeconds(seconds - Math.Min(60, seconds / 2.0));
     }
 
     internal async Task<ProductionPreflight> Preflight(SimulationDefinition model, CancellationToken stop = default)
@@ -157,10 +160,31 @@ public sealed class HistorianClient : IDisposable
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(20));
         stop = deadline.Token;
-        using var request = Request(HttpMethod.Get, path);
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stop);
-        RequireOk(response, "read");
-        return await ReadJson(response, 4 * 1024 * 1024, stop);
+        // A token can be rejected before its advertised expiry, or expire
+        // between related reads. Only this GET is eligible for one refresh and
+        // retry. Both attempts and authentication share the original deadline.
+        // Never move this policy into Publish: a POST failure remains uncertain.
+        await Authenticate(stop);
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            using var request = Request(HttpMethod.Get, path);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stop);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                token = null;
+                if (attempt == 1)
+                    throw new RuntimeFailure("historian.http_status",
+                        "Historian read returned HTTP 401 after one token refresh. Check that the Pulse client is enabled, its audience and Dataset permissions are correct, and the services trust the same issuer. No write was retried; inspect durable status before continuing.");
+                // Release the rejected response before requesting another token.
+                // Its body is not needed and must not appear in diagnostics.
+                response.Dispose();
+                await Authenticate(stop);
+                continue;
+            }
+            RequireOk(response, "read");
+            return await ReadJson(response, 4 * 1024 * 1024, stop);
+        }
+        throw new InvalidOperationException("Bounded read attempts did not return or fail.");
     }
     private HttpRequestMessage Request(HttpMethod method, string path)
     {
@@ -172,7 +196,7 @@ public sealed class HistorianClient : IDisposable
     private static void RequireOk(HttpResponseMessage response, string operation)
     {
         if (response.StatusCode != HttpStatusCode.OK)
-            throw new RuntimeFailure("historian.http_status", $"Historian {operation} returned HTTP {(int)response.StatusCode}. Check service availability, authentication and permissions. Inspect durable state before further writes; no request is automatically retried.");
+            throw new RuntimeFailure("historian.http_status", $"Historian {operation} returned HTTP {(int)response.StatusCode}. Check service availability, authentication and permissions. Inspect durable state before further writes; no write is automatically retried.");
     }
     private static async Task<JsonDocument> ReadJson(HttpResponseMessage response, int limit, CancellationToken stop) =>
         JsonDocument.Parse(await ReadBytes(response, limit, stop), new JsonDocumentOptions { MaxDepth = 32 });

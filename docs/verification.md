@@ -139,3 +139,13 @@ Code checkpoint `a036dcb` passed [CI run 35568320181](https://github.com/jbknepp
 on Linux, macOS and Windows, including the new packaging oracle. An older Windows
 crash-test failure remains a separate documented reliability concern; a green run
 does not establish its root cause or resolution.
+
+
+## October 1 read authentication hardening
+
+Release build succeeded without warnings and 570 .NET tests passed locally.
+Eight new cases cover read refresh/retry boundaries, token lifetime, cancellation,
+unsent-payload preservation and post-publish observation recovery. The existing
+write-401 test now also proves no new token is requested after submission failure.
+No new live write was performed: current Pulse TLS verification failed using the
+configured CA bundle. The historical demo's seven queued samples remain preserved.

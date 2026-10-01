@@ -1,5 +1,25 @@
 # Two-cell packaging demonstration
 
+## October 1 follow-up: stopped, not a completed seven-day run
+
+The retained `follow-live.json` reports Blocked/Failed after a read returned HTTP
+401 on September 21 at 18:53:25 UTC. The final background invocation published
+586 batches before stopping; seven samples (777 bytes) remain queued and unsent.
+The failed preflight occurred before submission. The scheduled September 28 end
+has passed, and the pending timestamp range predates the recorded seven-day
+retention window. Do not blindly restart this model or rewrite its timestamps.
+The database, payload and original observations are preserved; no backlog was
+published during the October 1 review. User acceptance is still pending.
+
+Read authentication recovery is now bounded to one fresh token and one GET retry.
+This is hardening, not proof of why the original server rejected the token. A
+fresh read-only connection check on October 1 failed TLS verification against the
+configured CA bundle (certificate verification code 20), before credentials were
+sent. Confirm the current trusted Pulse CA/issuer chain before another live test;
+do not disable certificate verification or trust an unverified downloaded root.
+
+## Original demonstration setup and evidence
+
 This demonstration writes nine fresh synthetic tags to `Test`. One upstream mixer
 feeds Packaging A for string SKU `SKU-A` or Packaging B for `SKU-B`. Both routes
 use the same readiness and SKU sources, so both cells cannot be enabled together.

@@ -18,6 +18,13 @@ trust applies. Custom trust still checks certificate validity, server usage and
 hostname; revocation lookup is disabled for the local private CA configuration.
 Redirects and application-level write retries are disabled. Tokens remain in
 memory and renew before expiry; neither tokens nor secrets enter SQLite or logs.
+Expiry is estimated from the start of the token request so endpoint latency does
+not extend the token's cached lifetime. Before each authenticated GET, validity is
+checked again. If that GET returns HTTP 401, invalidate the cached token, acquire
+one fresh token and retry that GET once. Both attempts, refresh and response-body
+read share the GET's original 20-second deadline. Repeated 401, refresh failure,
+403, other HTTP errors and connection failures stop that read. There is no retry
+loop or token-endpoint retry. This policy never applies to a Historian write.
 
 Run the built CLI using these arguments:
 
