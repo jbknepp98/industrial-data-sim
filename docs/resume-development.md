@@ -25,7 +25,7 @@ The latest verified code checkpoints and exact test counts are recorded in the
 [verification guide](verification.md). The older clean-source-export run is
 historical evidence, not a claim that every subsequent increment was re-exported.
 
-## October 1 checkpoint
+## October 1–2 checkpoint
 
 The packaging demo stopped on September 21 with a read HTTP 401, seven unsent
 samples and Failed state; it did not finish its scheduled seven-day run. Its
@@ -49,9 +49,13 @@ Preserve the old demo database as evidence; do not replay it into the rebuilt
 stack. The new API describes late-data support, but the simulator retains its
 forward-only timestamp policy. A fresh packaging run is now active: see the October 2
 [backfill-to-live demonstration](lenny-demo-2026-10-02.md) for its tag prefix,
-finite end and restart procedure. Inspect that process before starting another publisher. Continue the Windows recovery
-investigation and the next simulation-feature increment after this reliability
-checkpoint; do not label the previous demonstration accepted.
+finite end and restart procedure. Both the original and additive-speed publishers
+passed a controlled graceful stop/resume test on October 2 and remain active;
+inspect both process records before starting another publisher. The original
+batch records and model hashes were unchanged, and each resumed at its saved
+candidate cursor. Next: longer live-soak evidence and the unresolved Windows
+recovery/control-latency investigation, followed by a safe horizon-extension
+contract. Do not label the previous September demonstration accepted.
 
 ## Other current limitations
 

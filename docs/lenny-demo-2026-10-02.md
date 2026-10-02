@@ -103,3 +103,34 @@ folder, with its own `state.db`, `active-run.json`, logs and final-result file.
 Both publishers must be inspected and gracefully stopped before shutdown; resume
 each against its own existing database. The speed session also ends October 9,
 18:32 UTC. Neither process automatically restarts after a reboot.
+
+
+## Controlled live restart — October 2, approximately 20:16–20:17 UTC
+
+Verified both active process commands against their saved identities, then sent
+SIGINT. Both returned Stopped, Ready session state, empty queues and no errors.
+The original process had published 132 batches and the speed process 116.
+Both exited and left fully checkpointed databases without WAL files. SQLite
+integrity checks returned `ok` for both.
+
+A normal read-only diagnostic connection failed after shutdown. After confirming
+process exit and absence of WAL files, immutable read-only connections successfully
+inspected the stopped databases. This diagnostic access failure is not claimed
+root-caused; neither publisher reported a shutdown or database error. Immutable
+mode was used only while both databases were confirmed inactive and checkpointed.
+
+Resumed each original `production follow` command against its existing database;
+no model was re-admitted or altered. Original batch identities, states, ranges
+and hashes remained unchanged, as did model hashes. First new batch ranges were
+39816–39834 for the original session and 17700–17704 for the speed session,
+starting exactly at their stopped candidate cursors. Tag progress did not regress.
+Both reached published time 20:17 UTC with Ready state and no session error.
+Historian returned non-null current values for all 13 tags. Feed and production
+speed were zero during the scheduled readiness interruption.
+
+Local `restart-before.json`, `restart-stopped.json`, `restart-verification.json`
+and `follow-pre-restart.json` preserve evidence; `active-run.json` now identifies
+the replacement publisher for each database. Both publishers remain running.
+This demonstrates graceful live stop/resume and preservation of prior batch
+records. It does not prove per-point storage, a forced-crash recovery path, or
+long-duration unattended reliability. Those remain separate tests.

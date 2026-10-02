@@ -952,3 +952,15 @@ variation for both cells. All 24 Python tests and the complete offline verifier
 passed. No C# runtime implementation changed in this increment. The dated
 [Lenny demonstration report](lenny-demo-2026-10-02.md) records live evidence and
 the two independently resumable publishers.
+
+
+## October 2: controlled restart verification
+
+Reviewed and committed the additive-speed increment, then gracefully stopped and
+resumed both live demo publishers. Both stopped with empty queues, passed database
+integrity checks, resumed at their exact saved candidate cursors and advanced to
+current time. Original batch records and model hashes were preserved; all 13
+current values were non-null on readback. The dated demonstration report records
+limits and the stopped-database diagnostic access issue. Both live publishers
+remain active with updated local process metadata. Long soaks, forced-crash live
+experiments, horizon extension and production hosting remain future work.
