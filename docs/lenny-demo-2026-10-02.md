@@ -134,3 +134,23 @@ the replacement publisher for each database. Both publishers remain running.
 This demonstrates graceful live stop/resume and preservation of prior batch
 records. It does not prove per-point storage, a forced-crash recovery path, or
 long-duration unattended reliability. Those remain separate tests.
+
+
+## Longer-operation checkpoint — October 2, 21:20 UTC
+
+Both sessions remained Ready without session errors and had published through
+21:20 UTC. The original session had 196 Published batches and the additive-speed
+session 180; neither had unresolved batch states. Elapsed operation since their
+first logs was approximately 2 hours 47 minutes and 2 hours 42 minutes respectively,
+including the controlled stop/resume above. This is not a completed day-scale soak.
+
+The observation records remain mixed: original 1 Observed, 180
+ConsistentWithoutNewArrival and 15 NotYetObserved; speeds 1 Observed, 168
+ConsistentWithoutNewArrival and 11 NotYetObserved. Retained warning events were
+all `delivery.observation` (11 original, 6 speed); there were no Error/Critical
+log entries. Repeated values and arrival evidence are distinct from publishing
+success; no missing samples were replayed. These counters do not establish
+per-point storage or prove the cause of every observation classification.
+Local `soak-check-20261002.json` records this snapshot. Both processes continue
+under the same finite model ends. Token refresh events are not instrumented in
+these logs, so this checkpoint does not claim an observed renewal count.

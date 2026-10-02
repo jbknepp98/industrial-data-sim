@@ -964,3 +964,14 @@ current values were non-null on readback. The dated demonstration report records
 limits and the stopped-database diagnostic access issue. Both live publishers
 remain active with updated local process metadata. Long soaks, forced-crash live
 experiments, horizon extension and production hosting remain future work.
+
+
+## October 2: longer operation and extension design
+
+Recorded the 21:20 UTC live checkpoint with both sessions current, no session
+errors or unresolved batches, and preserved mixed arrival observations. Reviewed
+admission, generation cursor checks, model-hash validation, ownership release and
+archive behavior before drafting the horizon-extension design. The proposal keeps
+admitted models immutable, adds an auditable operational end and leaves schedule
+appending to a separate design. No runtime code, live state or schema changed.
+Next: offline proof that continuation preserves the original deterministic stream.
