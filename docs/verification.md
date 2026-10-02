@@ -149,3 +149,22 @@ unsent-payload preservation and post-publish observation recovery. The existing
 write-401 test now also proves no new token is requested after submission failure.
 No new live write was performed: current Pulse TLS verification failed using the
 configured CA bundle. The historical demo's seven queued samples remain preserved.
+
+
+## October 2 horizon-continuation prerequisite
+
+Release build passed with zero warnings/errors; all 733 .NET tests passed locally.
+The 163 new `HorizonContinuationTests` cases compare a short model followed by a
+later-end reload at its retained cursor against an uninterrupted longer model.
+They include ten pattern configurations, one- and five-millisecond grids, eight
+cut positions, partial tag rows, live fences, repeated extensions, a known seeded
+random vector and terminal/unaligned-end behavior. Comparisons include timestamp,
+value, quality, strict ordering and omitted gate samples, independent of window
+and batch sizes.
+
+This validates generator continuation, not a durable extension operation. No
+migration, production extension command or live model mutation was implemented.
+The new tests are included in the normal suite; a focused run uses
+`dotnet test --filter FullyQualifiedName~HorizonContinuationTests`. Hosted CI has
+not yet run this local commit. The preceding increment passed all 24 Python tests
+and the offline schema/oracle verifier; this test-only change did not alter Python.

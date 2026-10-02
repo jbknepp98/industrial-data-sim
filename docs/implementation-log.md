@@ -975,3 +975,15 @@ archive behavior before drafting the horizon-extension design. The proposal keep
 admitted models immutable, adds an auditable operational end and leaves schedule
 appending to a separate design. No runtime code, live state or schema changed.
 Next: offline proof that continuation preserves the original deterministic stream.
+
+
+## October 2: offline horizon-continuation proof
+
+Added 163 bounded cases proving TVQ stream equivalence across earlier horizons,
+independent reloads, different batching limits, gate/sequence boundaries, partial
+timestamp rows, random schedules and end times between samples. Included an
+independent known random vector to detect a mid-hold restart or reroll. Tests
+explicitly distinguish these generator properties from the unimplemented durable
+extension API. Release build was warning-free and all 733 .NET tests passed.
+No production source code, live database or running model was changed. Next is
+an atomic, audited runtime horizon revision with migration/recovery tests.

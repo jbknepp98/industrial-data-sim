@@ -1,6 +1,7 @@
 # Session horizon extension — proposed first increment
 
-Status: design only. No extension command or database migration is implemented.
+Status: design with offline generator-equivalence coverage. No extension command
+or database migration is implemented.
 Existing production sessions and their original end times are unchanged.
 
 ## Problem and scope
@@ -146,5 +147,16 @@ emitted after commit. Logging failure cannot change the transaction outcome.
    restart around the commit. Keep the current demos unchanged. Confirm arrival
    indicators and obtain user pattern review separately from publishing evidence.
 
-The first implementation step is offline equivalence coverage. No production
-extension or migration should be applied during that step.
+The first implementation step now has offline equivalence coverage in
+`HorizonContinuationTests`: 160 pattern/grid/boundary combinations plus three
+focused cases. It compares per-tag TVQ streams using independently reloaded
+short/long definitions and different generation window sizes. Cases cover seeded
+holds and staircases, bounded ramps, sequence and switch clocks, both gate modes,
+closed-gate output suppression, SKU routing, partial timestamp rows, repeated
+extensions, terminal holds and unaligned ends. A known independent random vector
+checks that a mid-hold cut does not restart or reroll the schedule.
+
+These tests establish the generator prerequisite only. They do not exercise a
+persisted horizon revision, migration, extension transaction, archive revision or
+extension CLI; none exists yet. Next is the runtime migration/revision increment,
+with atomicity and recovery tests before exposing production commands.
