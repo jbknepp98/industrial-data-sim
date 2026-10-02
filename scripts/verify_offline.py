@@ -162,7 +162,35 @@ def check_packaging_demo(dotnet):
             require(str(error).startswith("demo.route_mismatch"), "Unexpected packaging diagnostic.")
         else:
             raise ValueError("Packaging checker failed to detect simultaneous routing.")
+        # Additive speed controls must track the original feed schedule exactly,
+        # including zero-speed shutdowns and a new startup after each activation.
+        from prepare_packaging_speeds import build_model as build_speeds
+        speeds = build_speeds(model, "Example.Packaging", "example-speeds")
+        validator("simulation-v1.schema.json").validate(speeds)
+        path.write_text(json.dumps(speeds))
+        speed_result = subprocess.run([dotnet, str(tool), str(path)], capture_output=True, text=True, timeout=30)
+        require(speed_result.returncode == 0, "Speed preview failed; inspect its model with validate-simulation.")
+        speed_data = json.loads(speed_result.stdout)["data"]
+        original = json.loads(result.stdout)["data"]
+        for cell, nominal in (("A", 120), ("B", 95)):
+            prefix = "Example.Packaging.Packaging" + cell
+            values = speed_data[prefix + ".Speed.PackagesPerMinute"]
+            controls = speed_data[prefix + ".SpeedControl.Boolean"]
+            feeds = original[prefix + ".FeedEnabled.Boolean"]
+            require(len(values) == len(controls) == len(feeds) == 4320, "Speed preview must cover all 4320 minutes.")
+            previous_enabled = False
+            for value, control, feed in zip(values, controls, feeds):
+                require(value["t"] == control["t"] == feed["t"], "Speed/control/feed timestamps must align.")
+                require(control["v"] == feed["v"], "Speed control differs from the original feed schedule.")
+                require((value["v"] > 0) == feed["v"] and 0 <= value["v"] <= nominal + 5,
+                        "Speed must be zero when disabled and bounded/positive when enabled.")
+                require(value["q"] == control["q"] == 192, "Speed/control quality must remain 192.")
+                if feed["v"] and not previous_enabled:
+                    require(value["v"] == nominal // 3, "A feed activation must restart the speed staircase.")
+                previous_enabled = feed["v"]
+            require(len({point["v"] for point in values}) > 10, "Running speed variation is missing.")
     print("72-hour packaging preview passed: 4320 routing timestamps, suppression, ordering and both clock policies checked.")
+    print("Additive speeds passed: both cells coordinated over 4320 minutes, including shutdown and startup behavior.")
 
 
 def main():

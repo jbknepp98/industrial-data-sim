@@ -35,10 +35,21 @@ expired model and retained queue have not been restarted. See the updated
 The client now checks authentication before each GET, refreshes/retries once on a
 GET 401 within the original deadline, and measures expiry from token-request
 start. Persistent failures preserve unsent work; no write is automatically retried.
-The original 401's cause remains unconfirmed. A current read-only Pulse check
-failed certificate-chain verification with the configured CA bundle. Next: verify
-the current trusted CA chain, then use a fresh bounded Test session to validate
-live connectivity/recovery before another long run. Continue the Windows recovery
+The original 401's cause remains unconfirmed. Following the local stack rebuild,
+the public Pulse `/api/ca` endpoint supplied the new CA. Project-local trust now
+verifies both Pulse and Historian TLS; no system trust settings were changed.
+The replacement credential resolved authentication on October 2. Created a fresh
+Test dataset (seven-day purge age, no size purge, 100 ms late-data tolerance,
+30-day late-data age) and ran `scripts/verify_production.py` with fresh state.
+Two sessions completed two published batches: all six tags matched observations
+and had non-null current values, and both ramp tags showed changes. User pattern
+review remains NotReviewed; arrival evidence is not a per-point receipt.
+See the October 2 entry in [the implementation log](implementation-log.md).
+Preserve the old demo database as evidence; do not replay it into the rebuilt
+stack. The new API describes late-data support, but the simulator retains its
+forward-only timestamp policy. A fresh packaging run is now active: see the October 2
+[backfill-to-live demonstration](lenny-demo-2026-10-02.md) for its tag prefix,
+finite end and restart procedure. Inspect that process before starting another publisher. Continue the Windows recovery
 investigation and the next simulation-feature increment after this reliability
 checkpoint; do not label the previous demonstration accepted.
 

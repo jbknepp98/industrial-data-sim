@@ -899,3 +899,56 @@ Release build and 570 .NET tests passed locally. A read-only live probe was bloc
 by certificate-chain verification with the configured CA; no live data was written.
 Neither the original 401 nor the earlier Windows intermittent issue is claimed
 root-caused or fixed by this hardening.
+
+### Rebuilt-stack connection checkpoint
+
+Retrieved the public Pulse `/api/ca` certificate without credentials as an explicit
+bootstrap step, then verified TLS to both services using that CA in the ignored
+project-local trust bundle. The bootstrap itself did not authenticate the server;
+subsequent API requests used certificate verification. System trust was unchanged.
+Read the new Pulse and Historian `/api/v1.json` schemas over verified TLS. The
+token endpoint remains `/auth/token`; dataset creation remains POST `/api/datasets`.
+Authentication returned HTTP 400 (`invalid_request`) with a client/secret
+diagnostic even after the user confirmed the client identifier. A private equality
+check verified that local configuration matches both supplied credentials. The
+client-detail API requires authentication (401), so enabled status, grant access
+and the configured secret could not be verified through that endpoint.
+No token, certificate, credential, generated state or raw error body is included
+in versioned documentation. No datasets or samples were written in this attempt.
+
+
+## October 2: upgraded-stack smoke passed
+
+The supplied server certificate matches live Pulse and verifies against the
+project-local CA. A replacement credential resolved token acquisition (HTTP 200).
+Created the absent Test dataset with `pa=7`, `ps=0`, `ldt=100`, `lda=30`, then ran
+the existing guarded `scripts/verify_production.py` helper with fresh state and
+unique tags. Both sessions completed; two batches were published. Each observation
+reported three matching tags, three non-null current tags and one changed tag.
+These are arrival indicators, not per-point acknowledgments or user acceptance.
+
+Review prefix: `Sim.Production.20261002T181935-fa69a5`, with groups `A` and `B`,
+each containing `Temperature`, `Running` and `State`. The UTC model interval was
+October 2, 18:09:35–18:10:35. Temperature ramps from 10 at 2 units/second, bounded
+at 15; Running stays true and State stays Idle. User review is NotReviewed.
+Local state and reports remain in the ignored matching production-smoke folder.
+No old demo state was resumed, and no publish was retried.
+
+The new Dataset schema describes late-data acceptance outside its clock-skew
+window. This was observed in documentation, not tested with out-of-order writes;
+the simulator's forward-only policy remains unchanged. No source code changed
+for reconnection. Documentation passed `git diff --check`; no new unit-suite run
+was needed for these local configuration and documentation changes.
+
+
+## October 2: additive speeds and reproducible demonstration checks
+
+Added a pure model builder for disjoint packaging speed/control tags, preserving
+the original source schedule and keeping cross-session subscription explicitly
+out of scope. Added full ten-day control-schedule unit coverage and moved the
+72-hour runtime speed comparison into the versioned offline verifier. It checks
+route alignment, shutdown zeros, activation startup values, bounds, quality and
+variation for both cells. All 24 Python tests and the complete offline verifier
+passed. No C# runtime implementation changed in this increment. The dated
+[Lenny demonstration report](lenny-demo-2026-10-02.md) records live evidence and
+the two independently resumable publishers.
