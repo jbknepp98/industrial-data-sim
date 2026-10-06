@@ -1,7 +1,9 @@
 # Session horizon extension — proposed first increment
 
-Status: design with offline generator-equivalence coverage. No extension command
-or database migration is implemented.
+Status: offline generator coverage and an internal simulation-only revision API
+are implemented, with database schema version 7. No extension CLI or production
+extension API is available. The remaining sections describe the full target
+contract; the implementation boundary below takes precedence for current use.
 Existing production sessions and their original end times are unchanged.
 
 ## Problem and scope
@@ -156,7 +158,46 @@ closed-gate output suppression, SKU routing, partial timestamp rows, repeated
 extensions, terminal holds and unaligned ends. A known independent random vector
 checks that a mid-hold cut does not restart or reroll the schedule.
 
-These tests establish the generator prerequisite only. They do not exercise a
-persisted horizon revision, migration, extension transaction, archive revision or
-extension CLI; none exists yet. Next is the runtime migration/revision increment,
-with atomicity and recovery tests before exposing production commands.
+Those 163 tests establish the generator prerequisite. Separate durable tests now
+exercise schema migration, persisted revisions and transaction/reopen behavior.
+Archive revision export and an extension CLI remain unimplemented.
+
+## October 6 implementation boundary
+
+Schema version 7 adds an active horizon revision on sessions, a generation
+revision on batches and a bounded revision-history table. Existing records remain
+revision zero; admitted configuration bytes/hashes are unchanged. Older binaries
+reject version 7. Opening an existing database with this build applies the
+transactional migration, so preserve a verified backup before an operational
+upgrade. The live demonstration databases were not opened by the new runtime.
+
+Internal `ExtendHorizon` and `Horizon` methods are available to simulation tests,
+not CLI callers. Production mode rejects mutation. The internal API implements
+UTC/later-end checks, at least one new sample, original tag ownership, empty
+queue/state guards, a 1000-revision bound, UUID request idempotency, stale-revision
+rejection, model/revision integrity and unchanged-cursor generation. Complete
+becomes Ready; Paused stays Paused. A revision and its receipt commit together;
+retry after an injected post-commit failure returns that same receipt.
+
+The first implementation infers the expected prior revision from the sequential
+revision number, retains generator version on the immutable session, and derives
+the effective end from the validated revision history. The admitted configuration
+is reloaded with only its end changed in memory. New batches carry their horizon
+revision without changing existing payload hashes. Status is internal-only;
+public status/receipts and detailed terminal-pattern notices remain CLI work.
+The no-new-slots diagnostic currently explains the required grid boundary rather
+than printing the earliest allowable end timestamp.
+
+Extended sessions cannot be archived yet: `archive.horizon_unsupported` prevents
+the old export format from omitting horizon history. Revision-zero archives
+continue to use the existing format. The next increment must implement and test
+horizon-aware export/verification before exposing extension through commands.
+
+All 759 .NET tests passed locally, including 26 durable revision tests. Existing
+legacy migration tests caught a version-three reconstruction ordering problem:
+that step must load the admitted model before version-seven tables exist. The
+fix and regression coverage preserve upgrades from older schemas. An injected
+schema conflict proves the entire version-seven migration rolls back, including
+new columns and user_version. Mutation fault tests use exceptions at transaction
+boundaries plus reopen; forced child-process kills at those new boundaries are
+not yet covered. Runtime fault logging and error text expose no raw metadata.

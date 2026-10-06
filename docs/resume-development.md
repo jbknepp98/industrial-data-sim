@@ -56,9 +56,13 @@ batch records and model hashes were unchanged, and each resumed at its saved
 candidate cursor. Next: longer live-soak evidence and the unresolved Windows
 recovery/control-latency investigation, followed by a safe horizon-extension
 contract. The [horizon-extension design](session-horizon-extension-design.md)
-now has 163 passing offline continuation cases (733 total .NET tests). Its next
-bounded implementation step is durable horizon revisions with migration and
-transaction/recovery tests. No extension command or live model edits exist yet. The October 2
+now has an internal simulation-only durable revision API and schema version 7,
+with 759 passing .NET tests. No extension CLI or production extension API exists.
+The next bounded step is horizon-aware archive export/verification, then command
+integration and further recovery checks. The October 6 read-only checkpoint found
+both original demo databases still publishing current data; they have not been
+migrated by the new runtime. Back up and plan an operational upgrade before
+restarting those databases on the new build. The October 2
 21:20 UTC checkpoint shows both publishers current after roughly 2¾ hours,
 including restart; a day-scale soak remains incomplete. Do not label the previous
 September demonstration accepted.

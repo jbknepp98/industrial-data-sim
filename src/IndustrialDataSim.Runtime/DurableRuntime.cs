@@ -65,7 +65,7 @@ public sealed partial class DurableRuntime : IDisposable
             connection.Open();
             Execute("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=1000;");
             long version = Convert.ToInt64(Scalar("PRAGMA user_version;"));
-            if (version is not (0 or 1 or 2 or 3 or 4 or 5 or 6))
+            if (version is not (0 or 1 or 2 or 3 or 4 or 5 or 6 or 7))
                 throw new RuntimeFailure("runtime.schema_version", "Unsupported state database version. Open it with the matching simulator version; do not reset or overwrite it.");
             long interrupted = 0;
             InTransaction(() =>
@@ -82,6 +82,7 @@ public sealed partial class DurableRuntime : IDisposable
                 if (version < 4) Execute(Schema.VersionFour);
                 if (version < 5) Execute(Schema.VersionFive);
                 if (version < 6) Execute(Schema.VersionSix);
+                if (version < 7) Execute(Schema.VersionSeven);
                 interrupted = Convert.ToInt64(Scalar("SELECT COUNT(*) FROM batches WHERE state='Sending'"));
                 Execute("""
                     UPDATE sessions SET state='Uncertain',error_code='delivery.interrupted',
@@ -272,18 +273,18 @@ public sealed partial class DurableRuntime : IDisposable
     private SimulationDefinition LoadModelForWork(string id, [CallerMemberName] string operation = "")
     {
         try { return LoadModel(id); }
-        catch (RuntimeFailure failure) when (failure.Error.Code == "runtime.configuration_integrity")
+        catch (RuntimeFailure failure) when (failure.Error.Code is "runtime.configuration_integrity" or "extension.integrity")
         {
             Execute("UPDATE sessions SET state='Failed',error_code=$code,error_message=$message WHERE id=$id",
                 ("$id", id), ("$code", failure.Error.Code), ("$message", failure.Error.Message));
             Log(LogLevel.Error, failure.Error.Code, operation,
-                "Saved configuration failed integrity validation; this session is Failed.", failure.Error.Message, id);
+                "Saved configuration or horizon failed integrity validation; this session is Failed.", failure.Error.Message, id);
             failure.Logged = true;
             throw;
         }
     }
 
-    private SimulationDefinition LoadModel(string id)
+    private SimulationDefinition LoadModel(string id, bool includeHorizon = true)
     {
         using var command = Command("SELECT config,config_hash,generator_version FROM sessions WHERE id=$id", ("$id", id));
         using var reader = command.ExecuteReader();
@@ -293,7 +294,7 @@ public sealed partial class DurableRuntime : IDisposable
             throw new RuntimeFailure("runtime.configuration_integrity", "Saved configuration hash or generator version does not match. Stop this session and restore verified state; do not regenerate with an edited definition.");
         var loaded = SimulationDefinitionLoader.Load(json);
         if (!loaded.IsValid) throw new RuntimeFailure("runtime.configuration_integrity", "Saved configuration cannot be loaded. Use a compatible generator version or restore verified state.");
-        return loaded.Definition!;
+        return includeHorizon ? ApplyHorizon(id, json, reader.GetString(1), loaded.Definition!) : loaded.Definition!;
     }
 
     private T Access<T>(Func<T> action, string? sessionId = null, [CallerMemberName] string operation = "")

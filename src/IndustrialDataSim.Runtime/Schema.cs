@@ -2,6 +2,18 @@ namespace IndustrialDataSim.Runtime;
 
 internal static class Schema
 {
+    internal const string VersionSeven = """
+        ALTER TABLE sessions ADD COLUMN horizon_revision INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE batches ADD COLUMN horizon_revision INTEGER NOT NULL DEFAULT 0;
+        CREATE TABLE horizon_revisions(
+          session_id TEXT NOT NULL REFERENCES sessions(id), revision INTEGER NOT NULL,
+          request_id TEXT NOT NULL, previous_end INTEGER NOT NULL, new_end INTEGER NOT NULL,
+          previous_total INTEGER NOT NULL, new_total INTEGER NOT NULL, cursor INTEGER NOT NULL,
+          config_hash TEXT NOT NULL, prior_state TEXT NOT NULL, resulting_state TEXT NOT NULL,
+          committed_utc TEXT NOT NULL, PRIMARY KEY(session_id,revision), UNIQUE(session_id,request_id));
+        PRAGMA user_version=7;
+        """;
+
     internal const string VersionSix = """
         ALTER TABLE tags ADD COLUMN published_ticks INTEGER;
         ALTER TABLE session_tag_progress ADD COLUMN published_ticks INTEGER;

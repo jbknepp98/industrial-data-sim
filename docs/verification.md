@@ -168,3 +168,20 @@ The new tests are included in the normal suite; a focused run uses
 `dotnet test --filter FullyQualifiedName~HorizonContinuationTests`. Hosted CI has
 not yet run this local commit. The preceding increment passed all 24 Python tests
 and the offline schema/oracle verifier; this test-only change did not alter Python.
+
+
+## October 6 durable horizon revisions
+
+Release build passed with zero warnings/errors and all 759 .NET tests passed
+locally. The 26 new durable cases cover completed/paused continuation, immutable
+configuration and prior batches, batch revision identity, idempotent requests,
+stale/conflicting requests, before/after-commit injected faults with reopen,
+lifecycle/ownership/queue restrictions, production API exclusion, malformed
+revision history, migration preservation and rollback, and useful input errors.
+
+The full suite initially exposed eight legacy migration regressions because
+version-three progress reconstruction tried to load version-seven horizon state.
+The corrected path loads the admitted model during that earlier migration; all
+legacy tests now pass. Mutation interruptions are simulated exceptions, not new
+forced-process-kill tests. No live database was migrated or extended. Hosted CI
+has not yet run this local increment.

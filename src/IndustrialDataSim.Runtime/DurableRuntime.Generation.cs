@@ -16,7 +16,7 @@ public sealed partial class DurableRuntime
         foreach (string id in ids)
         {
             try { turns.Add(Generate(id)); }
-            catch (RuntimeFailure failure) when (failure.Error.Code == "runtime.configuration_integrity")
+            catch (RuntimeFailure failure) when (failure.Error.Code is "runtime.configuration_integrity" or "extension.integrity")
             {
                 // LoadModelForWork already persisted Failed and preserved ownership.
                 // Do not broaden this catch: storage and programming failures must
@@ -66,8 +66,8 @@ public sealed partial class DurableRuntime
             if (window.PointCount > 0)
             {
                 Execute("""
-                    INSERT INTO batches(session_id,state,start_slot,end_slot,point_count,byte_count,payload,hash,positions)
-                    VALUES($id,'Pending',$start,$end,$count,$bytes,$payload,$hash,$positions)
+                    INSERT INTO batches(session_id,state,start_slot,end_slot,point_count,byte_count,payload,hash,positions,horizon_revision)
+                    VALUES($id,'Pending',$start,$end,$count,$bytes,$payload,$hash,$positions,(SELECT horizon_revision FROM sessions WHERE id=$id))
                     """, ("$id", id), ("$start", session.NextSlot), ("$end", window.NextSlot), ("$count", window.PointCount),
                     ("$bytes", Encoding.UTF8.GetByteCount(window.Payload)), ("$payload", window.Payload),
                     ("$hash", Hash(window.Payload)), ("$positions", JsonSerializer.Serialize(window.LastTicks)));

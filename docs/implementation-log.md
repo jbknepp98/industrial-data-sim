@@ -987,3 +987,20 @@ explicitly distinguish these generator properties from the unimplemented durable
 extension API. Release build was warning-free and all 733 .NET tests passed.
 No production source code, live database or running model was changed. Next is
 an atomic, audited runtime horizon revision with migration/recovery tests.
+
+
+## October 6: durable horizon revision foundation
+
+Added transactional schema version 7 and an internal simulation-only extension
+operation. Preserved immutable configuration and generation cursors, validated
+bounded revision chains, recorded batch horizon identity, and implemented safe
+idempotent retries and lifecycle guards. Blocked archival of extended sessions
+until revision-aware export is implemented. No CLI or production mutation path
+is exposed. Fixed the legacy progress migration ordering regression found by the
+full suite. Warning-free Release build; all 759 .NET tests passed locally.
+
+Read-only inspection at October 6, 18:38 UTC showed both demo sessions Ready with
+no session error and publishing through the current minute, roughly four days
+after launch (including the earlier controlled restart). Their version-six state
+was not opened by the new runtime. This is continued-operation evidence, not
+per-point storage proof or a newly executed crash/recovery experiment.

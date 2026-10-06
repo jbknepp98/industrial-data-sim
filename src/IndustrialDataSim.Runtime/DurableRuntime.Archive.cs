@@ -24,6 +24,8 @@ public sealed partial class DurableRuntime
     public ArchiveReceipt Archive(string id, string directory) => Access(() =>
     {
         var session = ReadSession(id);
+        if (Convert.ToInt64(Scalar("SELECT horizon_revision FROM sessions WHERE id=$id", ("$id", id))) != 0)
+            throw new RuntimeFailure("archive.horizon_unsupported", "Extended sessions cannot yet be archived. Preserve their database until horizon-aware archive export is available; no history was pruned.");
         if (Scalar("SELECT archive_id FROM sessions WHERE id=$id", ("$id", id)) is string)
             throw new RuntimeFailure("archive.already_archived", "This session is already archived. Inspect its archive receipt; do not repeat pruning or recreate its identity.");
         if (session.Status is not (SessionStatus.Complete or SessionStatus.Cancelled) ||

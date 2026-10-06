@@ -40,7 +40,9 @@ public sealed partial class DurableRuntime
             while (reader.Read()) ids.Add(reader.GetString(0));
         foreach (string id in ids)
         {
-            InsertSessionProgress(LoadModel(id));
+            // Version-three reconstruction precedes horizon columns in version seven.
+            // Legacy databases have only their admitted definition at this point.
+            InsertSessionProgress(LoadModel(id, includeHorizon: false));
             using var command = Command("SELECT state,positions FROM batches WHERE session_id=$id ORDER BY id", ("$id", id));
             using var reader = command.ExecuteReader();
             while (reader.Read())
