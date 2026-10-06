@@ -1,10 +1,37 @@
-# Session horizon extension — proposed first increment
+# Session horizon extension
 
-Status: offline generator coverage and an internal simulation-only revision API
-are implemented, with database schema version 7. No extension CLI or production
-extension API is available. The remaining sections describe the full target
-contract; the implementation boundary below takes precedence for current use.
-Existing production sessions and their original end times are unchanged.
+Current implementation: `session extend` and `production extend` are available.
+Use `session horizon` or `production horizon` to inspect revision and effective end.
+Stop any foreground publisher before using these direct database commands.
+
+```
+production extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>
+```
+
+The UTC end must end in Z and include another sample on the original grid.
+Reuse a request UUID only with identical arguments. Extension does not publish,
+repeat finite schedules, reset clocks, add tags or change model seeds. Ready,
+Paused and unreleased Complete sessions with empty queues may extend. Uncertain,
+failed, cancelled, archived and released sessions cannot extend. Production
+publishing still runs its existing preflight/conflict and retention checks.
+
+Archives now use format 2, including the original admitted definition, effective
+horizon, full revision history and the revision used for every batch. The existing
+checksum-based verifier remains compatible with format-1 receipts and exports.
+No revision history is pruned from the session database. Forced child-process
+kills before and after the revision commit verify all-or-nothing recovery.
+
+October 6 production acceptance used fresh Test tags under
+`Sim.Horizon.20261006T235027-1d5cf3`. Both historical windows published, the final
+ramp read back as 119 at the expected new final timestamp, and the completed
+archive verified. The first batch was Observed; the second was
+ConsistentWithoutNewArrival (constants were suppressed). No write was retried.
+These are arrival indicators; user pattern review remains separate.
+
+## Original design and implementation history
+
+The following design explains the invariants. References to internal-only APIs
+or blocked archives describe the earlier foundation and are superseded above.
 
 ## Problem and scope
 

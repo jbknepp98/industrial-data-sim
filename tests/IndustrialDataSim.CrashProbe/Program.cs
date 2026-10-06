@@ -15,6 +15,12 @@ try
         Thread.Sleep(Timeout.Infinite);
     }
     runtime.FaultPoint = StopAt;
+    if (args[2] is "before_horizon_commit" or "after_horizon_commit")
+    {
+        runtime.ExtendHorizon("session-a", DateTimeOffset.Parse("2026-09-01T00:00:06Z"), 0,
+            "6886f6d2-d0e9-43d7-9406-1c31cb34cb54");
+        return 0;
+    }
     runtime.Generate("session-a");
     if (args[2] is "before_cancellation_commit" or "after_cancellation_commit")
     {

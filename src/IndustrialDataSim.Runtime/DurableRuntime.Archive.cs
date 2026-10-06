@@ -24,8 +24,6 @@ public sealed partial class DurableRuntime
     public ArchiveReceipt Archive(string id, string directory) => Access(() =>
     {
         var session = ReadSession(id);
-        if (Convert.ToInt64(Scalar("SELECT horizon_revision FROM sessions WHERE id=$id", ("$id", id))) != 0)
-            throw new RuntimeFailure("archive.horizon_unsupported", "Extended sessions cannot yet be archived. Preserve their database until horizon-aware archive export is available; no history was pruned.");
         if (Scalar("SELECT archive_id FROM sessions WHERE id=$id", ("$id", id)) is string)
             throw new RuntimeFailure("archive.already_archived", "This session is already archived. Inspect its archive receipt; do not repeat pruning or recreate its identity.");
         if (session.Status is not (SessionStatus.Complete or SessionStatus.Cancelled) ||
@@ -55,20 +53,28 @@ public sealed partial class DurableRuntime
                 writtenHash.AppendData(data);
                 bytes += data.Length;
             }
-            Write(new { kind = "manifest", schemaVersion = 1, archiveId, mode = ModeName, session,
+            Write(new { kind = "manifest", schemaVersion = 2, archiveId, mode = ModeName, session,
                 configuration = (string)Scalar("SELECT config FROM sessions WHERE id=$id", ("$id", id))!,
                 configurationHash = (string)Scalar("SELECT config_hash FROM sessions WHERE id=$id", ("$id", id))!,
-                generatorVersion = 1, progress = Progress(id),
+                generatorVersion = 1, horizon = HorizonStatus(id), progress = Progress(id),
                 preflightSettings = Scalar("SELECT settings FROM production_preflight WHERE session_id=$id", ("$id", id)) as string,
                 baseline = Scalar("SELECT baseline FROM production_preflight WHERE session_id=$id", ("$id", id)) as string });
+            // Revision zero is represented by the admitted configuration. Later
+            // revisions stay in SQLite and are also exported before batch pruning.
+            using (var revisions = Command("SELECT revision,request_id,previous_end,new_end,previous_total,new_total,cursor,config_hash,prior_state,resulting_state,committed_utc FROM horizon_revisions WHERE session_id=$id ORDER BY revision", ("$id", id)))
+            using (var row = revisions.ExecuteReader())
+                while (row.Read()) Write(new { kind = "horizonRevision", revision = row.GetInt32(0), requestId = row.GetString(1),
+                    previousEndUtc = Utc(row.GetInt64(2)), endUtc = Utc(row.GetInt64(3)), previousTotal = row.GetInt64(4),
+                    total = row.GetInt64(5), cursor = row.GetInt64(6), configurationHash = row.GetString(7),
+                    priorState = row.GetString(8), resultingState = row.GetString(9), committedUtc = row.GetString(10) });
             using var command = Command("""
-                SELECT b.id,b.state,b.start_slot,b.end_slot,b.point_count,b.byte_count,b.hash,b.positions,a.state,a.error_code,o.status,o.matching_tags,o.nonnull_current_tags,o.changed_tags,o.error_code,o.user_review
+                SELECT b.id,b.state,b.start_slot,b.end_slot,b.point_count,b.byte_count,b.hash,b.positions,a.state,a.error_code,o.status,o.matching_tags,o.nonnull_current_tags,o.changed_tags,o.error_code,o.user_review,b.horizon_revision
                 FROM batches b LEFT JOIN attempts a ON a.batch_id=b.id LEFT JOIN observations o ON o.batch_id=b.id WHERE b.session_id=$id ORDER BY b.id
                 """, ("$id", id));
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
-                Write(new { kind = "batch", id = reader.GetInt64(0), state = reader.GetString(1),
+                Write(new { kind = "batch", id = reader.GetInt64(0), state = reader.GetString(1), horizonRevision = reader.GetInt32(16),
                     startSlot = reader.GetInt64(2), endSlot = reader.GetInt64(3), points = reader.GetInt64(4),
                     bytes = reader.GetInt64(5), hash = reader.GetString(6), positions = reader.GetString(7),
                     attemptState = reader.IsDBNull(8) ? null : reader.GetString(8),

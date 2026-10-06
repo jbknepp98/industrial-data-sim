@@ -38,7 +38,7 @@ public sealed class ProductionWorker(DurableRuntime runtime, ProductionDelivery 
                     var session = sessions[(start + offset) % sessions.Count];
                     if (session.Status is not (SessionStatus.Ready or SessionStatus.Draining or SessionStatus.Cancelling)) continue;
                     try { progressed |= runtime.Generate(session.SessionId, notAfterUtc).Progressed; }
-                    catch (RuntimeFailure failure) when (failure.Error.Code == "runtime.configuration_integrity") { continue; }
+                    catch (RuntimeFailure failure) when (failure.Error.Code is "runtime.configuration_integrity" or "extension.integrity") { continue; }
                     if (stop.IsCancellationRequested) return Result("Stopped");
                     if (await delivery.DeliverOneAsync(session.SessionId, CancellationToken.None, notAfterUtc)) { published++; progressed = true; }
                 }

@@ -1004,3 +1004,13 @@ no session error and publishing through the current minute, roughly four days
 after launch (including the earlier controlled restart). Their version-six state
 was not opened by the new runtime. This is continued-operation evidence, not
 per-point storage proof or a newly executed crash/recovery experiment.
+
+
+## October 6: extension commands and archival
+
+Exposed guarded horizon inspection/extension in simulation and production. Added
+archive format 2 with horizon history and per-batch revision identity, preserving
+old checksum verification. Forced-process termination tests pass before/after
+extension commit. All 765 .NET tests passed. A fresh Test production extension
+published both windows and read back the extended ramp; verified the final archive.
+Mixed arrival classifications were preserved and no sample was replayed.

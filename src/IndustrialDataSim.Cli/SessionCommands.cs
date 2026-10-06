@@ -8,7 +8,7 @@ namespace IndustrialDataSim.Cli;
 public static partial class CliApplication
 {
     private const string SessionUsage =
-        "Usage: session start <database> <model-file>; session list <database> [after-session-id]; " +
+        "Usage: session extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; session horizon <database> <session-id>; session start <database> <model-file>; session list <database> [after-session-id]; " +
         "session status|pause|resume|release <database> <session-id>; " +
         "session archive|verify-archive <database> <session-id> <archive-directory>; session archive-info <database> <session-id>; " +
         "session cancel <database> <session-id> drain|discard-pending; " +
@@ -24,7 +24,8 @@ public static partial class CliApplication
         string action = args.Length > 1 ? args[1] : "";
         bool validShape = action switch
         {
-            "start" or "status" or "pause" or "resume" or "release" or "archive-info" => args.Length == 4,
+            "horizon" or "start" or "status" or "pause" or "resume" or "release" or "archive-info" => args.Length == 4,
+            "extend" => args.Length == 7,
             "list" => args.Length is 3 or 4,
             "cancel" or "retry-generation" or "archive" or "verify-archive" => args.Length == 5,
             "batches" or "run-simulated" => args.Length is 4 or 5,
@@ -43,6 +44,8 @@ public static partial class CliApplication
             WriteResult(output, [new("cli.usage", "$", SessionUsage + " Worker rounds must be 1–10000; batch bytes must be 128–4194304; batch cursors must be nonnegative integers.")]);
             return 2;
         }
+
+        if (action == "extend" && !ValidExtensionArguments(args)) { WriteResult(output, [new("cli.extension_arguments", "$", "Use a UTC ISO-8601 end ending in Z, a nonnegative expected revision and a canonical request UUID. Inspect horizon first; reuse the same UUID only for identical arguments.")]); return 2; }
 
         string? configuration = null;
         string? admittedId = null;
@@ -111,6 +114,8 @@ public static partial class CliApplication
             return new { sessions = sessions.Select(SessionView).ToArray(), nextCursor = sessions.Count == 100 ? sessions[^1].SessionId : null };
         }
         string id = action == "start" ? admittedId! : args[3];
+        if (action == "horizon") return runtime.HorizonStatus(id);
+        if (action == "extend") return ApplyExtension(runtime, args);
         if (action == "archive") return runtime.Archive(id, args[4]);
         if (action == "archive-info") return runtime.GetArchive(id);
         if (action == "verify-archive")
@@ -155,6 +160,17 @@ public static partial class CliApplication
                 : "Inspect status and error fields for current state; a successful command does not imply that the session is complete."
         };
     }
+
+    private static bool ValidExtensionArguments(string[] args) => args.Length == 7 &&
+        args[4].EndsWith('Z') && DateTimeOffset.TryParse(args[4], CultureInfo.InvariantCulture, DateTimeStyles.None, out var end) && end.Offset == TimeSpan.Zero &&
+        int.TryParse(args[5], NumberStyles.None, CultureInfo.InvariantCulture, out int revision) && revision >= 0 && Guid.TryParseExact(args[6], "D", out _);
+
+    private static object ApplyExtension(DurableRuntime runtime, string[] args) => new
+    {
+        receipt = runtime.ExtendHorizon(args[3], DateTimeOffset.Parse(args[4], CultureInfo.InvariantCulture), int.Parse(args[5], CultureInfo.InvariantCulture), args[6]),
+        horizon = runtime.HorizonStatus(args[3]),
+        message = "Horizon committed without generation or publishing. Resume the existing database; patterns retain their original clocks and terminal behavior."
+    };
 
     private static DateTime? ProgressTimestamp(long? ticks)
     {

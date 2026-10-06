@@ -6,7 +6,7 @@ namespace IndustrialDataSim.Cli;
 
 public static partial class CliApplication
 {
-    private const string ProductionUsage = "Usage: production start <database> <model-file>; production run <database> <rounds>; production follow <database> <seconds 1–604800>; " +
+    private const string ProductionUsage = "Usage: production extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; production horizon <database> <session-id>; production start <database> <model-file>; production run <database> <rounds>; production follow <database> <seconds 1–604800>; " +
         "production list <database> [after-session-id]; production status|pause|resume|release|retry-preflight|archive-info <database> <session-id>; " +
         "production observations <database> <session-id> [after-batch-id]; production review <database> <session-id> accepted|needs-attention; " +
         "production cancel <database> <session-id> drain|discard-pending; production archive|verify-archive <database> <session-id> <directory>. " +
@@ -17,7 +17,8 @@ public static partial class CliApplication
         if (args.Length == 2 && args[1] == "help") return WriteProductionResponse(output, new { message = ProductionUsage });
         string action = args.Length > 1 ? args[1] : "";
         bool shape = action switch {
-            "start" or "run" or "follow" or "status" or "pause" or "resume" or "release" or "retry-preflight" or "archive-info" => args.Length == 4,
+            "horizon" or "start" or "run" or "follow" or "status" or "pause" or "resume" or "release" or "retry-preflight" or "archive-info" => args.Length == 4,
+            "extend" => args.Length == 7,
             "list" => args.Length is 3 or 4,
             "observations" => args.Length is 4 or 5,
             "archive" or "verify-archive" => args.Length == 5,
@@ -31,6 +32,7 @@ public static partial class CliApplication
             action == "follow" && (!int.TryParse(args[3], NumberStyles.None, CultureInfo.InvariantCulture, out seconds) || seconds is < 1 or > 604800) ||
             action == "observations" && args.Length == 5 && (!long.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out cursor) || cursor < 0))
         { WriteResult(output, [new("cli.usage", "$", ProductionUsage)]); return 2; }
+        if (action == "extend" && !ValidExtensionArguments(args)) { WriteResult(output, [new("cli.extension_arguments", "$", "Use a UTC end ending in Z, a nonnegative expected revision and a request UUID. Inspect horizon before extending.")]); return 2; }
         string? configuration = null;
         if (action == "start")
         {
@@ -67,6 +69,8 @@ public static partial class CliApplication
                 var sessions = runtime.ListSessions(args.Length == 4 ? args[3] : null);
                 result = new { sessions = sessions.Select(SessionView), nextCursor = sessions.Count == 100 ? sessions[^1].SessionId : null };
             }
+            else if (action == "horizon") result = runtime.HorizonStatus(args[3]);
+            else if (action == "extend") result = ApplyExtension(runtime, args);
             else if (action == "archive") result = runtime.Archive(args[3], args[4]);
             else if (action == "archive-info") result = runtime.GetArchive(args[3]);
             else if (action == "verify-archive") { runtime.VerifyArchive(args[3], args[4]); result = new { message = "Archive matches its durable receipt; no replay is authorized." }; }

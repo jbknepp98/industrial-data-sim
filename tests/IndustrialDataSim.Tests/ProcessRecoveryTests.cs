@@ -85,6 +85,31 @@ public class ProcessRecoveryTests
         }
     }
 
+    [Theory]
+    [InlineData("before_horizon_commit", 0)]
+    [InlineData("after_horizon_commit", 1)]
+    public async Task KilledHorizonMutationIsAtomicAndRetryable(string boundary, int revision)
+    {
+        using var files = new RuntimeFixture();
+        using var child = Start(files, boundary);
+        try
+        {
+            Assert.Equal("boundary-reached", await child.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(15)));
+            child.Kill(entireProcessTree: true);
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            using var recovered = new DurableRuntime(files.Database);
+            Assert.Equal(revision, recovered.Horizon("session-a").Revision);
+            Assert.Equal(revision == 0 ? 9 : 18, recovered.GetSession("session-a").TotalSlots);
+            Assert.Equal(0, recovered.GetSession("session-a").NextSlot);
+            Assert.Equal(1, recovered.ExtendHorizon("session-a", DateTimeOffset.Parse("2026-09-01T00:00:06Z"), 0,
+                "6886f6d2-d0e9-43d7-9406-1c31cb34cb54").Revision);
+        }
+        finally
+        {
+            if (!child.HasExited) { child.Kill(entireProcessTree: true); await child.WaitForExitAsync(); }
+        }
+    }
+
     private static Process Start(RuntimeFixture files, string boundary)
     {
         Directory.CreateDirectory(files.Folder);

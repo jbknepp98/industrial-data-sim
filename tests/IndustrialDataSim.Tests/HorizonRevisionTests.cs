@@ -28,7 +28,7 @@ public class HorizonRevisionTests
             Assert.Equal(SessionStatus.Ready, receipt.ResultingState);
             Assert.Equal(before, runtime.Batches("session-a"));
             Assert.Equal(receipt, runtime.ExtendHorizon("session-a", End, 0, Request));
-            Assert.Equal("archive.horizon_unsupported", Assert.Throws<RuntimeFailure>(() => runtime.Archive("session-a", files.Folder)).Error.Code);
+            Assert.Equal("archive.unresolved", Assert.Throws<RuntimeFailure>(() => runtime.Archive("session-a", files.Folder)).Error.Code);
         }
         using (var reopened = new DurableRuntime(files.Database))
         {
@@ -100,7 +100,7 @@ public class HorizonRevisionTests
     }
 
     [Fact]
-    public void PendingWorkIsPreservedAndProductionEntryIsBlocked()
+    public void PendingWorkIsPreservedAndProductionExtensionDoesNotPublish()
     {
         using var files = new RuntimeFixture();
         using (var runtime = new DurableRuntime(files.Database))
@@ -112,7 +112,9 @@ public class HorizonRevisionTests
             Assert.Equal(before, runtime.Batches("session-a"));
         }
         using var production = new DurableRuntime(Path.Combine(files.Folder, "production.db"), mode: ExecutionMode.Production);
-        Assert.Equal("runtime.execution_mode", Assert.Throws<RuntimeFailure>(() => production.ExtendHorizon("session-a", End, 0, Request)).Error.Code);
+        production.AdmitSession(RuntimeFixture.Model().ToJsonString());
+        Assert.Equal(1, production.ExtendHorizon("session-a", End, 0, Request).Revision);
+        Assert.Empty(production.Batches("session-a"));
     }
 
     [Theory]

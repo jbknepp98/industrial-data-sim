@@ -5,17 +5,16 @@ using Microsoft.Extensions.Logging;
 
 namespace IndustrialDataSim.Runtime;
 
-internal sealed record HorizonReceipt(int Revision, DateTimeOffset PreviousEndUtc,
+public sealed record HorizonReceipt(int Revision, DateTimeOffset PreviousEndUtc,
     DateTimeOffset EndUtc, long PreviousTotalSlots, long TotalSlots, long Cursor,
     SessionStatus ResultingState);
 
 public sealed partial class DurableRuntime
 {
-    // Deliberately internal and simulation-only until archive and production
-    // integration are complete. No command may expose a partially supported API.
-    internal HorizonReceipt ExtendHorizon(string id, DateTimeOffset endUtc, int expectedRevision, string requestId) => Access(() =>
+    // This operation changes only the local horizon. Production preflight and
+    // delivery retain their usual conflict, retention and no-replay checks.
+    public HorizonReceipt ExtendHorizon(string id, DateTimeOffset endUtc, int expectedRevision, string requestId) => Access(() =>
     {
-        RequireMode(ExecutionMode.Simulation);
         if (!Guid.TryParseExact(requestId, "D", out var requestGuid))
             throw new RuntimeFailure("extension.request_id", "Supply a requestId in canonical UUID format and reuse it only for the identical extension request.");
         requestId = requestGuid.ToString("D");
@@ -80,6 +79,15 @@ public sealed partial class DurableRuntime
                 "Finite schedules retain their existing terminal behavior; a longer horizon does not repeat them.", id);
         }
         return receipt!;
+    }, sessionId: id);
+
+    public object HorizonStatus(string id) => Access(() =>
+    {
+        var admitted = LoadModel(id, includeHorizon: false);
+        var current = Horizon(id);
+        return (object)new { sessionId = id, current.Revision, admittedEndUtc = admitted.Session.EndUtc,
+            effectiveEndUtc = current.EndUtc, session = GetSession(id),
+            notice = "A later end preserves the original sampling grid and patterns. Finite schedules keep their terminal behavior; they do not repeat automatically." };
     }, sessionId: id);
 
     internal (int Revision, DateTimeOffset EndUtc) Horizon(string id) => Access(() =>
