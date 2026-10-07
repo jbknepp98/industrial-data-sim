@@ -17,6 +17,9 @@ public sealed class SimulationDefinition
         Generators = generators;
     }
 
+    public bool HasProductionTarget { get; internal init; }
+    public IReadOnlyList<ProcessTransition> ProcessTrace { get; internal init; } = [];
+    public int OmittedProcessTransitions { get; internal init; }
     public SessionDefinition Session { get; }
     public int SamplingIntervalMs { get; }
     public IReadOnlyDictionary<string, GeneratorDefinition> Generators { get; }

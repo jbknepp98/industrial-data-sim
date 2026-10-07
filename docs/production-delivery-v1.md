@@ -1,5 +1,7 @@
 # Production publishing v1
 
+Resident operation and live controls are now available; see [production host](production-host.md). Guarded horizon extension is documented in [the extension contract](session-horizon-extension-design.md).
+
 The `production` commands perform real Pulse authentication, read-only preflight,
 ordered TVQ publishing and bounded arrival observations. They use a dedicated
 SQLite database marked `production`. The existing `session`, `host` and `live`

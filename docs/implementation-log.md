@@ -1014,3 +1014,24 @@ old checksum verification. Forced-process termination tests pass before/after
 extension commit. All 765 .NET tests passed. A fresh Test production extension
 published both windows and read back the extended ramp; verified the final archive.
 Mixed arrival classifications were preserved and no sample was replayed.
+
+## October 6–7: resident production hosting and manufacturing processes
+
+Added a production host with same-user live controls, wall-clock fenced fair
+rounds, health reporting, explicit local startup configuration and bounded optional
+process restart. An isolated two-session Test run exercised live controls and
+checkpoint-preserving graceful restart. The original packaging publishers were
+not changed. Startup service registration is intentionally left explicit.
+
+Added bounded deterministic manufacturing models with typed conditions, local
+and delayed dependencies, repeating schedules, states, sensor noise/faults,
+quality and time/batch accumulation with target termination. Process-clock
+reconstruction preserves values across observation intervals, delivery batches
+and reopening. The public schema, example, explanation command and live helper
+are versioned. Review corrected extension validation atomicity, random identity,
+inactive timer gaps and final target observation boundaries. The acceptance
+report records live evidence and remaining limits; user pattern review is pending.
+
+Warning-free build; all 789 .NET and 26 Python tests passed locally. The offline
+verifier passed all nine examples and independent gate/packaging/speed checks.
+See [the complete acceptance report](three-phase-acceptance-2026-10-07.md).

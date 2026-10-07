@@ -8,7 +8,7 @@ using IndustrialDataSim.Runtime;
 namespace IndustrialDataSim.Cli;
 
 internal sealed record ControlRequest(int Version, string Action, string? SessionId = null,
-    string? Configuration = null, string? Cursor = null, long AfterBatch = 0, string? Cancellation = null);
+    string? Configuration = null, string? Cursor = null, long AfterBatch = 0, string? Cancellation = null, string? EndUtc = null, int? ExpectedRevision = null, string? RequestId = null);
 internal sealed record ControlResponse(int ExitCode, byte[] Json);
 
 /// <summary>

@@ -8,11 +8,11 @@ namespace IndustrialDataSim.Tests;
 
 public class ProductionDeliveryTests
 {
-    private static HistorianConnection Profile(string audience = "Historian") => new() {
+    internal static HistorianConnection Profile(string audience = "Historian") => new() {
         Profile = "local-profile", Historian = new("https://historian.invalid/"), Pulse = new("https://pulse.invalid/"),
         ClientId = "test-client", ClientSecret = "PRIVATE_SECRET", Audience = audience };
 
-    private sealed class Server : HttpMessageHandler
+    internal sealed class Server : HttpMessageHandler
     {
         public int Writes, Tokens, Reads, RejectReadCount;
         public int TokenSeconds = 3600;

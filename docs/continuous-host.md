@@ -1,5 +1,7 @@
 # Continuous simulation host and live controls
 
+For real Historian publishing and resident controls, see [production host](production-host.md). This page describes the simulation host.
+
 The foreground host continuously services the existing simulation worker and
 accepts local lifecycle commands. It remains available when all sessions finish
 or no session can progress. This is simulation-only: the destination is a sealed

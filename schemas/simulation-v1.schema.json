@@ -8,8 +8,7 @@
     "schemaVersion",
     "generatorVersion",
     "session",
-    "samplingIntervalMs",
-    "generators"
+    "samplingIntervalMs"
   ],
   "properties": {
     "schemaVersion": {
@@ -513,6 +512,9 @@
           }
         ]
       }
+    },
+    "manufacturing": {
+      "$ref": "manufacturing-v1.schema.json"
     }
   },
   "$defs": {
@@ -1012,5 +1014,17 @@
         }
       ]
     }
-  }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "generators"
+      ]
+    },
+    {
+      "required": [
+        "manufacturing"
+      ]
+    }
+  ]
 }

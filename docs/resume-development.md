@@ -53,37 +53,40 @@ finite end and restart procedure. Both the original and additive-speed publisher
 passed a controlled graceful stop/resume test on October 2 and remain active;
 inspect both process records before starting another publisher. The original
 batch records and model hashes were unchanged, and each resumed at its saved
-candidate cursor. Next: longer live-soak evidence and the unresolved Windows
-recovery/control-latency investigation, followed by a safe horizon-extension
-contract. The [horizon-extension design](session-horizon-extension-design.md)
-now has an internal simulation-only durable revision API and schema version 7,
-with 759 passing .NET tests. No extension CLI or production extension API exists.
-The next bounded step is horizon-aware archive export/verification, then command
-integration and further recovery checks. The October 6 read-only checkpoint found
-both original demo databases still publishing current data; they have not been
-migrated by the new runtime. Back up and plan an operational upgrade before
-restarting those databases on the new build. The October 2
-21:20 UTC checkpoint shows both publishers current after roughly 2¾ hours,
-including restart; a day-scale soak remains incomplete. Do not label the previous
-September demonstration accepted.
+candidate cursor. The October 6 read-only checkpoint found both databases still
+publishing current values after roughly four days. Their running schema-six state
+has not been migrated by the new runtime. Back up and plan an operational upgrade
+before restarting those databases on the new build. Their finite end remains
+October 9 at 18:32 UTC.
 
-## Other current limitations
+## October 6–7 implementation checkpoint
 
-The [September 20 diagnosis](control-latency-diagnosis-2026-09-20.md) reproduced
-multi-second control delays. The underlying runtime/OS cause remains unconfirmed.
-The diagnostic-helper fixes preserve better evidence; they are not a latency fix.
-Next, capture a slow occurrence with the repaired tooling and correlate launch,
-client and host timing with any available native traces. Do not infer that an
-uncaptured interval was fast or increase timeouts without evidence.
+The three accepted increments are implemented:
 
-A fifteen-minute mixed-load test and a two-session live Test smoke passed; see
-[the current verification report](phases-1-3-verification-2026-09-20.md).
-Hours/days-long soaks, richer typed conditions, partitioned archives and resident
-production live controls remain unfinished. The
-[blind-publish policy](delivery-recovery.md) is approved: publish completion,
-arrival indicators and user feedback are separate evidence. Per-point receipts
-are not required. Real authentication, HTTP publishing and bounded arrival checks now run behind a
-separate production state boundary; see [production v1](production-delivery-v1.md).
+- Public simulation/production horizon commands, idempotent audited revisions,
+  schema-seven state, revision-aware archives and forced-crash checks.
+- Resident production hosting with same-user live controls, health reporting,
+  explicit startup configuration and bounded optional process restart.
+- Bounded manufacturing process models: typed conditions, delayed feedback,
+  repeating schedules, state machines, noise/faults/quality, elapsed-time and
+  production-batch totalizers, and explicit target/condition termination.
+
+See [the acceptance report](three-phase-acceptance-2026-10-07.md),
+[production host](production-host.md) and [manufacturing contract](manufacturing-process.md)
+for reproducible commands, verification and deliberate limits. Manufacturing
+models precompile a bounded discrete clock; this is not an unlimited event engine.
+There is no cross-session live dependency subscription. OS boot services are not
+installed automatically. The acceptance host uses separate fresh Test tags/state.
+
+## Remaining operational limits
+
+The September control-latency diagnosis remains unresolved. Fast October control
+measurements do not prove a general latency fix. Keep phase timing diagnostics
+and investigate a captured slow occurrence before changing deadlines. Partitioned
+archives and measured high-volume process-interpreter capacity remain future work.
+Arrival observations and user feedback remain separate from blind publish completion;
+counts and missing repeated samples never authorize replay. No old September
+failed demonstration was restarted or labeled accepted.
 
 ## Resuming work safely
 

@@ -24,7 +24,7 @@ public static class SimulationDefinitionLoader
             return new(null, [new("simulation.object_required", "$", "Expected a simulation object.")]);
         }
         SessionDefinitionLoader.CheckProperties(root,
-            ["schemaVersion", "generatorVersion", "session", "samplingIntervalMs", "generators"], "$", errors);
+            ["schemaVersion", "generatorVersion", "session", "samplingIntervalMs", "generators", "manufacturing"], "$", errors);
         CheckVersion(root, "schemaVersion", errors);
         CheckVersion(root, "generatorVersion", errors);
 
@@ -46,6 +46,14 @@ public static class SimulationDefinitionLoader
         {
             errors.Add(new("simulation.invalid_interval", "$.samplingIntervalMs",
                 "Use a whole-number interval from 1 through 2147483647 milliseconds."));
+        }
+
+        if (root.TryGetProperty("manufacturing", out var manufacturing))
+        {
+            if (root.TryGetProperty("generators", out _))
+                errors.Add(new("manufacturing.exclusive", "$.generators", "Use either generators or manufacturing, not both. Manufacturing nodes define every declared output."));
+            if (errors.ErrorCount != 0 || session is null) return new(null, errors.AsReadOnly());
+            return ManufacturingDefinitionLoader.Load(manufacturing, session, interval);
         }
 
         int remainingRandomHolds = 10_000;

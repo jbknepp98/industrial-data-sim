@@ -53,6 +53,15 @@ public sealed partial class DurableRuntime
                     throw new RuntimeFailure("extension.ownership_released", "A required tag is no longer reserved by this session. Do not reclaim it through extension; inspect ownership and plan a new session.");
             if (endUtc <= model.Session.EndUtc)
                 throw new RuntimeFailure("extension.end_not_later", "endUtc must be strictly later than the effective end. Inspect the current horizon; shortening or replacing history is prohibited.");
+            if (model.HasProductionTarget)
+                throw new RuntimeFailure("extension.production_target", "A target-bounded process cannot be extended. Start a new production session with an explicit new target and forward-only tag range.");
+            // Compile the proposed end before changing durable history. Bounded process
+            // models may reject a longer horizon; that must leave revision zero intact.
+            var proposed = JsonNode.Parse((string)Scalar("SELECT config FROM sessions WHERE id=$id", ("$id", id))!)!;
+            proposed["session"]!["endUtc"] = endUtc.UtcDateTime.ToString("O");
+            var validation = SimulationDefinitionLoader.Load(proposed.ToJsonString());
+            if (!validation.IsValid)
+                throw new RuntimeFailure("extension.model_limit", "The proposed horizon exceeds this model's generation or process limits. Shorten the extension or use a new session; no revision was committed.");
             long total = CountSlots(model, endUtc);
             if (total <= session.TotalSlots)
                 throw new RuntimeFailure("extension.no_new_slots", "endUtc does not include another sample. Choose an end strictly beyond the next timestamp on the original sampling grid.");

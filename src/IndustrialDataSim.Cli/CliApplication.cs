@@ -24,13 +24,14 @@ public static partial class CliApplication
     /// </summary>
     public static int Run(string[] args, TextWriter output, CancellationToken stop = default)
     {
+        if (args.Length > 0 && args[0] is "production-host" or "production-live") return RunProductionHostCommand(args, output, stop);
         if (args.Length > 0 && args[0] == "production") return RunProductionCommand(args, output, stop);
         if (args.Length > 0 && args[0] is "host" or "live") return RunHostCommand(args, output, stop);
         if (args.Length > 0 && args[0] == "session") return RunSessionCommand(args, output, stop);
-        if (args.Length != 2 || args[0] is not ("validate-dataset" or "validate-session" or "validate-simulation" or "dry-run"))
+        if (args.Length != 2 || args[0] is not ("validate-dataset" or "validate-session" or "validate-simulation" or "dry-run" or "explain-process"))
         {
             WriteResult(output, [new("cli.usage", "$",
-                "Usage: validate-dataset <name>, validate-session <file>, validate-simulation <file>, or dry-run <file>. Use session help for durable commands or host help for continuous execution and live controls. Quote arguments containing spaces.")]);
+                "Usage: validate-dataset <name>, validate-session <file>, validate-simulation <file>, dry-run <file>, or explain-process <file>. Use session help for durable commands or host help for continuous execution and live controls. Quote arguments containing spaces.")]);
             return 2;
         }
 
@@ -64,6 +65,13 @@ public static partial class CliApplication
         {
             WriteResult(output, model.Errors);
             return model.IsValid ? 0 : 1;
+        }
+        if (command == "explain-process")
+        {
+            return WriteResponse(output, new { schemaVersion = 1, valid = true, errors = Array.Empty<ValidationError>(), effectiveEndUtc = model.Definition!.Session.EndUtc,
+                targetBounded = model.Definition.HasProductionTarget, transitions = model.Definition.ProcessTrace,
+                omittedTransitions = model.Definition.OmittedProcessTransitions,
+                notice = "Trace is bounded to 1000 transitions. Inspect the model and shorten its horizon for a complete trace. This is offline prediction, not delivery evidence." }, new("cli.response_limit", "$", "Process trace exceeds the response limit. Shorten the model horizon and rerun explain-process.")) ? 0 : 1;
         }
         var preview = DryRun.Generate(model.Definition!);
         if (preview.Errors.Count > 0)

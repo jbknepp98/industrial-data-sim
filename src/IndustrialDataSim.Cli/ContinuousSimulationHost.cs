@@ -13,7 +13,8 @@ namespace IndustrialDataSim.Cli;
 /// One connected client and one queued command bound control memory and work.
 /// </summary>
 internal sealed class ContinuousSimulationHost(DurableRuntime runtime, string pipeName,
-    Func<ControlRequest, ControlResponse> execute)
+    Func<ControlRequest, ControlResponse> execute,
+    Func<CancellationToken, Task<WorkerStopReason>>? runRound = null)
 {
     private sealed record PreparedReply(ControlResponse Response, long ReadyAt);
     private sealed record Pending(ControlRequest Request, long ReceivedAt, TaskCompletionSource<PreparedReply> Completion);
@@ -26,10 +27,10 @@ internal sealed class ContinuousSimulationHost(DurableRuntime runtime, string pi
         using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1,
             PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         var server = ServeAsync(pipe, lifetime.Token);
-        var worker = new SimulationWorker(runtime);
+        var worker = runRound is null ? new SimulationWorker(runtime) : null;
         WorkerStopReason? previous = null;
-        runtime.WorkerEvent("host.started", "Continuous simulation host started.",
-            "Use live commands for control, or host stop for graceful shutdown. All delivery acknowledgements are synthetic.");
+        runtime.WorkerEvent("host.started", runRound is null ? "Continuous simulation host started." : "Continuous production host started with wall-clock paced publishing.",
+            runRound is null ? "Use live commands for control, or host stop for graceful shutdown. All delivery acknowledgements are synthetic." : "Use production-live for controls and production-host stop for graceful shutdown. Published progress is not a storage receipt.");
         try
         {
             while (!lifetime.IsCancellationRequested)
@@ -52,17 +53,17 @@ internal sealed class ContinuousSimulationHost(DurableRuntime runtime, string pi
                     }
                 }
                 long roundStarted = Stopwatch.GetTimestamp();
-                var result = await worker.RunRoundAsync(lifetime.Token);
+                var reason = runRound is null ? (await worker!.RunRoundAsync(lifetime.Token)).StopReason : await runRound(lifetime.Token);
                 ReportDelay("worker round", roundStarted);
-                if (result.StopReason != previous)
+                if (reason != previous)
                 {
-                    runtime.WorkerEvent("host.progress_state", $"Host worker state: {result.StopReason}.",
-                        result.StopReason is WorkerStopReason.Completed or WorkerStopReason.Blocked
+                    runtime.WorkerEvent("host.progress_state", $"Host worker state: {reason}.",
+                        reason is WorkerStopReason.Completed or WorkerStopReason.Blocked
                             ? "The host remains available for live controls. Inspect session status for completion, pauses, failures, or resource pressure. Uncertain work is never replayed."
-                            : "Simulation is progressing. Use live status to inspect a session or host stop to preserve checkpoints and exit.");
-                    previous = result.StopReason;
+                            : "Generation is progressing. Inspect live status or stop the host gracefully to preserve checkpoints.");
+                    previous = reason;
                 }
-                if (result.StopReason is WorkerStopReason.Completed or WorkerStopReason.Blocked)
+                if (reason is WorkerStopReason.Completed or WorkerStopReason.Blocked)
                     await Task.Delay(TimeSpan.FromMilliseconds(250), lifetime.Token);
             }
         }
@@ -73,7 +74,7 @@ internal sealed class ContinuousSimulationHost(DurableRuntime runtime, string pi
             commands.Writer.TryComplete();
             try { await server; }
             catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
-            runtime.WorkerEvent("host.stopped", "Continuous simulation host stopped; database ownership will now close.",
+            runtime.WorkerEvent("host.stopped", "Continuous host stopped; database ownership will now close.",
                 "Restart with the same database and compatible limits. Do not re-admit existing sessions or replay uncertain work.");
         }
     }

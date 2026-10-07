@@ -11,6 +11,7 @@ public abstract record GeneratorDefinition
 {
     /// <summary>Whether this timestamp produces a point; suppression is not a null value.</summary>
     internal virtual bool EmitsAt(long elapsedTicks) => true;
+    internal virtual int QualityAt(long elapsedTicks) => 192;
 
     /// <summary>Call only when EmitsAt is true. Null means arithmetic failed; callers must not emit a point.</summary>
     internal abstract JsonElement? Evaluate(long elapsedTicks);

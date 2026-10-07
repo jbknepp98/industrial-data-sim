@@ -56,7 +56,7 @@ public static class GenerationWindow
             if (value is null)
                 return Failure(nextSlot, new(tagIndex, cursor, sampleUtc), "generation.non_finite_value",
                     "Generator arithmetic produced a non-finite value. Reduce the range, start value, or rate.");
-            var point = new TvqPoint(sampleUtc, value.Value, 192);
+            var point = new TvqPoint(sampleUtc, value.Value, generator.QualityAt(elapsed));
             bool existing = data.TryGetValue(tag.Name, out var points);
             int extra;
             try

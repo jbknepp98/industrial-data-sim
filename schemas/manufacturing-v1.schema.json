@@ -1,0 +1,659 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bounded manufacturing process v1",
+  "description": "Runtime additionally checks types, local dependencies, cycles, clock alignment, ordered bounds and compilation budgets. See docs/manufacturing-process.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "tickMs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tag": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "expression": {
+            "$ref": "#/$defs/expression"
+          },
+          "state": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "initial": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "transitions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024
+                    },
+                    "to": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024
+                    },
+                    "when": {
+                      "$ref": "#/$defs/expression"
+                    },
+                    "afterMs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 2147483647
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "to",
+                    "when"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 64
+              }
+            },
+            "required": [
+              "initial",
+              "transitions"
+            ]
+          },
+          "accumulator": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "mode": {
+                    "const": "time"
+                  },
+                  "initial": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "enabled": {
+                    "$ref": "#/$defs/expression"
+                  },
+                  "target": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "finalPolicy": {
+                    "const": "cap"
+                  },
+                  "stopOnTarget": {
+                    "type": "boolean"
+                  },
+                  "ratePerSecond": {
+                    "$ref": "#/$defs/expression"
+                  }
+                },
+                "required": [
+                  "mode",
+                  "initial",
+                  "ratePerSecond"
+                ],
+                "dependentRequired": {
+                  "finalPolicy": [
+                    "target"
+                  ],
+                  "stopOnTarget": [
+                    "target"
+                  ],
+                  "target": [
+                    "finalPolicy"
+                  ]
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "mode": {
+                    "const": "batch"
+                  },
+                  "initial": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "enabled": {
+                    "$ref": "#/$defs/expression"
+                  },
+                  "target": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "finalPolicy": {
+                    "enum": [
+                      "cap",
+                      "wholeBatch"
+                    ]
+                  },
+                  "stopOnTarget": {
+                    "type": "boolean"
+                  },
+                  "quantityRange": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "minimum": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "maximum": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": [
+                      "minimum",
+                      "maximum"
+                    ]
+                  },
+                  "durationRangeMs": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "minimum": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2147483647
+                      },
+                      "maximum": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2147483647
+                      }
+                    },
+                    "required": [
+                      "minimum",
+                      "maximum"
+                    ]
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
+                  }
+                },
+                "required": [
+                  "mode",
+                  "initial",
+                  "quantityRange",
+                  "durationRangeMs",
+                  "seed"
+                ],
+                "dependentRequired": {
+                  "finalPolicy": [
+                    "target"
+                  ],
+                  "stopOnTarget": [
+                    "target"
+                  ],
+                  "target": [
+                    "finalPolicy"
+                  ]
+                }
+              }
+            ]
+          },
+          "noise": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "amplitude": {
+                "type": "number",
+                "minimum": 0
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "minimum": {
+                "type": "number"
+              },
+              "maximum": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "amplitude",
+              "seed"
+            ]
+          },
+          "faults": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "freeze"
+                    },
+                    "startMs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 2147483647
+                    },
+                    "durationMs": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2147483647
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "startMs",
+                    "durationMs"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "quality"
+                    },
+                    "startMs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 2147483647
+                    },
+                    "durationMs": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2147483647
+                    },
+                    "quality": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 255
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "startMs",
+                    "durationMs",
+                    "quality"
+                  ]
+                }
+              ]
+            },
+            "minItems": 0,
+            "maxItems": 32
+          }
+        },
+        "required": [
+          "tag"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "expression"
+            ]
+          },
+          {
+            "required": [
+              "state"
+            ]
+          },
+          {
+            "required": [
+              "accumulator"
+            ]
+          }
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 32
+    },
+    "stopWhen": {
+      "$ref": "#/$defs/expression"
+    }
+  },
+  "required": [
+    "tickMs",
+    "nodes"
+  ],
+  "$defs": {
+    "expression": {
+      "oneOf": [
+        {
+          "type": [
+            "number",
+            "boolean",
+            "string"
+          ],
+          "maxLength": 1024
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tag": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          },
+          "required": [
+            "tag"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "previous": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "initial": {
+              "type": [
+                "number",
+                "boolean",
+                "string"
+              ],
+              "maxLength": 1024
+            }
+          },
+          "required": [
+            "previous",
+            "initial"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "elapsedMs",
+                "stateElapsedMs"
+              ]
+            }
+          },
+          "required": [
+            "op"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "not",
+                "rising",
+                "falling"
+              ]
+            },
+            "arg": {
+              "$ref": "#/$defs/expression"
+            }
+          },
+          "required": [
+            "op",
+            "arg"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "held"
+              ]
+            },
+            "arg": {
+              "$ref": "#/$defs/expression"
+            },
+            "durationMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "op",
+            "arg",
+            "durationMs"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "and",
+                "or"
+              ]
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/expression"
+              },
+              "minItems": 1,
+              "maxItems": 32
+            }
+          },
+          "required": [
+            "op",
+            "args"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "if"
+              ]
+            },
+            "when": {
+              "$ref": "#/$defs/expression"
+            },
+            "then": {
+              "$ref": "#/$defs/expression"
+            },
+            "else": {
+              "$ref": "#/$defs/expression"
+            }
+          },
+          "required": [
+            "op",
+            "when",
+            "then",
+            "else"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "eq",
+                "ne",
+                "lt",
+                "lte",
+                "gt",
+                "gte",
+                "add",
+                "subtract",
+                "multiply",
+                "divide"
+              ]
+            },
+            "left": {
+              "$ref": "#/$defs/expression"
+            },
+            "right": {
+              "$ref": "#/$defs/expression"
+            }
+          },
+          "required": [
+            "op",
+            "left",
+            "right"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "between"
+              ]
+            },
+            "value": {
+              "$ref": "#/$defs/expression"
+            },
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "op",
+            "value",
+            "minimum",
+            "maximum"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "uniform"
+              ]
+            },
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "holdMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "op",
+            "minimum",
+            "maximum",
+            "seed",
+            "holdMs"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "ramp"
+              ]
+            },
+            "start": {
+              "type": "number"
+            },
+            "ratePerSecond": {
+              "type": "number"
+            },
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "op",
+            "start",
+            "ratePerSecond",
+            "minimum",
+            "maximum"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "schedule"
+              ]
+            },
+            "repeat": {
+              "type": "boolean"
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "durationMs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  },
+                  "value": {
+                    "$ref": "#/$defs/expression"
+                  }
+                },
+                "required": [
+                  "durationMs",
+                  "value"
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 1000
+            }
+          },
+          "required": [
+            "op",
+            "repeat",
+            "steps"
+          ]
+        }
+      ]
+    }
+  }
+}

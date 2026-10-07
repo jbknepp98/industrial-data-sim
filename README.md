@@ -12,7 +12,11 @@ offline Dataset-name, session-header, and simulation-model validation commands.
 A bounded dry-run generates deterministic constant, ramp, staircase, and random-integer-hold TVQ data, including finite sequences and local Boolean triggers. A library runtime now persists concurrent sessions, tag reservations, checkpoints,
 and bounded TVQ queues in SQLite. Delivery and crash recovery are exercised against
 a sealed in-memory fake Historian. A bounded worker and a continuous foreground host provide simulation execution
-and local live controls. A separate production CLI now provides authenticated blind publishing and arrival observations; see [production delivery](docs/production-delivery-v1.md). Explicit [audit archival](docs/audit-archival.md) preserves completed history before pruning.
+and local live controls. A separate production CLI and resident production host provide authenticated blind publishing, live controls, explicit restart configuration and arrival observations; see [production delivery](docs/production-delivery-v1.md). Explicit [audit archival](docs/audit-archival.md) preserves completed history before pruning.
+
+Guarded [horizon extension](docs/session-horizon-extension-design.md) preserves immutable models and revision-aware archives.
+[Manufacturing processes](docs/manufacturing-process.md) add typed conditions, repeating schedules, state machines, sensor noise/faults, and time/batch production totalizers.
+See [production hosting](docs/production-host.md) for live controls and startup configuration.
 
 See [API findings](docs/timebase-api-findings.md) for payloads, observed behavior,
 and unresolved questions.
@@ -50,6 +54,8 @@ dotnet run --project src/IndustrialDataSim.Cli -- dry-run examples/random-intege
 dotnet run --project src/IndustrialDataSim.Cli -- dry-run examples/sequence-simulation.json
 dotnet run --project src/IndustrialDataSim.Cli -- dry-run examples/boolean-trigger-simulation.json
 dotnet run --project src/IndustrialDataSim.Cli -- dry-run examples/boolean-gate-simulation.json
+dotnet run --project src/IndustrialDataSim.Cli -- dry-run examples/manufacturing-simulation.json
+dotnet run --project src/IndustrialDataSim.Cli -- explain-process examples/manufacturing-simulation.json
 ```
 
 If using the optional project-local SDK installation, substitute

@@ -56,7 +56,7 @@ public static class DryRun
                         $"$.session.outputTags[{tagIndex}].name",
                         "Generator arithmetic produced a non-finite value. Reduce the range, start value, or rate.")]);
                 }
-                points.Add(new(timestamp, value.Value, 192));
+                points.Add(new(timestamp, value.Value, generator.QualityAt(elapsedTicks)));
             }
             data.Add(tag.Name, points.AsReadOnly());
         }

@@ -1,5 +1,7 @@
 # Reproducing verification
 
+The latest extension, production-host and manufacturing verification is recorded in [the October 7 acceptance report](three-phase-acceptance-2026-10-07.md). Earlier counts below describe their dated checkpoints.
+
 Prerequisites: stable .NET 10 SDK, Python 3.9 or later with venv, and package
 access for the initial restore/install. Run from the repository root:
 

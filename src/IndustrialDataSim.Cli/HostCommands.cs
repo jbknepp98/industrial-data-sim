@@ -118,7 +118,8 @@ public static partial class CliApplication
     {
         try
         {
-            if (request.Version != 1 || request.Action is null || request.AfterBatch < 0 ||
+            if (request.EndUtc is not null || request.ExpectedRevision is not null || request.RequestId is not null ||
+                request.Version != 1 || request.Action is null || request.AfterBatch < 0 ||
                 request.SessionId?.Length > 64 || request.Cursor?.Length > 64 ||
                 request.Configuration is not null && Encoding.UTF8.GetByteCount(request.Configuration) > 1024 * 1024)
                 throw LocalControlProtocol.InvalidFrame();
