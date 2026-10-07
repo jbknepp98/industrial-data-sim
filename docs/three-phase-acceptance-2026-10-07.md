@@ -37,6 +37,16 @@ At 00:13:30 UTC, both cursors had advanced to 3,054, with zero errors/queued wor
 Health response took 0.063 seconds. This is one observed workload, not a general
 latency guarantee. The acceptance host is independent of the running packaging demo.
 
+Both sessions completed at the planned October 7 00:22:03 UTC exclusive end,
+with 4,590/4,590 candidate slots each and no session error. Across both process
+lifetimes there were 2,798 Published batches: two Observed classifications and
+2,796 ConsistentWithoutNewArrival classifications, all with three non-null current
+tags per batch. Final direct readback of both ramps returned 1,529, quality 192,
+at 00:22:02 UTC, exactly the expected final timestamp/value. After graceful host
+stop, database integrity remained `ok`. No acceptance host remains running.
+This covers a 25-minute live interval plus 30 seconds of backfill and one restart;
+classification/count totals are retained as observations, not storage guarantees.
+
 Separate read-only inspection on October 6 at 18:38 UTC found both October 2 demo
 publishers still current after roughly four days. Their older running state was
 not migrated. These observations supplement, rather than replace, forced-crash
@@ -79,7 +89,10 @@ bounded, test-only file readiness probe after confirmed child exit, and bounded
 cleanup retry for that fixture's temporary files. Persistent access failures still
 fail; production ownership checks and database mutations are unchanged. This is
 test synchronization, not a claimed Windows/antivirus root-cause diagnosis.
-Follow-up hosted evidence will be recorded after the run completes.
+[Follow-up CI on implementation/test commit `125bf21`](https://github.com/jbknepp98/industrial-data-sim/actions/runs/37551322727)
+passed Linux, macOS and Windows, including all 789 .NET tests, 28 Python tests,
+schema/independent checks, separate-process host verification and capacity smoke.
+The subsequent commit only records this evidence and the completed live run.
 
 ## Deliberate limits
 

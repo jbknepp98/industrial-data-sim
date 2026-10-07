@@ -1046,3 +1046,15 @@ handling for observed access denied. Production locking, recovery and no-replay
 behavior are unchanged. All 17 affected recovery/ownership tests pass locally.
 Added supervisor shutdown/restart tests; the Python suite now has 28 passing tests.
 The OS cause remains unconfirmed; follow-up hosted verification is required.
+
+
+## October 7: final acceptance evidence
+
+Implementation/test commit `125bf21` passed the complete hosted Linux, macOS and
+Windows workflow (789 .NET tests, 28 Python tests, schema, host and capacity checks).
+Both isolated production-host sessions completed their 25-minute live interval
+plus backfill, with one checkpoint-preserving restart. Final ramp readback matched
+1,529 at 00:22:02 UTC with quality 192 for each session. Both reached 4,590/4,590
+slots, no errors, and the stopped database passed integrity verification. The
+acceptance host was stopped; the original packaging publishers remain untouched.
+The acceptance report preserves mixed observation classifications and limitations.
