@@ -9,7 +9,12 @@ process must resume from durable state without silently losing data or moving
 backward in a tag's timeline.
 
 This is an implementation plan, not a description of existing functionality.
-The finite runtime and first production adapter are implemented; this plan also includes capabilities still pending. See the current handoff and production contract for scope.
+The finite runtime, production adapter/host, guarded horizon extension and bounded
+manufacturing process interpreter are implemented. This original plan also includes
+capabilities still pending. See [the current handoff](resume-development.md) and
+[October acceptance](three-phase-acceptance-2026-10-07.md) for exact scope.
+Random/model state currently reconstructs deterministically from immutable definitions
+and the durable cursor; it is not a separate mutable snapshot for every process tick.
 
 ## Architecture and boundaries
 

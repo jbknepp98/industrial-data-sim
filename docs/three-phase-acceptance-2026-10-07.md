@@ -61,7 +61,7 @@ review is still `NotReviewed`; observed arrivals are not per-point receipts.
 ## Review and validation
 
 - Warning-free Release compilation and 789 passing .NET tests locally.
-- 26 Python tests passed. Nine example/schema pairs passed the offline verifier.
+- 28 Python tests passed. Nine example/schema pairs passed the offline verifier.
 - Independent verification covered 100 gate scenarios / 3,722 emitted samples,
   72-hour exclusive packaging routing and both additive speed patterns.
 - New process tests cover restart/window invariance, random declaration-order
@@ -71,8 +71,15 @@ review is still `NotReviewed`; observed arrivals are not per-point receipts.
   last observation slot, random streams depending on declaration order, and
   inactive schedule timers counting unseen time. Regression cases cover these.
 
-Cross-platform CI for this increment is recorded below when available. Earlier
-successful hosted runs belong to their earlier commits and are not new evidence.
+[Initial hosted CI](https://github.com/jbknepp98/industrial-data-sim/actions/runs/37550989425)
+passed Linux and macOS. Windows reported two existing crash-test file-access
+failures after forced termination: owner-file sharing and temporary SQLite
+shared-memory cleanup access denied. No manufacturing assertion failed. Added a
+bounded, test-only file readiness probe after confirmed child exit, and bounded
+cleanup retry for that fixture's temporary files. Persistent access failures still
+fail; production ownership checks and database mutations are unchanged. This is
+test synchronization, not a claimed Windows/antivirus root-cause diagnosis.
+Follow-up hosted evidence will be recorded after the run completes.
 
 ## Deliberate limits
 

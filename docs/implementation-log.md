@@ -1035,3 +1035,14 @@ report records live evidence and remaining limits; user pattern review is pendin
 Warning-free build; all 789 .NET and 26 Python tests passed locally. The offline
 verifier passed all nine examples and independent gate/packaging/speed checks.
 See [the complete acceptance report](three-phase-acceptance-2026-10-07.md).
+
+
+## October 7: platform test synchronization
+
+The first new CI run passed Linux/macOS but reproduced Windows post-kill file
+access failures in two older crash tests. Added a two-second exclusive readiness
+probe on only the terminated child's fixture files, and bounded temporary cleanup
+handling for observed access denied. Production locking, recovery and no-replay
+behavior are unchanged. All 17 affected recovery/ownership tests pass locally.
+Added supervisor shutdown/restart tests; the Python suite now has 28 passing tests.
+The OS cause remains unconfirmed; follow-up hosted verification is required.

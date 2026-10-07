@@ -22,6 +22,7 @@ public class ProcessRecoveryTests
             Assert.Equal("boundary-reached", signal);
             child.Kill(entireProcessTree: true);
             await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            await WaitForCrashFilesAsync(child, files);
             using var recovered = new DurableRuntime(files.Database);
             Assert.Equal(cursor, recovered.GetSession("session-a").NextSlot);
             var batches = recovered.Batches("session-a");
@@ -53,6 +54,7 @@ public class ProcessRecoveryTests
             Assert.Equal("boundary-reached", await child.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(15)));
             child.Kill(entireProcessTree: true);
             await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            await WaitForCrashFilesAsync(child, files);
             using var recovered = new DurableRuntime(files.Database);
             Assert.Equal(status, recovered.GetSession("session-a").Status);
             Assert.Equal(3, recovered.GetSession("session-a").NextSlot);
@@ -97,6 +99,7 @@ public class ProcessRecoveryTests
             Assert.Equal("boundary-reached", await child.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(15)));
             child.Kill(entireProcessTree: true);
             await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            await WaitForCrashFilesAsync(child, files);
             using var recovered = new DurableRuntime(files.Database);
             Assert.Equal(revision, recovered.Horizon("session-a").Revision);
             Assert.Equal(revision == 0 ? 9 : 18, recovered.GetSession("session-a").TotalSlots);
@@ -107,6 +110,42 @@ public class ProcessRecoveryTests
         finally
         {
             if (!child.HasExited) { child.Kill(entireProcessTree: true); await child.WaitForExitAsync(); }
+        }
+    }
+
+    private static async Task WaitForCrashFilesAsync(Process child, RuntimeFixture files)
+    {
+        Assert.True(child.HasExited); // Never wait around, delete or bypass a live owner.
+        if (!OperatingSystem.IsWindows()) return;
+        // CI observed sharing/access failures immediately after a forced process
+        // exit. Probe only this fixture's files before the single recovery open.
+        // This does not assume a particular OS/antivirus cause or retry any DB
+        // transaction. Persistent inaccessible/leaked handles still fail the test.
+        var timer = Stopwatch.StartNew();
+        int retries = 0;
+        while (true)
+        {
+            try
+            {
+                foreach (string suffix in new[] { ".owner", "", "-wal", "-shm" })
+                {
+                    try
+                    {
+                        using var probe = new FileStream(files.Database + suffix,
+                            FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                    }
+                    catch (FileNotFoundException) { }
+                }
+                if (retries > 0) Console.WriteLine($"Crash-file readiness required {retries} probes over {timer.ElapsedMilliseconds} ms.");
+                return;
+            }
+            catch (Exception error) when (timer.Elapsed < TimeSpan.FromSeconds(2) &&
+                (error is IOException && (error.HResult & 0xffff) is 32 or 33 ||
+                 error is UnauthorizedAccessException && (error.HResult & 0xffff) == 5))
+            {
+                retries++;
+                await Task.Delay(50);
+            }
         }
     }
 

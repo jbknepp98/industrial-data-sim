@@ -28,13 +28,15 @@ public sealed class RuntimeFixture : IDisposable
                 if (Directory.Exists(Folder)) Directory.Delete(Folder, true);
                 return;
             }
-            catch (IOException error) when (OperatingSystem.IsWindows() &&
-                (error.HResult & 0xffff) is 32 or 33 && attempt < 20)
+            catch (Exception error) when (OperatingSystem.IsWindows() && attempt < 20 &&
+                (error is IOException && (error.HResult & 0xffff) is 32 or 33 ||
+                 error is UnauthorizedAccessException && (error.HResult & 0xffff) == 5))
             {
                 // Only our uniquely owned test directory, after runtime/child
-                // disposal. Windows sharing/lock violations can be transient.
+                // disposal. Windows CI also observed access denied for a SQLite
+                // shared-memory file after a forced kill. Its OS cause is unknown.
                 // Persistent leaked handles still fail after two seconds; never
-                // retry permissions errors or any production state mutation.
+                // retry any production state mutation or delete an owner as recovery.
                 Thread.Sleep(100);
             }
         }

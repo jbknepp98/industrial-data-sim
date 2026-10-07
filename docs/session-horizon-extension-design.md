@@ -3,6 +3,10 @@
 Current implementation: `session extend` and `production extend` are available.
 Use `session horizon` or `production horizon` to inspect revision and effective end.
 Stop any foreground publisher before using these direct database commands.
+A resident production host instead accepts `production-live horizon|extend`;
+see [production hosting](production-host.md). Target/condition-bounded process
+models cannot extend. Other manufacturing models must pass compilation with the
+proposed end before any revision is committed.
 
 ```
 production extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>
