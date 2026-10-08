@@ -30,7 +30,12 @@ diagnostics. A pause acknowledgment means the earlier publish round finished.
 Health reports last completed round UTC, process-local published-batch count,
 failed/uncertain/paused sessions and queued points/bytes. Process responsiveness
 and delivery health are separate. Published count resets on process restart;
-durable per-session progress does not. Status is not a point receipt. A long
+durable per-session progress does not. Status is not a point receipt. Session status and UTC tag progress remain available
+when configuration or horizon integrity prevents optional horizon detail; in that
+case `horizon` is null and `horizonError` explains restoration steps. Successful
+lifecycle controls remain successful when only this optional detail is unavailable.
+Configuration/horizon integrity failures quarantine that session while healthy
+sessions continue; storage failures still stop the worker. A long
 transport round can delay controls; a timed-out mutation may have committed.
 Inspect current state before repeating it; extension retries reuse the same UUID
 and arguments. `stop` requests graceful shutdown; wait for process exit before

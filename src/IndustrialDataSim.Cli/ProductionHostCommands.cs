@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using IndustrialDataSim.Core.Configuration;
+using IndustrialDataSim.Core.Validation;
 using IndustrialDataSim.Runtime;
 
 namespace IndustrialDataSim.Cli;
@@ -153,13 +154,27 @@ public static partial class CliApplication
                     if (!ValidExtensionArguments(args)) throw LocalControlProtocol.InvalidFrame();
                     result = ApplyExtension(runtime, args);
                 }
-                else result = new
+                else
                 {
-                    session = SessionView(runtime.GetSession(id)),
-                    horizon = runtime.HorizonStatus(id),
-                    progress = runtime.Progress(id),
-                    message = "Control completed between publish rounds. Published progress is not a per-point receipt."
-                };
+                    // Stored status remains useful when the model cannot load.
+                    // An optional detail failure must not misreport a committed
+                    // lifecycle command as failed. Storage failures still escape.
+                    object? horizon = null;
+                    ValidationError? horizonError = null;
+                    try { horizon = runtime.HorizonStatus(id); }
+                    catch (RuntimeFailure failure) when (failure.Error.Code is "runtime.configuration_integrity" or "extension.integrity")
+                    { horizonError = failure.Error; }
+                    result = new
+                    {
+                        session = SessionView(runtime.GetSession(id)),
+                        horizon,
+                        horizonError,
+                        progress = runtime.Progress(id).Select(p => new {
+                            p.Tag, bufferedUtc = ProgressTimestamp(p.BufferedTicks),
+                            submittedUtc = ProgressTimestamp(p.SubmittedTicks), publishedUtc = ProgressTimestamp(p.PublishedTicks) }),
+                        message = "Control completed between publish rounds. Review horizonError if detail is unavailable. Published progress is not a per-point receipt."
+                    };
+                }
             }
             return WriteProductionResponse(writer, result);
         }

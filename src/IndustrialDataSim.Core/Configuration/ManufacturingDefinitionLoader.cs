@@ -473,10 +473,22 @@ internal static class ManufacturingDefinitionLoader
             case "subtract":
             case "multiply":
             case "divide":
-                double a = Numeric(Child("left"), path), b = Numeric(Child("right"), path);
-                if (op == "lt") return a < b; if (op == "lte") return a <= b; if (op == "gt") return a > b; if (op == "gte") return a >= b;
-                double result = op switch { "add" => a + b, "subtract" => a - b, "multiply" => a * b, _ => a / b };
-                return Numeric(result, path);
+                double leftNumber = Numeric(Child("left"), path + ".left");
+                double rightNumber = Numeric(Child("right"), path + ".right");
+                if (op == "lt") return leftNumber < rightNumber;
+                if (op == "lte") return leftNumber <= rightNumber;
+                if (op == "gt") return leftNumber > rightNumber;
+                if (op == "gte") return leftNumber >= rightNumber;
+                if (op == "divide" && rightNumber == 0)
+                    throw new Invalid("manufacturing.division_by_zero", path + ".right",
+                        "Divide requires a nonzero denominator. Configure the right operand to remain nonzero; conditional branches are evaluated eagerly and cannot guard an invalid division.");
+                double result = op switch {
+                    "add" => leftNumber + rightNumber, "subtract" => leftNumber - rightNumber,
+                    "multiply" => leftNumber * rightNumber, _ => leftNumber / rightNumber };
+                if (!double.IsFinite(result))
+                    throw new Invalid("manufacturing.arithmetic_overflow", path,
+                        $"The {op} operation produced a nonfinite result. Reduce operand magnitudes or, for division, increase the denominator magnitude; keep results within the finite numeric range.");
+                return result;
             case "between":
                 double number = Numeric(Child("value"), path);
                 return number >= expression.GetProperty("minimum").GetDouble() && number <= expression.GetProperty("maximum").GetDouble();

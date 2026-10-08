@@ -36,7 +36,7 @@ public sealed partial class DurableRuntime
         }
         Core.Configuration.SimulationDefinition model;
         try { model = LoadModelForWork(id); }
-        catch (RuntimeFailure failure) when (failure.Error.Code == "runtime.configuration_integrity")
+        catch (RuntimeFailure failure) when (failure.Error.Code is "runtime.configuration_integrity" or "extension.integrity")
         {
             // No claim or transport call has occurred. The persisted failure is
             // visible in status, while the delivery round can serve other sessions.

@@ -58,13 +58,8 @@ public sealed class HistorianClient : IDisposable
         using var exists = await GetJson(dataset + "/exists", stop);
         if (exists.RootElement.ValueKind != JsonValueKind.True)
             throw new RuntimeFailure("historian.dataset_missing", "Dataset existence was not confirmed. Check the configured Dataset and permissions; no session was admitted or written.");
-        using var settings = await GetJson(dataset, stop);
-        var root = settings.RootElement;
-        int Number(string name) => root.TryGetProperty(name, out var element) && element.TryGetInt32(out int number) && number >= 0 ? number : throw ProtocolFailure();
-        var result = new DatasetSettings(Number("pa"), Number("ps"), root.TryGetProperty("ldt", out _) ? Number("ldt") : null,
-            root.TryGetProperty("lda", out _) ? Number("lda") : null);
-        if (result.PurgeAgeDays > 0 && model.Session.StartUtc < DateTimeOffset.UtcNow.AddDays(-result.PurgeAgeDays))
-            throw new RuntimeFailure("historian.retention_conflict", "The proposed range begins outside the Dataset purge-age window. Choose a retained range or review Dataset settings; timestamps will not be shifted automatically.");
+        var result = await ReadDatasetSettings(model.Session.Dataset, stop);
+        ValidateRetention(result, model.Session.StartUtc);
         var current = await Read(model.Session.Dataset, model.Session.OutputTags.Select(t => t.Name), null, null, stop);
         foreach (var tag in current)
         {
@@ -78,6 +73,24 @@ public sealed class HistorianClient : IDisposable
         var baseline = model.Session.OutputTags.ToDictionary(tag => tag.Name, tag =>
             current.SingleOrDefault(item => item.Name == tag.Name)?.Points.Select(point => (long?)point.Timestamp.UtcTicks).Max(), StringComparer.Ordinal);
         return new(result, baseline);
+    }
+
+    internal async Task<DatasetSettings> ReadDatasetSettings(string dataset, CancellationToken stop)
+    {
+        using var settings = await GetJson(DatasetPath(dataset), stop);
+        var root = settings.RootElement;
+        int Number(string name) => root.TryGetProperty(name, out var element) && element.TryGetInt32(out int number) && number >= 0 ? number : throw ProtocolFailure();
+        return new DatasetSettings(Number("pa"), Number("ps"), root.TryGetProperty("ldt", out _) ? Number("ldt") : null,
+            root.TryGetProperty("lda", out _) ? Number("lda") : null);
+    }
+
+    internal void ValidateRetention(DatasetSettings settings, DateTimeOffset earliestPendingUtc)
+    {
+        // Compare ages instead of subtracting an untrusted day count from the
+        // clock, which could underflow DateTimeOffset for very large settings.
+        if (settings.PurgeAgeDays > 0 && (UtcNow() - earliestPendingUtc).TotalDays > settings.PurgeAgeDays)
+            throw new RuntimeFailure("historian.retention_conflict",
+                "The proposed values begin outside the Dataset purge-age window. Review Dataset retention settings before retrying preflight; queued timestamps will not be shifted or discarded automatically.");
     }
 
     internal void ValidateProfile(SimulationDefinition model)

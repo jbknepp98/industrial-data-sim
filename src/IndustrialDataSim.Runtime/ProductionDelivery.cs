@@ -37,7 +37,14 @@ public sealed class ProductionDelivery
             stop.ThrowIfCancellationRequested();
             var batch = runtime.PeekPending(id);
             if (batch is null) return false;
-            var model = runtime.ProductionModel(id);
+            SimulationDefinition model;
+            try { model = runtime.ProductionModel(id); }
+            catch (RuntimeFailure failure) when (failure.Error.Code is "runtime.configuration_integrity" or "extension.integrity")
+            {
+                // LoadModelForWork already persisted Failed. Keep the pending
+                // payload and ownership; other sessions can still publish.
+                return false;
+            }
             Dictionary<string, List<ObservedPoint>> expected;
             try
             {
@@ -52,7 +59,12 @@ public sealed class ProductionDelivery
                 foreach (var tag in latest)
                     if (tag.Points.Any(point => point.Timestamp >= expected[tag.Name][0].Timestamp))
                         throw new RuntimeFailure("historian.external_conflict", "A tag has reached this pending batch's time range. Stop external writers and inspect the timeline; queued values were not submitted and must not be shifted or replayed.");
+                // Refresh for every known-unsent batch, including after restart
+                // or extension. Validate the payload, not the session origin:
+                // an old session may now be producing entirely current values.
+                var settings = await historian.ReadDatasetSettings(model.Session.Dataset, stop);
                 await historian.Authenticate(stop);
+                historian.ValidateRetention(settings, expected.Values.Min(points => points[0].Timestamp));
             }
             catch (Exception error) when (IsTransportFailure(error) || error is RuntimeFailure)
             {

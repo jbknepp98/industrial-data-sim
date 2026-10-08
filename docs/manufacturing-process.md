@@ -125,3 +125,10 @@ randomness, state/timer boundaries, target completion, typed errors and quality.
 The explicit `scripts/verify_manufacturing_production.py --write-test-dataset`
 helper creates fresh Test tags and checks arrival indicators without replaying
 writes. Credentials remain in the local connection environment.
+
+Arithmetic diagnostics distinguish a zero denominator
+(`manufacturing.division_by_zero`, at the right operand) from a nonfinite result
+(`manufacturing.arithmetic_overflow`, at the operation). Correct the denominator
+or reduce operand magnitudes. Both conditional branches evaluate eagerly, so an
+`if` expression cannot guard an otherwise invalid division. Diagnostics identify
+the operation and correction without echoing operand values.

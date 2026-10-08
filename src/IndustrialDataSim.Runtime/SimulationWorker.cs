@@ -74,7 +74,7 @@ public sealed class SimulationWorker
                     {
                         if (runtime.Generate(id).Progressed) { progressed = true; generated++; }
                     }
-                    catch (RuntimeFailure failure) when (failure.Error.Code == "runtime.configuration_integrity")
+                    catch (RuntimeFailure failure) when (failure.Error.Code is "runtime.configuration_integrity" or "extension.integrity")
                     {
                         // The runtime persisted Failed before throwing. Do not
                         // swallow storage errors or unexpected exceptions here.

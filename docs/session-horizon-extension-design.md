@@ -17,7 +17,13 @@ Reuse a request UUID only with identical arguments. Extension does not publish,
 repeat finite schedules, reset clocks, add tags or change model seeds. Ready,
 Paused and unreleased Complete sessions with empty queues may extend. Uncertain,
 failed, cancelled, archived and released sessions cannot extend. Production
-publishing still runs its existing preflight/conflict and retention checks.
+publishing still runs its preflight/conflict checks. Before each known-unsent batch
+is claimed, the writer refreshes Dataset settings through a bounded GET and checks
+the earliest pending timestamp against the current purge-age window. This includes
+restart and extension, and checks the batch rather than the original session start.
+A retention conflict preserves pending work and fails that session for explicit
+preflight retry after operator correction. Settings can still change after the
+check; this is a guard, not a storage acceptance guarantee.
 
 Archives now use format 2, including the original admitted definition, effective
 horizon, full revision history and the revision used for every batch. The existing
