@@ -63,10 +63,12 @@ public sealed partial class DurableRuntime : IDisposable
         try
         {
             connection.Open();
-            Execute("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=1000;");
             long version = Convert.ToInt64(Scalar("PRAGMA user_version;"));
+            if (version == StateBackup.EvidenceSchemaVersion)
+                throw new RuntimeFailure("backup.evidence_only", "This is a recovery evidence snapshot, not runnable state. Retain the original database for restart. Do not edit the snapshot schema or replay its pending values; it cannot account for later Historian writes.");
             if (version is not (0 or 1 or 2 or 3 or 4 or 5 or 6 or 7 or 8))
                 throw new RuntimeFailure("runtime.schema_version", "Unsupported state database version. Open it with the matching simulator version; do not reset or overwrite it.");
+            Execute("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=1000;");
             long interrupted = 0;
             InTransaction(() =>
             {

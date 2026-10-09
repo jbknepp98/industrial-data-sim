@@ -147,3 +147,12 @@ The earlier docs-only `f083814` CI run also exposed Windows owner-file acquisiti
 and cleanup failures in crash-recovery tests. They were discovered during the
 packaging review and remain unconfirmed; see the demonstration report. A subsequent
 green run is not proof that this intermittent Windows issue is resolved.
+
+## October 9 — Phase 3 first increment
+
+Added offline `production backup` / `session backup` evidence snapshots using
+SQLite backup and the runtime owner lock. Source state is not migrated. Completed
+snapshots include a SHA-256 receipt and reject execution to prevent replay from
+stale delivery history. See [state snapshots and recovery](state-backup-recovery.md).
+This is not a completed restore solution: V12/V13 remain open, with safe forward
+continuation, upgrade drills, disk pressure, retention and rollover still due.

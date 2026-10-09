@@ -8,7 +8,7 @@ namespace IndustrialDataSim.Cli;
 public static partial class CliApplication
 {
     private const string SessionUsage =
-        "Usage: session extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; session horizon <database> <session-id>; session start <database> <model-file>; session list <database> [after-session-id]; " +
+        "Usage: session backup <database> <private-directory>; session extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; session horizon <database> <session-id>; session start <database> <model-file>; session list <database> [after-session-id]; " +
         "session status|pause|resume|release <database> <session-id>; " +
         "session archive|verify-archive <database> <session-id> <archive-directory>; session archive-info <database> <session-id>; " +
         "session cancel <database> <session-id> drain|discard-pending; " +
@@ -24,7 +24,7 @@ public static partial class CliApplication
         string action = args.Length > 1 ? args[1] : "";
         bool validShape = action switch
         {
-            "horizon" or "start" or "status" or "pause" or "resume" or "release" or "archive-info" => args.Length == 4,
+            "backup" or "horizon" or "start" or "status" or "pause" or "resume" or "release" or "archive-info" => args.Length == 4,
             "extend" => args.Length == 7,
             "list" => args.Length is 3 or 4,
             "cancel" or "retry-generation" or "archive" or "verify-archive" => args.Length == 5,
@@ -64,6 +64,7 @@ public static partial class CliApplication
         object result;
         try
         {
+            if (action == "backup") return WriteSessionResponse(output, "backup", StateBackup.Create(args[2], args[3]));
             string database = Path.GetFullPath(args[2]);
             if (action != "start" && !File.Exists(database))
                 throw new RuntimeFailure("cli.state_missing",

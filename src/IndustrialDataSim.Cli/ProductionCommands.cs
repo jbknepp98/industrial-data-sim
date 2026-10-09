@@ -6,7 +6,7 @@ namespace IndustrialDataSim.Cli;
 
 public static partial class CliApplication
 {
-    private const string ProductionUsage = "Usage: production extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; production horizon <database> <session-id>; production start <database> <model-file>; production run <database> <rounds>; production follow <database> <seconds 1–604800>; " +
+    private const string ProductionUsage = "Usage: production backup <database> <private-directory>; production extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; production horizon <database> <session-id>; production start <database> <model-file>; production run <database> <rounds>; production follow <database> <seconds 1–604800>; " +
         "production list <database> [after-session-id]; production status|pause|resume|release|retry-preflight|archive-info <database> <session-id>; " +
         "production observations <database> <session-id> [after-batch-id]; production review <database> <session-id> accepted|needs-attention; " +
         "production cancel <database> <session-id> drain|discard-pending; production archive|verify-archive <database> <session-id> <directory>. " +
@@ -17,7 +17,7 @@ public static partial class CliApplication
         if (args.Length == 2 && args[1] == "help") return WriteProductionResponse(output, new { message = ProductionUsage });
         string action = args.Length > 1 ? args[1] : "";
         bool shape = action switch {
-            "horizon" or "start" or "run" or "follow" or "status" or "pause" or "resume" or "release" or "retry-preflight" or "archive-info" => args.Length == 4,
+            "backup" or "horizon" or "start" or "run" or "follow" or "status" or "pause" or "resume" or "release" or "retry-preflight" or "archive-info" => args.Length == 4,
             "extend" => args.Length == 7,
             "list" => args.Length is 3 or 4,
             "observations" => args.Length is 4 or 5,
@@ -46,6 +46,7 @@ public static partial class CliApplication
         int exit = 0;
         try
         {
+            if (action == "backup") return WriteProductionResponse(output, StateBackup.Create(args[2], args[3]));
             string database = Path.GetFullPath(args[2]);
             using var logs = new RuntimeFileLogger(Path.Combine(Path.GetDirectoryName(database)!, "logs", Path.GetFileName(database)));
             using var runtime = new DurableRuntime(database, logger: logs, createIfMissing: action == "start", mode: ExecutionMode.Production);

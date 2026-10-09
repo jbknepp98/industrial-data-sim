@@ -145,3 +145,9 @@ Controlled mixed-validity and restart experiments on fresh test tags can supplem
 those answers, but finite tests do not establish a universal atomicity guarantee.
 Until the contract is established, retain the conservative policy above and do
 not advance a production acknowledged checkpoint based solely on the word "OK".
+
+## Offline evidence snapshots
+
+Use the [state snapshot procedure](state-backup-recovery.md) to preserve a stopped
+runtime database. Snapshots cannot run: an older Pending row is not evidence of
+non-delivery after the snapshot. Ordinary restart continues from original state.
