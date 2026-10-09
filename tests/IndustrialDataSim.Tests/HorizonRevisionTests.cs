@@ -155,14 +155,14 @@ public class HorizonRevisionTests
             runtime.Generate("session-a");
             batches = runtime.Batches("session-a").ToArray(); session = runtime.GetSession("session-a");
         }
-        Query(files.Database, "DROP TABLE horizon_revisions; ALTER TABLE sessions DROP COLUMN horizon_revision; ALTER TABLE batches DROP COLUMN horizon_revision; PRAGMA user_version=6;");
+        Query(files.Database, "DROP TABLE process_checkpoints; DROP TABLE horizon_revisions; ALTER TABLE sessions DROP COLUMN horizon_revision; ALTER TABLE batches DROP COLUMN horizon_revision; PRAGMA user_version=6;");
         using (var reopened = new DurableRuntime(files.Database))
         {
             Assert.Equal(session, reopened.GetSession("session-a"));
             Assert.Equal(batches, reopened.Batches("session-a"));
             Assert.Equal(0, reopened.Horizon("session-a").Revision);
         }
-        Assert.Equal(7L, Query(files.Database, "PRAGMA user_version"));
+        Assert.Equal(8L, Query(files.Database, "PRAGMA user_version"));
     }
 
     [Fact]
@@ -184,7 +184,7 @@ public class HorizonRevisionTests
         using (var runtime = new DurableRuntime(files.Database)) runtime.AddSession(RuntimeFixture.Model().ToJsonString());
         // Simulate an unexpected conflicting table in a legacy database. The two
         // ALTER statements must roll back when the later CREATE fails.
-        Query(files.Database, "DROP TABLE horizon_revisions; ALTER TABLE sessions DROP COLUMN horizon_revision; ALTER TABLE batches DROP COLUMN horizon_revision; PRAGMA user_version=6; CREATE TABLE horizon_revisions(unexpected TEXT);");
+        Query(files.Database, "DROP TABLE process_checkpoints; DROP TABLE horizon_revisions; ALTER TABLE sessions DROP COLUMN horizon_revision; ALTER TABLE batches DROP COLUMN horizon_revision; PRAGMA user_version=6; CREATE TABLE horizon_revisions(unexpected TEXT);");
         Assert.Equal("runtime.storage_failure", Assert.Throws<RuntimeFailure>(() => new DurableRuntime(files.Database)).Error.Code);
         Assert.Equal(6L, Query(files.Database, "PRAGMA user_version"));
         Assert.Equal(0L, Query(files.Database, "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='horizon_revision'"));

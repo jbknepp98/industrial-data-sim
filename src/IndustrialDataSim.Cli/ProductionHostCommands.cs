@@ -46,7 +46,7 @@ public static partial class CliApplication
                     request => ExecuteProductionLive(runtime, delivery, request, lastRoundUtc, published),
                     async token =>
                     {
-                        var result = await worker.RunAsync(1, token, DateTimeOffset.UtcNow);
+                        var result = await worker.RunAsync(1, token, DateTimeOffset.UtcNow, maximumSessionTurns: 1);
                         lastRoundUtc = DateTimeOffset.UtcNow;
                         published += result.PublishedBatches;
                         return result.StopReason switch

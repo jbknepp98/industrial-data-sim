@@ -68,6 +68,12 @@ public static partial class CliApplication
         }
         if (command == "explain-process")
         {
+            if (model.Definition!.HasWindowedProcess)
+            {
+                WriteResult(output, [new("manufacturing.preview_required", "$.manufacturing.execution",
+                    "Windowed execution does not precompute a future trace. Use a short copy without execution for explain-process; preserve the admitted model unchanged.")]);
+                return 1;
+            }
             return WriteResponse(output, new { schemaVersion = 1, valid = true, errors = Array.Empty<ValidationError>(), effectiveEndUtc = model.Definition!.Session.EndUtc,
                 targetBounded = model.Definition.HasProductionTarget, transitions = model.Definition.ProcessTrace,
                 omittedTransitions = model.Definition.OmittedProcessTransitions,

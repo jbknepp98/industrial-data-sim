@@ -4,6 +4,11 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using IndustrialDataSim.Runtime;
 
+// Manufacturing qualification measures admission/reconstruction separately from
+// delivery. Its fixed synthetic fixtures never accept connection credentials.
+if (args.Length > 0 && args[0] is "manufacturing" or "manufacturing-windowed" or "manufacturing-load" or "mixed-load")
+    return args[0] is "manufacturing-load" or "mixed-load" ? await ManufacturingLoadProbe.RunAsync(args) : await ManufacturingProbe.RunAsync(args);
+
 // Fixed synthetic fixtures make measurements comparable without accepting a
 // production configuration. Run each case in a fresh process: peak working set
 // includes startup/JIT and must not inherit a previous case's high-water mark.

@@ -1,7 +1,7 @@
 # Resident production host
 
 `production-host run <database>` owns an existing production database and runs
-fair, bounded publish rounds fenced at current UTC. Historical backlog catches
+fair, bounded publish turns fenced at current UTC. Historical backlog catches
 up and then continues live without re-admission or a new model origin. The host
 remains available after completion or a blocked session. It does not recreate
 Datasets. Initial admission uses the existing `production start` command.
@@ -9,7 +9,7 @@ Datasets. Initial admission uses the existing `production start` command.
 Unlike the simulation host, this command authenticates and writes real data.
 It uses the existing connection environment and private CA trust. Stop before
 opening the same database with a direct CLI mutation. Same-user local controls
-use a distinct production pipe and execute between rounds:
+use a distinct production pipe and execute between complete session turns:
 
 ```text
 production-host status <database>
@@ -84,3 +84,10 @@ The October acceptance report records two concurrent Test sessions, live pause/
 resume, graceful restart and observed control timings. This supplements the
 existing multi-day demo evidence; it does not resolve the older intermittent
 Windows/macOS latency diagnosis or establish arbitrary-load service capacity.
+
+The resident host yields to controls after each session's complete generation,
+publish and observation turn, rotating across runnable sessions. It does not
+interrupt an in-flight HTTP operation. The foreground production worker keeps
+its full-round default. See [Phase 2 timings](phase-2-qualification.md) for the
+measured observation-wait delay and the qualified healthy reference workload;
+slow/failing transport can still delay controls up to bounded operation deadlines.

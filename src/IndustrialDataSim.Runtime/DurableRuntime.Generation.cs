@@ -46,6 +46,15 @@ public sealed partial class DurableRuntime
         var model = LoadModelForWork(id);
         if (session.TotalSlots != GenerationWindow.TotalSlots(model))
             throw StateIntegrityFailure();
+        try { RestoreProcess(id, model, session.NextSlot); }
+        catch (Core.Configuration.ProcessExecutionFailure failure)
+        {
+            Execute("UPDATE sessions SET state='Failed',error_code=$code,error_message=$message WHERE id=$id",
+                ("$id", id), ("$code", failure.Error.Code), ("$message", failure.Error.Message));
+            Log(LogLevel.Error, failure.Error.Code, "Generate", failure.Error.Message,
+                "Restore verified process state. Do not reset the cursor or replay submitted values.", id);
+            return new(id, false, failure.Error.Message);
+        }
         var window = GenerationWindow.Generate(model, session.NextSlot, limits.CandidateSlotsPerTurn, limits.BatchPoints, limits.BatchBytes, notAfterUtc);
         if (window.Error is { } error)
         {
@@ -60,6 +69,18 @@ public sealed partial class DurableRuntime
         }
         if (window.NextSlot == session.NextSlot)
             return new(id, false, "The next sample is later than the wall-clock fence; wait without advancing the checkpoint.");
+        // Capture before beginning the transaction; serialization must not leave
+        // a committed cursor without its corresponding process state.
+        string? processCheckpoint;
+        try { processCheckpoint = model.CaptureProcessCheckpoint(); }
+        catch (Core.Configuration.ProcessExecutionFailure failure)
+        {
+            Execute("UPDATE sessions SET state='Failed',error_code=$code,error_message=$message WHERE id=$id",
+                ("$id", id), ("$code", failure.Error.Code), ("$message", failure.Error.Message));
+            Log(LogLevel.Error, failure.Error.Code, "Generate", failure.Error.Message,
+                "Preserve the checkpoint and inspect process-state size before continuing.", id);
+            return new(id, false, failure.Error.Message);
+        }
         bool completed = false;
         InTransaction(() =>
         {
@@ -80,6 +101,7 @@ public sealed partial class DurableRuntime
             }
             Execute("UPDATE sessions SET next_slot=$next,state=CASE WHEN $next=total_slots THEN 'Draining' ELSE 'Ready' END WHERE id=$id",
                 ("$id", id), ("$next", window.NextSlot));
+            if (processCheckpoint is not null) SaveProcess(id, window.NextSlot, processCheckpoint);
             completed = CompleteIfDrained(id);
             FaultPoint?.Invoke("before_generation_commit");
         });

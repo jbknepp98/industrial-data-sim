@@ -27,6 +27,11 @@ session engine, conditional models, durable buffering, and acceptance criteria.
 Dataset naming policy: use letters, digits, hyphens (`-`), underscores (`_`),
 and spaces only; avoid other special characters.
 
+For the production release path, see the [1.0.0 release specification](docs/release-1.0.0-specification.md)
+and [acceptance matrix](docs/release-1.0.0-acceptance.md). Phase 2 now adds
+[checkpointed manufacturing and measured capacity](docs/phase-2-qualification.md). These distinguish existing
+safety limits from operating targets still awaiting qualification.
+
 ## Development standards
 
 Follow [the development process](AGENTS.md) for every increment. Code must be

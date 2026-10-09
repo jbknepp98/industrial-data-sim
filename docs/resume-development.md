@@ -4,6 +4,21 @@ This page describes current status and the next work. Historical shutdown notes,
 repair milestones and test counts belong in the [implementation log](implementation-log.md)
 and dated [audit](audit-2026-09-19.md), rather than serving as competing instructions.
 
+## Current release work — October 9
+
+The five October 7 audit findings were repaired in `ea29007`; Windows, Linux and
+macOS CI passed. See the [audit repair record](audit-2026-10-07.md).
+Release Phase 1 defines the [1.0.0 specification](release-1.0.0-specification.md)
+and [acceptance gates](release-1.0.0-acceptance.md). Release Phase 2 is now qualified
+on the reference workload; see [the results and limits](phase-2-qualification.md).
+Opt-in windowed manufacturing removes full-horizon storage/reconstruction costs,
+with schema-eight atomic process checkpoints. Existing models keep their original
+semantics. The production host serves controls between complete session turns.
+The next phase is operational recovery, backup/upgrade, storage and rollover.
+Do not open older live databases with the new binary without a planned backup
+and upgrade: opening migrates their schema. No existing demo was migrated here.
+The dated demo observations below are historical, not a fresh process-health check.
+
 ## Implemented
 
 - Deterministic finite generators, sequences, local Boolean triggers and pause/continue gates.
@@ -83,7 +98,8 @@ installed automatically. The acceptance host uses separate fresh Test tags/state
 The September control-latency diagnosis remains unresolved. Fast October control
 measurements do not prove a general latency fix. Keep phase timing diagnostics
 and investigate a captured slow occurrence before changing deadlines. Partitioned
-archives and measured high-volume process-interpreter capacity remain future work.
+archives remain future work. Process capacity is now measured for the explicit
+reference workload; larger loads and lower-spec hardware are not certified.
 Arrival observations and user feedback remain separate from blind publish completion;
 counts and missing repeated samples never authorize replay. No old September
 failed demonstration was restarted or labeled accepted.
@@ -95,7 +111,8 @@ failed demonstration was restarted or labeled accepted.
    [host contract](continuous-host.md), [logging](runtime-logging.md) and the
    diagnostic report before changing those components.
 3. Work in small increments with useful errors, appropriate tests and matching docs.
-   Follow the remaining [Phase 1 plan](phase-1-plan.md).
+   Follow the [1.0.0 release gates](release-1.0.0-acceptance.md); the original
+   [Phase 1 plan](phase-1-plan.md) remains historical implementation context.
 4. Preserve local configuration and state through shutdown. Do not delete owner
    files, reset Uncertain batches or infer recovery authority from logs.
 

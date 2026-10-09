@@ -327,6 +327,10 @@
     },
     "stopWhen": {
       "$ref": "#/$defs/expression"
+    },
+    "execution": {
+      "const": "windowed",
+      "description": "Opt-in checkpointed execution. Later arithmetic errors fail generation; stopWhen/stopOnTarget are not supported in this mode."
     }
   },
   "required": [

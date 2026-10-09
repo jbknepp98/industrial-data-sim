@@ -1,8 +1,8 @@
 # Explicit audit archival
 
 Schema version 5 introduced archival; schema version 6 adds production progress,
-preflight baselines and observations. The current database schema, version 7,
-adds durable horizon revisions and batch revision identity. Upgrade a SQLite-aware backup first; older
+preflight baselines and observations. Schema 7 adds durable horizon revisions and batch revision identity. Current
+database schema 8 adds windowed process checkpoints. Upgrade a SQLite-aware backup first; older
 executables reject the new schema. Never lower user_version manually.
 
 Stop the host/worker, then choose a local archive directory outside version control:
@@ -23,6 +23,8 @@ batch hashes/ranges/counts/positions, attempt outcomes, and production observati
 and reviews. Export format 2 includes `horizonRevision` records, effective horizon
 metadata, and each batch's revision identity. Database schema versions and export
 format versions are separate. See [the extension contract](session-horizon-extension-design.md).
+Windowed sessions also include a `processCheckpoint` record (checkpoint version 1),
+with cursor, payload and checksum; values are intentional private archive content.
 A completion record closes the export. Data values and configuration
 are intentional archive content; keep the files private and out of Git.
 Completed payloads were already pruned by normal delivery and cannot be recovered
@@ -35,7 +37,7 @@ Failure to durably publish the filename refuses pruning. The final file is reope
 and compared with the hash computed while writing. Only then does one SQLite
 transaction record the receipt and remove batch, attempt and observation rows.
 The verified file remains open through commit. Original session/configuration,
-preflight, horizon revisions, progress and global tag timestamp limits remain in SQLite. Tag
+preflight, horizon revisions, process checkpoints, progress and global tag timestamp limits remain in SQLite. Tag
 reservations are released. Archived sessions leave active inventory and its
 100-session limit, but direct status and archive receipts remain accessible.
 Session IDs and earlier timestamps cannot be reused.

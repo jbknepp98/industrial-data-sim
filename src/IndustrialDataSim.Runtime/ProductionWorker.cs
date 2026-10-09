@@ -12,9 +12,11 @@ public sealed class ProductionWorker(DurableRuntime runtime, ProductionDelivery 
 {
     private int running;
     private int nextStart;
-    public async Task<ProductionRunResult> RunAsync(int maximumRounds, CancellationToken stop = default, DateTimeOffset? notAfterUtc = null)
+    public async Task<ProductionRunResult> RunAsync(int maximumRounds, CancellationToken stop = default, DateTimeOffset? notAfterUtc = null, int maximumSessionTurns = 100)
     {
         runtime.RequireMode(ExecutionMode.Production);
+        if (maximumSessionTurns is < 1 or > 100)
+            throw new RuntimeFailure("worker.invalid_turn_limit", "Choose 1–100 session turns per production round. A resident host uses one turn so controls can run between sessions without interrupting a publish.");
         if (maximumRounds is < 1 or > 10000) throw new RuntimeFailure("worker.invalid_round_limit", "Choose 1–10000 production rounds. Inspect published progress and observations before continuing.");
         if (Interlocked.CompareExchange(ref running, 1, 0) != 0) throw new RuntimeFailure("worker.already_running", "The production worker is already running. Wait for its current run to finish.");
         int rounds = 0, published = 0;
@@ -32,11 +34,16 @@ public sealed class ProductionWorker(DurableRuntime runtime, ProductionDelivery 
                 nextStart = (start + 1) % sessions.Count;
                 rounds++;
                 bool progressed = false;
+                int sessionTurns = 0;
                 for (int offset = 0; offset < sessions.Count; offset++)
                 {
                     if (stop.IsCancellationRequested) return Result("Stopped");
                     var session = sessions[(start + offset) % sessions.Count];
                     if (session.Status is not (SessionStatus.Ready or SessionStatus.Draining or SessionStatus.Cancelling)) continue;
+                    if (sessionTurns++ == maximumSessionTurns) break;
+                    // The resident host yields after a whole publish/observation
+                    // operation, never inside its durable delivery transition.
+                    if (maximumSessionTurns < sessions.Count) nextStart = (start + offset + 1) % sessions.Count;
                     try { progressed |= runtime.Generate(session.SessionId, notAfterUtc).Progressed; }
                     catch (RuntimeFailure failure) when (failure.Error.Code is "runtime.configuration_integrity" or "extension.integrity") { continue; }
                     if (stop.IsCancellationRequested) return Result("Stopped");

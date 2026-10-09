@@ -26,6 +26,9 @@ public sealed partial class DurableRuntime
         {
             var model = LoadModel(id); // Verifies original definition and every revision.
             var session = ReadSession(id);
+            try { RestoreProcess(id, model, session.NextSlot); }
+            catch (Core.Configuration.ProcessExecutionFailure failure)
+            { throw new RuntimeFailure(failure.Error.Code, failure.Error.Message); }
             int revision = checked((int)Convert.ToInt64(Scalar("SELECT horizon_revision FROM sessions WHERE id=$id", ("$id", id))));
             using (var existing = Command("SELECT revision,previous_end,new_end,previous_total,new_total,cursor,resulting_state FROM horizon_revisions WHERE session_id=$id AND request_id=$request", ("$id", id), ("$request", requestId)))
             using (var reader = existing.ExecuteReader())

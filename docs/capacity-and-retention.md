@@ -4,6 +4,11 @@ This increment measures the existing simulation-only runtime. It does not
 measure Historian ingestion, HTTP latency, production service capacity, or the
 maximum safe production session count. No archive or deletion command is added.
 
+For manufacturing-specific admission and reconstruction measurements, see the
+[October 9 baseline](manufacturing-capacity-baseline.md). Its legacy 72-hour case is
+rejected. The [Phase 2 windowed qualification](phase-2-qualification.md) records
+the implemented remedy and measured operating scope.
+
 ## Reproduce
 
 With a .NET 10 SDK, from the repository root:

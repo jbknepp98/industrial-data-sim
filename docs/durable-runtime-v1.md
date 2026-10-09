@@ -48,7 +48,7 @@ Retain per-tag progress after release to reject backward reuse.
 
 ## Session progress and schema version 3
 
-Schema version 3 introduced independent progress; the current schema is version 7. Version 5 adds [archival](audit-archival.md); version 6 adds separate production progress, baselines and observations.
+Schema version 3 introduced independent progress; the current schema is version 8. Version 5 adds [archival](audit-archival.md); version 6 adds separate production progress, baselines and observations.
 Version 7 adds audited horizon revisions and batch revision identity. Extension
 is currently an internal simulation-only API; no extension command exists.
 [The implementation boundary](session-horizon-extension-design.md) explains
@@ -292,3 +292,9 @@ Pending, and failure after submission leaves Sending for conservative recovery.
 These checks detect specific inconsistencies; they are not a complete forensic
 validator for arbitrary SQLite corruption or malicious edits. Preserve verified
 backups and never edit runtime metadata manually.
+
+Schema 8 adds bounded manufacturing process checkpoints, committed with the
+generation cursor and pending payload. Existing schema 7 sessions migrate without
+changing definitions or payloads; old binaries reject schema 8. Back up before
+upgrading and never lower user_version. Windowed execution is an explicit model
+option for new sessions; existing precompiled sessions retain their semantics.

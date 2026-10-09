@@ -2,6 +2,13 @@ namespace IndustrialDataSim.Runtime;
 
 internal static class Schema
 {
+    internal const string VersionEight = """
+        CREATE TABLE process_checkpoints(
+          session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+          next_slot INTEGER NOT NULL, payload TEXT NOT NULL, hash TEXT NOT NULL);
+        PRAGMA user_version=8;
+        """;
+
     internal const string VersionSeven = """
         ALTER TABLE sessions ADD COLUMN horizon_revision INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE batches ADD COLUMN horizon_revision INTEGER NOT NULL DEFAULT 0;

@@ -113,6 +113,32 @@ public class ProcessRecoveryTests
         }
     }
 
+    [Theory]
+    [InlineData("before_generation_commit", 0)]
+    [InlineData("after_generation_commit", 3)]
+    public async Task KilledWindowedGenerationPreservesAtomicCheckpoint(string boundary, long cursor)
+    {
+        using var files = new RuntimeFixture();
+        var model = WindowedManufacturingTests.Model();
+        model["manufacturing"]!["execution"] = "windowed";
+        using var child = Start(files, boundary, model.ToJsonString());
+        try
+        {
+            Assert.Equal("boundary-reached", await child.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(15)));
+            child.Kill(entireProcessTree: true);
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            await WaitForCrashFilesAsync(child, files);
+            using var recovered = new DurableRuntime(files.Database, new() { BatchPoints = 3 });
+            Assert.Equal(cursor, recovered.GetSession("session-a").NextSlot);
+            Assert.True(recovered.Generate("session-a").Progressed);
+            Assert.Equal(cursor + 3, recovered.GetSession("session-a").NextSlot);
+        }
+        finally
+        {
+            if (!child.HasExited) { child.Kill(entireProcessTree: true); await child.WaitForExitAsync(); }
+        }
+    }
+
     private static async Task WaitForCrashFilesAsync(Process child, RuntimeFixture files)
     {
         Assert.True(child.HasExited); // Never wait around, delete or bypass a live owner.
@@ -149,11 +175,11 @@ public class ProcessRecoveryTests
         }
     }
 
-    private static Process Start(RuntimeFixture files, string boundary)
+    private static Process Start(RuntimeFixture files, string boundary, string? configuration = null)
     {
         Directory.CreateDirectory(files.Folder);
         string config = Path.Combine(files.Folder, "model.json");
-        File.WriteAllText(config, RuntimeFixture.Model().ToJsonString());
+        File.WriteAllText(config, configuration ?? RuntimeFixture.Model().ToJsonString());
         // The test runner's shared runtime directory identifies the host even
         // when a project-local SDK is not on PATH.
         string runtimeFolder = Path.GetDirectoryName(typeof(object).Assembly.Location)!;

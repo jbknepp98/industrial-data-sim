@@ -65,7 +65,7 @@ public sealed partial class DurableRuntime : IDisposable
             connection.Open();
             Execute("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=1000;");
             long version = Convert.ToInt64(Scalar("PRAGMA user_version;"));
-            if (version is not (0 or 1 or 2 or 3 or 4 or 5 or 6 or 7))
+            if (version is not (0 or 1 or 2 or 3 or 4 or 5 or 6 or 7 or 8))
                 throw new RuntimeFailure("runtime.schema_version", "Unsupported state database version. Open it with the matching simulator version; do not reset or overwrite it.");
             long interrupted = 0;
             InTransaction(() =>
@@ -83,6 +83,7 @@ public sealed partial class DurableRuntime : IDisposable
                 if (version < 5) Execute(Schema.VersionFive);
                 if (version < 6) Execute(Schema.VersionSix);
                 if (version < 7) Execute(Schema.VersionSeven);
+                if (version < 8) Execute(Schema.VersionEight);
                 interrupted = Convert.ToInt64(Scalar("SELECT COUNT(*) FROM batches WHERE state='Sending'"));
                 Execute("""
                     UPDATE sessions SET state='Uncertain',error_code='delivery.interrupted',

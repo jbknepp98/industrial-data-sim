@@ -38,6 +38,7 @@ public static class GenerationWindow
         int pointCount = 0;
         int bytes = 2; // Outer braces; property/point sizes below include JSON escaping.
         long cursor = nextSlot;
+        long processStart = model.Execution?.NextStep ?? 0;
         long stop = nextSlot + Math.Min((long)maximumSlots, total - nextSlot);
         for (; cursor < stop && pointCount < maximumPoints; cursor++)
         {
@@ -50,9 +51,18 @@ public static class GenerationWindow
             // never changes the original sample grid or a generator's local clock.
             // Leave the first future slot unconsumed, even within a partial row.
             if (notAfterUtc is { } fence && sampleUtc.Ticks > fence.UtcTicks) break;
+            // Limit process-clock work independently of transport point count.
+            // The unconsumed sample is retried from the saved process snapshot.
+            if (model.Execution is { } process && elapsed / (process.TickMs * TimeSpan.TicksPerMillisecond) - processStart >= 1000) break;
             var generator = model.Generators[tag.Name];
             if (!generator.EmitsAt(elapsed)) continue;
-            var value = generator.Evaluate(elapsed);
+            JsonElement? value;
+            try { value = generator.Evaluate(elapsed); }
+            catch (ProcessExecutionFailure failure)
+            {
+                return new(nextSlot, 0, "{}", new Dictionary<string, long>(), failure.Error)
+                    { FailureContext = new(tagIndex, cursor, sampleUtc) };
+            }
             if (value is null)
                 return Failure(nextSlot, new(tagIndex, cursor, sampleUtc), "generation.non_finite_value",
                     "Generator arithmetic produced a non-finite value. Reduce the range, start value, or rate.");

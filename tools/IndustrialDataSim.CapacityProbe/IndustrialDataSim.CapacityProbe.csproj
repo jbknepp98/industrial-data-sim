@@ -4,5 +4,6 @@
     <ProjectReference Include="../../src/IndustrialDataSim.Runtime/IndustrialDataSim.Runtime.csproj" />
     <None Include="../../examples/constant-simulation.json" Link="examples/constant-simulation.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../examples/boolean-gate-simulation.json" Link="examples/boolean-gate-simulation.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../examples/manufacturing-simulation.json" Link="examples/manufacturing-simulation.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

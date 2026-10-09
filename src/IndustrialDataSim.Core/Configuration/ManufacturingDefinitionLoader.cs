@@ -15,7 +15,7 @@ public sealed record ProcessTransition(long ElapsedMs, string Tag, string From, 
 /// Rebuilding the same prefix reconstructs states, timers and production batches.
 /// No expression can perform I/O or execute arbitrary code.
 /// </summary>
-internal static class ManufacturingDefinitionLoader
+internal static partial class ManufacturingDefinitionLoader
 {
     private sealed class Invalid(string code, string path, string message) : Exception(message)
     { internal ValidationError Error => new(code, path, Message); }
@@ -64,7 +64,7 @@ internal static class ManufacturingDefinitionLoader
 
     private sealed class Node(JsonElement spec, string tag, string path)
     {
-        internal JsonElement Spec = spec;
+        internal JsonElement Spec = spec.Clone();
         internal string Tag = tag, Path = path, State = "";
         internal string RandomIdentity = "tag:" + tag;
         internal long StateSince, BatchElapsed, BatchDuration, BatchIndex;
@@ -78,7 +78,10 @@ internal static class ManufacturingDefinitionLoader
     private static SimulationDefinition Compile(JsonElement spec, SessionDefinition session, int sampleMs)
     {
         const string path = "$.manufacturing";
-        Fields(spec, path, "tickMs", "nodes", "stopWhen");
+        Fields(spec, path, "tickMs", "nodes", "stopWhen", "execution");
+        bool windowed = spec.TryGetProperty("execution", out var executionMode);
+        if (windowed && (executionMode.ValueKind != JsonValueKind.String || executionMode.GetString() != "windowed"))
+            throw Fail(path + ".execution", "Use windowed for bounded checkpoint execution, or omit execution for the legacy precompiled model.");
         long tickMs = Integer(spec, "tickMs", path, 1);
         long tickTicks = checked(tickMs * TimeSpan.TicksPerMillisecond);
         var array = Field(spec, "nodes", path);
@@ -86,7 +89,7 @@ internal static class ManufacturingDefinitionLoader
             throw Fail(path + ".nodes", "Declare exactly one node per output, with 1–32 output tags.");
         long ticks = (session.EndUtc - session.StartUtc).Ticks;
         long count = (ticks - 1) / tickTicks + 1;
-        if (count > 250000 / array.GetArrayLength()) throw Fail(path + ".tickMs", "Process compilation supports at most 250000 node-clock evaluations. Increase tickMs, shorten the session or split independent equipment into sessions.");
+        if (!windowed && count > 250000 / array.GetArrayLength()) throw Fail(path + ".tickMs", "Process compilation supports at most 250000 node-clock evaluations. Increase tickMs, shorten the session or split independent equipment into sessions.");
         var nodes = new Dictionary<string, Node>(StringComparer.Ordinal);
         int index = 0, expressionBudget = 4096;
         foreach (var nodeSpec in array.EnumerateArray())
@@ -100,7 +103,7 @@ internal static class ManufacturingDefinitionLoader
         var references = new Dictionary<string, HashSet<string>>();
         foreach (var node in nodes.Values) references[node.Tag] = ValidateNode(node, nodes, tickMs, ref expressionBudget);
         if (spec.TryGetProperty("stopWhen", out var stopExpression)) ValidateExpression(stopExpression, path + ".stopWhen", nodes, new(), tickMs, 0, ref expressionBudget);
-        if (count * (4096 - expressionBudget + nodes.Count) > 2000000)
+        if (!windowed && count * (4096 - expressionBudget + nodes.Count) > 2000000)
             throw Fail(path, "Process compilation exceeds 2000000 expression-clock evaluations. Increase tickMs, shorten the horizon or simplify expressions.");
         var ordered = new List<Node>();
         var visiting = new HashSet<string>();
@@ -113,65 +116,35 @@ internal static class ManufacturingDefinitionLoader
             visiting.Remove(tag); visited.Add(tag); ordered.Add(nodes[tag]);
         }
         foreach (string tag in nodes.Keys) Visit(tag);
-        var memory = new Dictionary<string, (bool Value, long Since, long Last)>();
-        var current = new Dictionary<string, object>();
-        var previous = new Dictionary<string, object>();
-        var trace = new List<ProcessTransition>(); int omitted = 0;
-        void Trace(long at, Node node, string from, string to, string reason)
-        { if (trace.Count < 1000) trace.Add(new(at, node.Tag, from, to, reason)); else omitted++; }
-        bool hasTarget = spec.TryGetProperty("stopWhen", out _) || ordered.Any(n => n.Spec.TryGetProperty("accumulator", out var a) && a.TryGetProperty("stopOnTarget", out var b) && b.GetBoolean());
+        var execution = new ProcessStepper(spec.Clone(), session, ordered, tickMs);
+        if (windowed)
+        {
+            // Bound work between observations. Horizon length no longer implies
+            // retaining all observations, but an individual gap must remain small.
+            if ((long)sampleMs > tickMs * 1000)
+                throw Fail(path + ".tickMs", "Windowed sampling may span at most 1000 process ticks. Increase tickMs or decrease samplingIntervalMs.");
+            if (execution.HasTarget)
+                throw Fail(path, "Windowed execution currently requires a fixed session end. Use the precompiled mode for stopWhen or stopOnTarget; ordinary capped totalizers remain supported.");
+            execution.Step(); // Type and arithmetic check at the initial tick only.
+            var generators = ordered.ToDictionary(node => node.Tag,
+                node => (GeneratorDefinition)new WindowedSeries(execution, node.Tag));
+            return new(session, sampleMs, new ReadOnlyDictionary<string, GeneratorDefinition>(generators)) { Execution = execution };
+        }
         long? completedAt = null;
         long compiledBytes = 0;
         for (long step = 0; step < count; step++)
         {
-            long ms = checked(step * tickMs); current.Clear();
-            bool stopTarget = false;
+            execution.Step();
             foreach (var node in ordered)
             {
-                object value;
-                var context = new Context(ms, ms, tickMs, current, previous, memory, node.StateSince, node.Path, node.RandomIdentity);
-                if (node.Spec.TryGetProperty("expression", out var expression)) value = Evaluate(expression, node.Path + ".expression", context);
-                else if (node.Spec.TryGetProperty("state", out var state))
-                {
-                    value = EvaluateState(node, state, context, step, ms, Trace);
-                }
-                else
-                {
-                    value = EvaluateAccumulator(node, context, step, ms, tickMs, Trace, ref stopTarget);
-                }
-                string type = session.OutputTags.First(t => t.Name == node.Tag).ValueType;
-                if (type == "number" ? value is not double : type == "boolean" ? value is not bool : value is not string)
-                    throw Fail(node.Path, "Node result type must match its declared output type; implicit coercion is not allowed.");
-                current[node.Tag] = value; // Process dependencies see underlying values, not sensor faults/noise.
-                object observed = value;
-                if (node.Spec.TryGetProperty("noise", out var noise))
-                {
-                    double amplitude = noise.GetProperty("amplitude").GetDouble();
-                    observed = Numeric(value, node.Path + ".noise") + amplitude * (2 * Random(noise.GetProperty("seed").GetUInt32(), node.RandomIdentity + ".noise", step) - 1);
-                    if (noise.TryGetProperty("minimum", out var min)) observed = Math.Max((double)observed, min.GetDouble());
-                    if (noise.TryGetProperty("maximum", out var max)) observed = Math.Min((double)observed, max.GetDouble());
-                    Numeric(observed, node.Path + ".noise");
-                }
-                int quality = 192, faultIndex = 0;
-                if (node.Spec.TryGetProperty("faults", out var faults)) foreach (var fault in faults.EnumerateArray())
-                {
-                    long start = fault.GetProperty("startMs").GetInt64(), end = start + fault.GetProperty("durationMs").GetInt64();
-                    if (ms >= start && ms < end)
-                    {
-                        if (fault.GetProperty("kind").GetString() == "freeze")
-                        { if (!node.Frozen.ContainsKey(faultIndex)) node.Frozen[faultIndex] = observed; observed = node.Frozen[faultIndex]; }
-                        else quality = fault.GetProperty("quality").GetInt32();
-                    }
-                    faultIndex++;
-                }
-                compiledBytes += observed is string text ? checked(text.Length * 2L + 32) : 32;
+                var observation = execution.Observations[node.Tag];
+                compiledBytes += observation.Value is string text ? checked(text.Length * 2L + 32) : 32;
                 if (compiledBytes > 16 * 1024 * 1024)
                     throw Fail(path, "Compiled process observations exceed 16 MiB. Shorten the horizon, reduce string lengths or increase tickMs.");
-                node.Values.Add(observed); node.Qualities.Add(quality);
+                node.Values.Add(observation.Value);
+                node.Qualities.Add(observation.Quality);
             }
-            bool stopExpressionValue = spec.TryGetProperty("stopWhen", out var conditionEnd) && Boolean(Evaluate(conditionEnd, path + ".stopWhen", new(ms, ms, tickMs, current, previous, memory, 0)), path + ".stopWhen");
-            previous = new(current);
-            if (stopTarget || stopExpressionValue) { completedAt = ms; break; }
+            if (execution.CompletedAt is not null) { completedAt = execution.CompletedAt; break; }
         }
         var definitions = ordered.ToDictionary(n => n.Tag, n => (GeneratorDefinition)new ProcessSeries(n.Values.ToArray(), n.Qualities.ToArray(), tickTicks));
         // Hold the final process value until the first observation grid point at
@@ -185,7 +158,7 @@ internal static class ManufacturingDefinitionLoader
             if (end < session.EndUtc) session = session with { EndUtc = end };
         }
         return new(session, sampleMs, new ReadOnlyDictionary<string, GeneratorDefinition>(definitions))
-        { HasProductionTarget = hasTarget, ProcessTrace = trace.AsReadOnly(), OmittedProcessTransitions = omitted };
+        { HasProductionTarget = execution.HasTarget, ProcessTrace = execution.Trace.AsReadOnly(), OmittedProcessTransitions = execution.OmittedTransitions };
     }
 
     // State transitions use the prior state and a single ordered rule pass.

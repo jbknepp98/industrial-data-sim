@@ -29,7 +29,10 @@ public sealed partial class DurableRuntime
         if (session.Status is not (SessionStatus.Complete or SessionStatus.Cancelled) ||
             Scalar("SELECT id FROM batches WHERE session_id=$id AND state NOT IN ('Acknowledged','Discarded','Published') LIMIT 1", ("$id", id)) is not null)
             throw new RuntimeFailure("archive.unresolved", "Only Complete or Cancelled sessions with no outstanding work can be archived. Resolve pending or uncertain delivery first; archival cannot discard it.");
-        _ = LoadModel(id);
+        var archiveModel = LoadModel(id);
+        try { RestoreProcess(id, archiveModel, session.NextSlot); }
+        catch (Core.Configuration.ProcessExecutionFailure failure)
+        { throw new RuntimeFailure(failure.Error.Code, failure.Error.Message); }
         try { directory = Path.GetFullPath(directory); }
         catch (Exception error) when (error is ArgumentException or NotSupportedException)
         { throw new RuntimeFailure("archive.invalid_directory", "Supply a valid archive directory on writable local storage; original audit rows are unchanged."); }
@@ -59,6 +62,9 @@ public sealed partial class DurableRuntime
                 generatorVersion = 1, horizon = HorizonStatus(id), progress = Progress(id),
                 preflightSettings = Scalar("SELECT settings FROM production_preflight WHERE session_id=$id", ("$id", id)) as string,
                 baseline = Scalar("SELECT baseline FROM production_preflight WHERE session_id=$id", ("$id", id)) as string });
+            using (var checkpoint = Command("SELECT next_slot,payload,hash FROM process_checkpoints WHERE session_id=$id", ("$id", id)))
+            using (var saved = checkpoint.ExecuteReader())
+                if (saved.Read()) Write(new { kind = "processCheckpoint", version = 1, cursor = saved.GetInt64(0), payload = saved.GetString(1), hash = saved.GetString(2) });
             // Revision zero is represented by the admitted configuration. Later
             // revisions stay in SQLite and are also exported before batch pruning.
             using (var revisions = Command("SELECT revision,request_id,previous_end,new_end,previous_total,new_total,cursor,config_hash,prior_state,resulting_state,committed_utc FROM horizon_revisions WHERE session_id=$id ORDER BY revision", ("$id", id)))

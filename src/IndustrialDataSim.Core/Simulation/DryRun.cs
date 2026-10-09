@@ -31,6 +31,22 @@ public static class DryRun
                 "Dry-run exceeds 10000 candidate sample slots. Shorten the range or increase the sampling interval.")]);
         }
 
+        if (definition.HasWindowedProcess)
+        {
+            // Windowed execution visits all tags on a timestamp before advancing
+            // process time. The legacy tag-major preview cannot do that safely.
+            string initial = definition.CaptureProcessCheckpoint()!;
+            try
+            {
+                var window = GenerationWindow.Generate(definition, 0, MaximumPoints, MaximumPoints, 4 * 1024 * 1024);
+                if (window.Error is not null) return new(null, 0, [window.Error]);
+                if (window.NextSlot != GenerationWindow.TotalSlots(definition))
+                    return new(null, 0, [new("dry_run.output_limit", "$", "Windowed preview exceeds the bounded process-work or output-size limit. Shorten the preview horizon.")]);
+                var parsed = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<TvqPoint>>>(window.Payload)!;
+                return new(parsed.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<TvqPoint>)pair.Value.AsReadOnly()), window.PointCount, []);
+            }
+            finally { definition.RestoreProcessCheckpoint(initial, 0); }
+        }
         var data = new Dictionary<string, IReadOnlyList<TvqPoint>>(StringComparer.Ordinal);
         for (int tagIndex = 0; tagIndex < session.OutputTags.Count; tagIndex++)
         {

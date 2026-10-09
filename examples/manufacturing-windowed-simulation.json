@@ -1,0 +1,259 @@
+{
+  "schemaVersion": 1,
+  "generatorVersion": 1,
+  "session": {
+    "schemaVersion": 1,
+    "sessionId": "manufacturing-example",
+    "connectionProfile": "local-development",
+    "dataset": "Example Dataset",
+    "startUtc": "2026-09-01T00:00:00Z",
+    "endUtc": "2026-09-01T00:02:00Z",
+    "outputTags": [
+      {
+        "name": "Plant.Ready",
+        "valueType": "boolean"
+      },
+      {
+        "name": "Plant.SKU",
+        "valueType": "string"
+      },
+      {
+        "name": "Plant.State",
+        "valueType": "string"
+      },
+      {
+        "name": "Plant.A.Speed",
+        "valueType": "number"
+      },
+      {
+        "name": "Plant.B.Speed",
+        "valueType": "number"
+      },
+      {
+        "name": "Plant.Temperature",
+        "valueType": "number"
+      },
+      {
+        "name": "Plant.TimeTotal",
+        "valueType": "number"
+      },
+      {
+        "name": "Plant.BatchTotal",
+        "valueType": "number"
+      }
+    ]
+  },
+  "samplingIntervalMs": 1000,
+  "manufacturing": {
+    "tickMs": 1000,
+    "nodes": [
+      {
+        "tag": "Plant.Ready",
+        "expression": {
+          "op": "schedule",
+          "repeat": true,
+          "steps": [
+            {
+              "durationMs": 10000,
+              "value": false
+            },
+            {
+              "durationMs": 50000,
+              "value": true
+            }
+          ]
+        }
+      },
+      {
+        "tag": "Plant.SKU",
+        "expression": {
+          "op": "schedule",
+          "repeat": true,
+          "steps": [
+            {
+              "durationMs": 30000,
+              "value": "SKU-A"
+            },
+            {
+              "durationMs": 30000,
+              "value": "SKU-B"
+            }
+          ]
+        }
+      },
+      {
+        "tag": "Plant.State",
+        "state": {
+          "initial": "Idle",
+          "transitions": [
+            {
+              "from": "*",
+              "to": "Idle",
+              "when": {
+                "op": "not",
+                "arg": {
+                  "tag": "Plant.Ready"
+                }
+              }
+            },
+            {
+              "from": "Idle",
+              "to": "Startup",
+              "when": {
+                "tag": "Plant.Ready"
+              }
+            },
+            {
+              "from": "Startup",
+              "to": "Running",
+              "when": {
+                "tag": "Plant.Ready"
+              },
+              "afterMs": 5000
+            }
+          ]
+        }
+      },
+      {
+        "tag": "Plant.A.Speed",
+        "expression": {
+          "op": "if",
+          "when": {
+            "op": "and",
+            "args": [
+              {
+                "tag": "Plant.Ready"
+              },
+              {
+                "op": "eq",
+                "left": {
+                  "tag": "Plant.SKU"
+                },
+                "right": "SKU-A"
+              }
+            ]
+          },
+          "then": {
+            "op": "uniform",
+            "minimum": 110,
+            "maximum": 125,
+            "seed": 11,
+            "holdMs": 5000
+          },
+          "else": 0
+        }
+      },
+      {
+        "tag": "Plant.B.Speed",
+        "expression": {
+          "op": "if",
+          "when": {
+            "op": "and",
+            "args": [
+              {
+                "tag": "Plant.Ready"
+              },
+              {
+                "op": "eq",
+                "left": {
+                  "tag": "Plant.SKU"
+                },
+                "right": "SKU-B"
+              }
+            ]
+          },
+          "then": {
+            "op": "uniform",
+            "minimum": 85,
+            "maximum": 100,
+            "seed": 12,
+            "holdMs": 5000
+          },
+          "else": 0
+        }
+      },
+      {
+        "tag": "Plant.Temperature",
+        "expression": {
+          "op": "if",
+          "when": {
+            "op": "eq",
+            "left": {
+              "tag": "Plant.State"
+            },
+            "right": "Running"
+          },
+          "then": 75,
+          "else": 40
+        },
+        "noise": {
+          "amplitude": 0.5,
+          "seed": 14
+        },
+        "faults": [
+          {
+            "kind": "freeze",
+            "startMs": 45000,
+            "durationMs": 5000
+          },
+          {
+            "kind": "quality",
+            "startMs": 47000,
+            "durationMs": 3000,
+            "quality": 0
+          }
+        ]
+      },
+      {
+        "tag": "Plant.TimeTotal",
+        "accumulator": {
+          "mode": "time",
+          "initial": 0,
+          "ratePerSecond": {
+            "op": "if",
+            "when": {
+              "op": "eq",
+              "left": {
+                "tag": "Plant.State"
+              },
+              "right": "Running"
+            },
+            "then": 25,
+            "else": {
+              "op": "if",
+              "when": {
+                "op": "eq",
+                "left": {
+                  "tag": "Plant.State"
+                },
+                "right": "Startup"
+              },
+              "then": 10,
+              "else": 0
+            }
+          }
+        }
+      },
+      {
+        "tag": "Plant.BatchTotal",
+        "accumulator": {
+          "mode": "batch",
+          "initial": 0,
+          "enabled": {
+            "tag": "Plant.Ready"
+          },
+          "quantityRange": {
+            "minimum": 10,
+            "maximum": 20
+          },
+          "durationRangeMs": {
+            "minimum": 3000,
+            "maximum": 6000
+          },
+          "seed": 21
+        }
+      }
+    ],
+    "execution": "windowed"
+  }
+}

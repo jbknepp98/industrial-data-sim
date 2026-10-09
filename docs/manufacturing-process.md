@@ -10,6 +10,44 @@ cells, readiness, Idle/Startup/Running states, variable speeds, a temperature
 sensor with noise/faults, and two production totalizers. Batch production stops
 the session at its target. Definitions are agent-authored JSON; there is no UI.
 
+## Bounded windowed execution
+
+Set `manufacturing.execution` to `"windowed"` for fixed-horizon models that need
+multi-day operation. See the [windowed example](../examples/manufacturing-windowed-simulation.json)
+and [Phase 2 qualification](phase-2-qualification.md). Omit this field to preserve
+the original precompiled behavior, including production-target session termination.
+Do not edit the definition of an admitted session to switch execution modes.
+
+Windowed execution validates shape, dependency ordering and the initial process
+tick at admission. Future expression failures are generation failures: the whole
+provisional window is discarded and the prior durable cursor/state remains intact.
+It does not promise to prevalidate future arithmetic. `stopWhen` and true
+`stopOnTarget` are rejected in this mode; capped/whole-batch totals that do not stop
+the session are supported. Use the precompiled mode for target-stopping sessions.
+
+SQLite schema 8 commits a version-1 process checkpoint atomically with queued
+output and its flattened cursor. It includes process time, previous underlying
+values, state dwell, timers, batch counters/rates, target flags, frozen fault
+values and the latest observations/quality. A checksum binds it to session,
+immutable model hash and cursor. Partial timestamp rows and retries after byte
+limits reuse the same evaluated tick. Horizon extension keeps the checkpoint;
+it never restarts a process. No mutable state is inferred from Historian readback.
+
+Each window advances at most 1,000 additional process ticks; sampling may span
+at most 1,000 ticks. Existing node/expression-depth limits remain. Checkpoint JSON
+is capped at 1 MiB; the entire horizon is not retained in memory. The old total
+node-clock/expression-clock/observation-storage budgets apply to precompiled
+mode only. These per-window guards are not arbitrary-load latency guarantees.
+`dry-run` remains bounded and may require a shorter preview. `explain-process`
+requires a short copy in precompiled mode; it refuses to label an empty future
+trace as a completed explanation.
+
+Missing, incompatible or damaged checkpoint state fails that session with
+`manufacturing.checkpoint_integrity`. Preserve its database and ownership, restore
+verified state, and never reset the cursor or regenerate submitted timestamps.
+Checkpoints remain in SQLite after archive and are exported as a `processCheckpoint`
+record in format 2. They are recovery state, not permission to replay an archive.
+
 ## Clocks, dependencies and reconstruction
 
 `tickMs` is the explicit discrete process clock. `samplingIntervalMs` observes the
@@ -26,13 +64,13 @@ there is no live cross-session subscription. Dependencies see underlying process
 values, before sensor noise or faults. To make a fault affect the process, model
 it explicitly as a dependency/condition instead of a sensor fault.
 
-Recompilation deterministically reconstructs the process from its origin; SQLite
+In precompiled mode, recompilation deterministically reconstructs the process from its origin; SQLite
 retains the normal generation/delivery checkpoints. Random streams use seed,
 output tag, expression position and clock/batch index. Reordering nodes does not
 reroll them. Renaming a tag or changing a pattern is a new model. HTTP batch size,
 sampling frequency and restart do not change process evolution.
 
-This first interpreter precompiles a bounded horizon: 1–32 outputs, at most
+The default precompiled interpreter uses a bounded horizon: 1–32 outputs, at most
 250,000 node-clock evaluations, 2,000,000 expression-clock evaluations, 4,096
 expression nodes, 16 nesting levels, and 16 MiB of estimated observation storage.
 Strings are at most 1,024 characters. These bounds deliberately limit CPU/memory;

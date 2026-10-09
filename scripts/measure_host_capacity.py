@@ -78,10 +78,10 @@ def audit_snapshot(database):
             "points": points, "retainedPayloadBatches": payloads or 0, "attempts": attempts}
 
 
-def measure(dotnet, history_count, seconds, diagnose=False, command_runner=None, host_started=None, evidence=None):
+def measure(dotnet, history_count, seconds, diagnose=False, command_runner=None, host_started=None, evidence=None, manufacturing=False):
     evidence = evidence or DiagnosticEvidence()
     try:
-        result = _measure(dotnet, history_count, seconds, diagnose, command_runner, host_started, evidence)
+        result = _measure(dotnet, history_count, seconds, diagnose, command_runner, host_started, evidence, manufacturing)
         evidence.report["status"] = "complete"
         return result
     except BaseException as error:
@@ -89,7 +89,7 @@ def measure(dotnet, history_count, seconds, diagnose=False, command_runner=None,
         raise
 
 
-def _measure(dotnet, history_count, seconds, diagnose, command_runner, host_started, evidence):
+def _measure(dotnet, history_count, seconds, diagnose, command_runner, host_started, evidence, manufacturing=False):
     root = Path(__file__).resolve().parents[1]
     dll = root / "src/IndustrialDataSim.Cli/bin/Release/net10.0/IndustrialDataSim.Cli.dll"
     require(dll.exists(), "capacity.build_missing", "Build IndustrialDataSim.slnx in Release before measuring host capacity.")
@@ -148,7 +148,21 @@ def _measure(dotnet, history_count, seconds, diagnose, command_runner, host_star
         active_ids = [f"active-{index}" for index in range(4)]
         for index, session_id in enumerate(active_ids):
             template = constant if index < 2 else sequence
-            model_path.write_text(json.dumps(make_model(template, session_id, False)))
+            if manufacturing:
+                process_model = json.loads((root / "examples/manufacturing-simulation.json").read_text())
+                process_model = json.loads(json.dumps(process_model).replace("Plant.", session_id + ".Plant."))
+                process_model["session"]["sessionId"] = session_id
+                process_model["session"]["startUtc"] = "2026-09-01T00:00:00Z"
+                process_model["session"]["endUtc"] = "2026-10-01T00:00:00Z"
+                process_model["samplingIntervalMs"] = 1000
+                process_model["manufacturing"]["execution"] = "windowed"
+                process_model["manufacturing"]["tickMs"] = 1000
+                for node in process_model["manufacturing"]["nodes"]:
+                    for key in ("target", "finalPolicy", "stopOnTarget"):
+                        node.get("accumulator", {}).pop(key, None)
+                model_path.write_text(json.dumps(process_model))
+            else:
+                model_path.write_text(json.dumps(make_model(template, session_id, False)))
             invoke("session", "start", str(database), str(model_path))
         # Files avoid blocking the child on full stdout/stderr pipes. Runtime
         # diagnostics already rotate; only the terminal result goes to stdout.
@@ -221,7 +235,7 @@ def _measure(dotnet, history_count, seconds, diagnose, command_runner, host_star
         return {"schemaVersion": 1, "mode": "simulation-only", "historySessions": history_count,
                 "inventoryClient": "diagnostic-probe" if diagnose else "standard-cli",
                 "historyGenerationMs": history_ms, "history": history, "activeSessions": 4,
-                "patterns": ["constant", "sequence"], "requestedSeconds": seconds,
+                "patterns": ["windowed-manufacturing"] if manufacturing else ["constant", "sequence"], "requestedSeconds": seconds,
                 "observedSeconds": observed_seconds, "liveListLatency": summarize_latency(latencies),
                 "controlTimingSamples": timing_samples,
                 "slowHostOperations": slow_operations[:100], "slowHostOperationsOmitted": max(0, len(slow_operations) - 100),
@@ -237,9 +251,10 @@ if __name__ == "__main__":
     parser.add_argument("--history", type=int, choices=(0, 20, 80), default=0)
     parser.add_argument("--seconds", type=int, choices=(5, 30, 60, 300, 900), default=30)
     parser.add_argument("--diagnose", action="store_true", help="Use the read-only diagnostic client to separate control timing phases.")
+    parser.add_argument("--manufacturing", action="store_true", help="Use four eight-tag checkpointed manufacturing sessions instead of simple signals.")
     args = parser.parse_args()
     try:
-        print(json.dumps(measure(args.dotnet, args.history, args.seconds, args.diagnose), indent=2))
+        print(json.dumps(measure(args.dotnet, args.history, args.seconds, args.diagnose, manufacturing=args.manufacturing), indent=2))
     except KeyboardInterrupt:
         parser.exit(130, "capacity.interrupted: Synthetic run interrupted; inspect saved diagnostic evidence before rerunning. No mutation was retried.\n")
     except RuntimeError as error:
