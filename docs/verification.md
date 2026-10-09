@@ -1,5 +1,15 @@
 # Reproducing verification
 
+## October 9 release Phase 2 checkpoint
+
+Implementation commit `8db154e` passed [Linux, macOS and Windows CI](https://github.com/jbknepp98/industrial-data-sim/actions/runs/37941382840):
+827 .NET tests, 28 Python tests, ten simulation example/schema pairs, independent
+pattern checks, host checks and bounded capacity probes. See the
+[Phase 2 report](phase-2-qualification.md) for the accelerated 72-hour/ten-day
+workloads, short real-Historian run, responsiveness fix and qualification limits.
+This is not the seven-day release-candidate soak or human pattern acceptance.
+
+
 The latest extension, production-host and manufacturing verification is recorded in [the October 7 acceptance report](three-phase-acceptance-2026-10-07.md). Earlier counts below describe their dated checkpoints.
 
 Prerequisites: stable .NET 10 SDK, Python 3.9 or later with venv, and package

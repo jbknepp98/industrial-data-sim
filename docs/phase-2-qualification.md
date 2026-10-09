@@ -145,8 +145,12 @@ wall-clock fences; extension/archive continuity; and the production adapter path
 Local completion checks: warning-free Release build, 827 .NET tests and 28 Python
 tests passed. Ten example/schema pairs, six invalid schema cases, 100 independent
 gate scenarios / 3,722 points and the 72-hour packaging/speed oracles passed.
-Platform CI is recorded after publication; earlier green runs are not evidence
-for these new changes.
+[CI on implementation commit `8db154e`](https://github.com/jbknepp98/industrial-data-sim/actions/runs/37941382840)
+passed Linux, macOS and Windows, including the new windowed admission and mixed
+load smoke checks. The final real-transport run left four Complete sessions,
+328 Published batches and zero Pending/Sending/Uncertain batches. Its test host
+exited after graceful stop. These counts describe local durable state, not a
+claim that Historian retained every point.
 
 
 ## Phase outcome
