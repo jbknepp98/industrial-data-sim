@@ -15,6 +15,7 @@ a sealed in-memory fake Historian. A bounded worker and a continuous foreground 
 and local live controls. A separate production CLI and resident production host provide authenticated blind publishing, live controls, explicit restart configuration and arrival observations; see [production delivery](docs/production-delivery-v1.md). Explicit [audit archival](docs/audit-archival.md) preserves completed history before pruning.
 
 Guarded [horizon extension](docs/session-horizon-extension-design.md) preserves immutable models and revision-aware archives.
+Offline [evidence snapshots and verification](docs/state-backup-recovery.md) preserve recovery evidence without authorizing stale-state replay.
 [Manufacturing processes](docs/manufacturing-process.md) add typed conditions, repeating schedules, state machines, sensor noise/faults, and time/batch production totalizers.
 See [production hosting](docs/production-host.md) for live controls and startup configuration.
 

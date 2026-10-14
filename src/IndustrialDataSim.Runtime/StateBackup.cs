@@ -65,6 +65,51 @@ public static class StateBackup
         }
     }
 
+    /// <summary>
+    /// Verify a standalone evidence file against a separately retained trusted
+    /// digest. This checks local integrity only; it never authorizes delivery.
+    /// The caller must keep the evidence directory free of concurrent writers.
+    /// </summary>
+    public static StateBackupVerification Verify(string snapshot, string expectedSha256)
+    {
+        if (expectedSha256 is null || expectedSha256.Length != 64 || !expectedSha256.All(Uri.IsHexDigit))
+            throw new RuntimeFailure("backup.digest_format", "Expected SHA-256 must contain exactly 64 hexadecimal characters. Copy the digest from the separately retained backup receipt; do not calculate a new expected digest from a suspect file.");
+        try
+        {
+            string path = Path.GetFullPath(snapshot);
+            if (!File.Exists(path))
+                throw new RuntimeFailure("backup.source_missing", "Evidence snapshot is missing or inaccessible. Check its location and permissions; verification never creates a database.");
+            // Completed snapshots are standalone DELETE-journal files. Refuse
+            // sidecars rather than read data not covered by the receipt's hash.
+            if (File.Exists(path + "-wal") || File.Exists(path + "-shm") || File.Exists(path + "-journal"))
+                throw new RuntimeFailure("backup.sidecar", "Snapshot has SQLite sidecar files. Preserve all files and investigate why the evidence was opened for writing; do not delete sidecars to bypass verification.");
+            using var bytes = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            string hash = Convert.ToHexString(SHA256.HashData(bytes));
+            if (!string.Equals(hash, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                throw new RuntimeFailure("backup.checksum_mismatch", "Snapshot does not match the trusted SHA-256 receipt. Preserve it, locate an intact copy and verify again. Do not change the expected digest to accept damaged evidence.");
+            using var input = new SqliteConnection(new SqliteConnectionStringBuilder {
+                DataSource = path, Mode = SqliteOpenMode.ReadOnly, Pooling = false
+            }.ToString());
+            input.Open();
+            if (Convert.ToInt64(Scalar(input, "PRAGMA user_version")) != EvidenceSchemaVersion)
+                throw new RuntimeFailure("backup.not_evidence", "File is not a guarded evidence snapshot. Use backup on stopped original state; do not change the schema marker manually.");
+            if ((string?)Scalar(input, "PRAGMA journal_mode") != "delete")
+                throw new RuntimeFailure("backup.journal_mode", "Evidence must use a standalone DELETE journal. Preserve this file and locate an original completed snapshot; do not change its journal mode to bypass verification.");
+            if ((string?)Scalar(input, "PRAGMA integrity_check(1)") != "ok" ||
+                Scalar(input, "PRAGMA foreign_key_check") is not null)
+                throw new RuntimeFailure("backup.integrity", "Snapshot database integrity or foreign-key checks failed. Preserve it and locate an intact copy; do not repair evidence in place or resume its queued work.");
+            string? mode = Scalar(input, "SELECT value FROM runtime_metadata WHERE key='execution_mode'") as string;
+            if (mode is not ("production" or "simulation-only"))
+                throw new RuntimeFailure("backup.execution_mode", "Snapshot execution mode is missing or invalid. Preserve it and locate the original receipt and an intact copy; never convert its mode.");
+            return new(bytes.Length, hash, mode,
+                "Snapshot matches its trusted digest and passed SQLite integrity checks. This verifies local evidence only; it does not prove model validity, latest state or Historian acceptance, and does not authorize replay or restoration to runnable state.");
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or SqliteException or ArgumentException or NotSupportedException)
+        {
+            throw new RuntimeFailure("backup.verification_access", "Could not read or inspect the evidence snapshot. Check file access and ensure no other process is modifying it. Preserve the file and trusted receipt; do not edit evidence or replay its values.");
+        }
+    }
+
     private static FileStream AcquireOwner(string source)
     {
         try { return new FileStream(source + ".owner", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
@@ -84,3 +129,6 @@ public static class StateBackup
 
 public sealed record StateBackupReceipt(string BackupId, int SourceSchemaVersion,
     string ExecutionMode, long Bytes, string Sha256, string Message);
+
+public sealed record StateBackupVerification(long Bytes, string Sha256,
+    string ExecutionMode, string Message);

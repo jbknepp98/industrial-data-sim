@@ -156,3 +156,17 @@ snapshots include a SHA-256 receipt and reject execution to prevent replay from
 stale delivery history. See [state snapshots and recovery](state-backup-recovery.md).
 This is not a completed restore solution: V12/V13 remain open, with safe forward
 continuation, upgrade drills, disk pressure, retention and rollover still due.
+
+## October 14 — Phase 3 verification and upgrade drills
+
+Added `production verify-backup` and `session verify-backup`, taking an evidence
+file and a trusted SHA-256 digest. Verification checks SQLite integrity, foreign
+keys, mode and the execution guard without opening the runtime or creating logs.
+Added upgrade rollback, process-checkpoint preservation and stale production
+snapshot drills. Full suite: 848 passed, zero build warnings/errors. No live
+Historian writes or existing demonstration database changes were made.
+
+Runnable restoration remains unresolved: older Pending state cannot prove that
+later publishing never occurred. Preserve the evidence guard. Next work is a
+safe forward-continuation recovery procedure, followed by disk pressure,
+active-history retention and process-continuous rollover. V12 and V13 stay open.

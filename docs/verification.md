@@ -1,5 +1,18 @@
 # Reproducing verification
 
+## October 14 release Phase 3 increment
+
+The complete local .NET suite passed 848 tests with zero build warnings/errors.
+See [snapshot recovery verification](state-backup-recovery.md) for the upgrade,
+stale-state and read-only verification drills. No live Historian writes were
+needed. Runnable restore and retention/rollover qualification remain open.
+
+The local SDK command launcher stalled before building. Direct MSBuild completed
+using the repository SDK, `DOTNET_ROOT` and `DOTNET_HOST_PATH` pointing to that
+SDK, a writable `TMPDIR`, `/t:VSTest /p:Configuration=Release`,
+`/p:UseSharedCompilation=false /m:1 /nr:false`. The launcher stall's root cause
+was not established. This local run does not constitute a new platform CI result.
+
 ## October 9 release Phase 2 checkpoint
 
 Implementation commit `8db154e` passed [Linux, macOS and Windows CI](https://github.com/jbknepp98/industrial-data-sim/actions/runs/37941382840):
