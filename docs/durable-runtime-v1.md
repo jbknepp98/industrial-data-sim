@@ -48,7 +48,7 @@ Retain per-tag progress after release to reject backward reuse.
 
 ## Session progress and schema version 3
 
-Schema version 3 introduced independent progress; the current schema is version 8. Version 5 adds [archival](audit-archival.md); version 6 adds separate production progress, baselines and observations.
+Schema version 3 introduced independent progress; the current schema is version 9. Version 5 adds [archival](audit-archival.md); version 6 adds separate production progress, baselines and observations.
 Version 7 adds audited horizon revisions and batch revision identity. Extension
 is currently an internal simulation-only API; no extension command exists.
 [The implementation boundary](session-horizon-extension-design.md) explains

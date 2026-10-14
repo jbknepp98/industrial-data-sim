@@ -20,7 +20,7 @@ Both commands take an offline snapshot without credentials, network requests,
 source schema migration or startup recovery. They report the actual source mode.
 They require exclusive ownership using the runtime's owner lock. An active owner
 causes `backup.owner_unavailable`; do not delete the owner file to bypass it.
-Supported source schemas are 1–8. The source must be a simulator database.
+Supported source schemas are 1–9. The source must be a simulator database.
 
 SQLite's backup API includes committed WAL content. The destination is checked
 with `integrity_check`, closed and flushed before a non-overwriting rename to

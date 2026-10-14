@@ -8,7 +8,7 @@ namespace IndustrialDataSim.Cli;
 public static partial class CliApplication
 {
     private const string SessionUsage =
-        "Usage: session verify-backup <snapshot> <trusted-sha256>; session backup <database> <private-directory>; session extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; session horizon <database> <session-id>; session start <database> <model-file>; session list <database> [after-session-id]; " +
+        "Usage: session archive-history <database> <session-id> <directory> <batch-limit>; session history <database> <session-id> [after-batch]; session verify-history <database> <session-id> <archive-id> <directory>; session verify-backup <snapshot> <trusted-sha256>; session backup <database> <private-directory>; session extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; session horizon <database> <session-id>; session start <database> <model-file>; session list <database> [after-session-id]; " +
         "session status|pause|resume|release <database> <session-id>; " +
         "session archive|verify-archive <database> <session-id> <archive-directory>; session archive-info <database> <session-id>; " +
         "session cancel <database> <session-id> drain|discard-pending; " +
@@ -26,6 +26,8 @@ public static partial class CliApplication
         {
             "verify-backup" or "backup" or "horizon" or "start" or "status" or "pause" or "resume" or "release" or "archive-info" => args.Length == 4,
             "extend" => args.Length == 7,
+            "archive-history" or "verify-history" => args.Length == 6,
+            "history" => args.Length is 4 or 5,
             "list" => args.Length is 3 or 4,
             "cancel" or "retry-generation" or "archive" or "verify-archive" => args.Length == 5,
             "batches" or "run-simulated" => args.Length is 4 or 5,
@@ -47,6 +49,11 @@ public static partial class CliApplication
 
         if (action == "extend" && !ValidExtensionArguments(args)) { WriteResult(output, [new("cli.extension_arguments", "$", "Use a UTC ISO-8601 end ending in Z, a nonnegative expected revision and a canonical request UUID. Inspect horizon first; reuse the same UUID only for identical arguments.")]); return 2; }
 
+        int historyLimit = 0;
+        long historyCursor = 0;
+        if ((action == "archive-history" && (!int.TryParse(args[5], NumberStyles.None, CultureInfo.InvariantCulture, out historyLimit) || historyLimit is < 1 or > 10000)) ||
+            (action == "history" && args.Length == 5 && (!long.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out historyCursor) || historyCursor < 0)))
+        { WriteResult(output, [new("cli.history_arguments", "$", "Use 1–10000 batches per history segment and a nonnegative receipt cursor. Stop the host and pause active sessions before archiving history.")]); return 2; }
         string? configuration = null;
         string? admittedId = null;
         if (action == "start")
@@ -76,6 +83,22 @@ public static partial class CliApplication
             using var runtime = new DurableRuntime(database,
                 batchBytes > 0 ? new() { BatchBytes = batchBytes } : null,
                 logs, createIfMissing: action == "start");
+            if (action is "archive-history" or "history" or "verify-history")
+            {
+                object historyResult;
+                if (action == "archive-history") historyResult = runtime.ArchiveHistory(args[3], args[4], historyLimit);
+                else if (action == "history")
+                {
+                    var receipts = runtime.ArchiveSegments(args[3], historyCursor);
+                    historyResult = new { receipts, nextCursor = receipts.Count == 100 ? (long?)receipts[^1].ThroughBatch : null };
+                }
+                else
+                {
+                    runtime.VerifyArchiveSegment(args[3], args[4], args[5]);
+                    historyResult = new { message = "History segment matches its receipt; no replay is authorized." };
+                }
+                return WriteSessionResponse(output, action, historyResult);
+            }
             result = action == "run-simulated"
                 ? new SimulationWorker(runtime).RunAsync(maximumRounds, stop).GetAwaiter().GetResult()
                 : ExecuteSessionCommand(runtime, action, args, configuration, admittedId, afterBatch);

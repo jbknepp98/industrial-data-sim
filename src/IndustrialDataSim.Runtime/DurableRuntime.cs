@@ -66,7 +66,7 @@ public sealed partial class DurableRuntime : IDisposable
             long version = Convert.ToInt64(Scalar("PRAGMA user_version;"));
             if (version == StateBackup.EvidenceSchemaVersion)
                 throw new RuntimeFailure("backup.evidence_only", "This is a recovery evidence snapshot, not runnable state. Retain the original database for restart. Do not edit the snapshot schema or replay its pending values; it cannot account for later Historian writes.");
-            if (version is not (0 or 1 or 2 or 3 or 4 or 5 or 6 or 7 or 8))
+            if (version is not (0 or 1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9))
                 throw new RuntimeFailure("runtime.schema_version", "Unsupported state database version. Open it with the matching simulator version; do not reset or overwrite it.");
             Execute("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=1000;");
             long interrupted = 0;
@@ -86,6 +86,7 @@ public sealed partial class DurableRuntime : IDisposable
                 if (version < 6) Execute(Schema.VersionSix);
                 if (version < 7) Execute(Schema.VersionSeven);
                 if (version < 8) Execute(Schema.VersionEight);
+                if (version < 9) Execute(Schema.VersionNine);
                 interrupted = Convert.ToInt64(Scalar("SELECT COUNT(*) FROM batches WHERE state='Sending'"));
                 Execute("""
                     UPDATE sessions SET state='Uncertain',error_code='delivery.interrupted',

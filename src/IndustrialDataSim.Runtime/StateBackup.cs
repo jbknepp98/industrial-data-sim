@@ -28,7 +28,7 @@ public static class StateBackup
             }.ToString());
             input.Open();
             int version = Convert.ToInt32(Scalar(input, "PRAGMA user_version"));
-            if (version is < 1 or > 8)
+            if (version is < 1 or > 9)
                 throw new RuntimeFailure("backup.schema_version", "Source schema is unsupported. Use backup tooling compatible with that runtime; do not reset or edit the database.");
             string? mode = Scalar(input, "SELECT value FROM runtime_metadata WHERE key='execution_mode'") as string;
             if (mode is not ("production" or "simulation-only"))

@@ -2,6 +2,15 @@ namespace IndustrialDataSim.Runtime;
 
 internal static class Schema
 {
+    internal const string VersionNine = """
+        CREATE TABLE archive_segments(
+          id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),
+          sha256 TEXT NOT NULL,bytes INTEGER NOT NULL,batches INTEGER NOT NULL,
+          through_batch INTEGER NOT NULL);
+        CREATE INDEX archive_segment_session ON archive_segments(session_id,through_batch);
+        PRAGMA user_version=9;
+        """;
+
     internal const string VersionEight = """
         CREATE TABLE process_checkpoints(
           session_id TEXT PRIMARY KEY REFERENCES sessions(id),

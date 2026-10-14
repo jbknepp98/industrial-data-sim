@@ -18,7 +18,7 @@ public class BackupUpgradeDrillTests
             batches = runtime.Batches("session-a").ToArray();
             session = runtime.GetSession("session-a");
         }
-        Query(files.Database, "DROP TABLE process_checkpoints; PRAGMA user_version=7");
+        Query(files.Database, "DROP TABLE archive_segments; DROP TABLE process_checkpoints; PRAGMA user_version=7");
         var receipt = StateBackup.Create(files.Database, files.Folder);
         string path = Path.Combine(files.Folder, receipt.BackupId + ".evidence.sqlite");
         Assert.Equal(7, receipt.SourceSchemaVersion);
@@ -28,7 +28,7 @@ public class BackupUpgradeDrillTests
             Assert.Equal(session, upgraded.GetSession("session-a"));
             Assert.Equal(batches, upgraded.Batches("session-a"));
         }
-        Assert.Equal(8L, Query(files.Database, "PRAGMA user_version"));
+        Assert.Equal(9L, Query(files.Database, "PRAGMA user_version"));
         Assert.Equal("backup.evidence_only", Assert.Throws<RuntimeFailure>(() => new DurableRuntime(path)).Error.Code);
         StateBackup.Verify(path, receipt.Sha256);
     }

@@ -25,7 +25,7 @@ public class HorizonCommandArchiveTests
         reopened.VerifyArchive("session-a", files.Folder);
         var records = File.ReadAllLines(Path.Combine(files.Folder, receipt.ArchiveId + ".jsonl"))
             .Select(line => JsonSerializer.Deserialize<JsonElement>(line)).ToArray();
-        Assert.Equal(2, records[0].GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(3, records[0].GetProperty("schemaVersion").GetInt32());
         Assert.Equal(1, records[0].GetProperty("horizon").GetProperty("revision").GetInt32());
         Assert.Single(records, r => r.GetProperty("kind").GetString() == "horizonRevision");
         Assert.Equal(new[] { 0, 1 }, records.Where(r => r.GetProperty("kind").GetString() == "batch").Select(r => r.GetProperty("horizonRevision").GetInt32()));

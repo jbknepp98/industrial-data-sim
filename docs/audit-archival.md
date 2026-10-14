@@ -1,8 +1,8 @@
 # Explicit audit archival
 
 Schema version 5 introduced archival; schema version 6 adds production progress,
-preflight baselines and observations. Schema 7 adds durable horizon revisions and batch revision identity. Current
-database schema 8 adds windowed process checkpoints. Upgrade a SQLite-aware backup first; older
+preflight baselines and observations. Schema 7 adds durable horizon revisions and batch revision identity. Database schema 8 adds windowed process checkpoints. Current schema 9 adds
+bounded history segments. Take an evidence snapshot before upgrading; older
 executables reject the new schema. Never lower user_version manually.
 
 Stop the host/worker, then choose a local archive directory outside version control:
@@ -53,7 +53,55 @@ by publishing again. No import/restore command or automatic orphan cleanup exist
 
 SQLite reuses freed pages; this operation does not VACUUM or promise a smaller
 file. Tombstone/configuration metadata still grows with completed session count.
-Exports beyond 128 MiB require a later partitioned archival design and currently
-fail without pruning. Maintain backups of both the database and archive directory.
+Exports beyond 128 MiB fail without pruning; use bounded history segments first. Maintain backups of both the database and archive directory.
 Process-interruption tests do not establish power-loss guarantees for a filesystem,
 storage controller, external file deletion or loss of the archive volume.
+
+
+## Bounded history segments (schema 9)
+
+Stop the host and all workers. Pause an active session, then export completed
+history in portions:
+
+```text
+production pause <database> <session-id>
+production archive-history <database> <session-id> <directory> 1000
+production history <database> <session-id>
+production verify-history <database> <session-id> <archive-id> <directory>
+production resume <database> <session-id>
+```
+
+The same commands exist under `session`. A limit of 1–10000 batches is mandatory
+in the CLI. History receipts are paged at 100; pass the returned `nextCursor` to
+`history` for the next page. Repeating `archive-history` creates the next segment;
+it is not an idempotent retry of the previous export. Inspect receipts after an
+interrupted response. A leftover file without a receipt never authorizes pruning.
+
+Only Paused, Complete or Cancelled sessions qualify, and Sending/Uncertain work
+blocks the operation. A paused session may retain Pending work. Only
+Acknowledged, Published or Discarded rows enter a segment. Its receipt and removal
+of those rows commit together after export verification. Session state, pending
+payloads, cursor, model, process checkpoint, tag progress and ownership remain
+unchanged. Resuming therefore continues the exact process without resetting
+sequences, random state or totalizers. This is audit-history rollover within the
+same finite session. Guarded horizon extension still provides longer operation;
+it does not promise indefinite execution or reset the 1000-revision limit.
+
+Exports now use format 3, adding `historySegment`, `throughBatch`, and references
+to prior segments. A segment links to the previous segment; the final session
+archive references every prior segment. Retain all referenced files with the
+state database. Older export files/receipts still verify by hash and length.
+
+The 128 MiB file limit remains. Archive operations require the configured
+free-space floor plus 256 MiB on the state volume for export/transaction headroom.
+Provide sufficient additional space on a separate archive volume if used. A disk
+error or verification failure leaves original history intact. SQLite reuses
+pages after pruning; it does not shrink the file automatically. Receipts and
+immutable metadata remain and continue to grow slowly. Plan finite horizons and
+monitor both volumes; no automatic deletion or compaction occurs.
+
+The October 14 increment passed 855 local .NET tests. New tests compare complete
+serialized process streams with/without rollover and cover pending preservation,
+export/commit interruption, damaged exports, low disk, lifecycle guards and CLI
+receipt verification. Actual process-kill and workload measurements follow in
+the Phase 3 qualification report.

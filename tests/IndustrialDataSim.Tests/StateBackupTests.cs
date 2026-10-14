@@ -31,7 +31,7 @@ public class StateBackupTests
         }
         byte[] original = File.ReadAllBytes(files.Database);
         var receipt = StateBackup.Create(files.Database, files.Folder);
-        Assert.Equal(8, receipt.SourceSchemaVersion);
+        Assert.Equal(9, receipt.SourceSchemaVersion);
         Assert.Equal("simulation-only", receipt.ExecutionMode);
         string backup = Path.Combine(files.Folder, receipt.BackupId + ".evidence.sqlite");
         byte[] snapshot = File.ReadAllBytes(backup);

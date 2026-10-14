@@ -6,7 +6,7 @@ namespace IndustrialDataSim.Cli;
 
 public static partial class CliApplication
 {
-    private const string ProductionUsage = "Usage: production verify-backup <snapshot> <trusted-sha256>; production backup <database> <private-directory>; production extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; production horizon <database> <session-id>; production start <database> <model-file>; production run <database> <rounds>; production follow <database> <seconds 1–604800>; " +
+    private const string ProductionUsage = "Usage: production archive-history <database> <session-id> <directory> <batch-limit>; production history <database> <session-id> [after-batch]; production verify-history <database> <session-id> <archive-id> <directory>; production verify-backup <snapshot> <trusted-sha256>; production backup <database> <private-directory>; production extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; production horizon <database> <session-id>; production start <database> <model-file>; production run <database> <rounds>; production follow <database> <seconds 1–604800>; " +
         "production list <database> [after-session-id]; production status|pause|resume|release|retry-preflight|archive-info <database> <session-id>; " +
         "production observations <database> <session-id> [after-batch-id]; production review <database> <session-id> accepted|needs-attention; " +
         "production cancel <database> <session-id> drain|discard-pending; production archive|verify-archive <database> <session-id> <directory>. " +
@@ -19,6 +19,8 @@ public static partial class CliApplication
         bool shape = action switch {
             "verify-backup" or "backup" or "horizon" or "start" or "run" or "follow" or "status" or "pause" or "resume" or "release" or "retry-preflight" or "archive-info" => args.Length == 4,
             "extend" => args.Length == 7,
+            "archive-history" or "verify-history" => args.Length == 6,
+            "history" => args.Length is 4 or 5,
             "list" => args.Length is 3 or 4,
             "observations" => args.Length is 4 or 5,
             "archive" or "verify-archive" => args.Length == 5,
@@ -33,6 +35,11 @@ public static partial class CliApplication
             action == "observations" && args.Length == 5 && (!long.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out cursor) || cursor < 0))
         { WriteResult(output, [new("cli.usage", "$", ProductionUsage)]); return 2; }
         if (action == "extend" && !ValidExtensionArguments(args)) { WriteResult(output, [new("cli.extension_arguments", "$", "Use a UTC end ending in Z, a nonnegative expected revision and a request UUID. Inspect horizon before extending.")]); return 2; }
+        int historyLimit = 0;
+        long historyCursor = 0;
+        if ((action == "archive-history" && (!int.TryParse(args[5], NumberStyles.None, CultureInfo.InvariantCulture, out historyLimit) || historyLimit is < 1 or > 10000)) ||
+            (action == "history" && args.Length == 5 && (!long.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out historyCursor) || historyCursor < 0)))
+        { WriteResult(output, [new("cli.history_arguments", "$", "Use 1–10000 batches per history segment and a nonnegative receipt cursor. Stop the host and pause active sessions before archiving history.")]); return 2; }
         string? configuration = null;
         if (action == "start")
         {
@@ -51,6 +58,22 @@ public static partial class CliApplication
             string database = Path.GetFullPath(args[2]);
             using var logs = new RuntimeFileLogger(Path.Combine(Path.GetDirectoryName(database)!, "logs", Path.GetFileName(database)));
             using var runtime = new DurableRuntime(database, logger: logs, createIfMissing: action == "start", mode: ExecutionMode.Production);
+            if (action is "archive-history" or "history" or "verify-history")
+            {
+                object historyResult;
+                if (action == "archive-history") historyResult = runtime.ArchiveHistory(args[3], args[4], historyLimit);
+                else if (action == "history")
+                {
+                    var receipts = runtime.ArchiveSegments(args[3], historyCursor);
+                    historyResult = new { receipts, nextCursor = receipts.Count == 100 ? (long?)receipts[^1].ThroughBatch : null };
+                }
+                else
+                {
+                    runtime.VerifyArchiveSegment(args[3], args[4], args[5]);
+                    historyResult = new { message = "History segment matches its receipt; no replay is authorized." };
+                }
+                return WriteProductionResponse(output, historyResult);
+            }
             if (action is "start" or "run" or "follow")
             {
                 using var client = new HistorianClient(HistorianConnection.FromEnvironment());
