@@ -39,7 +39,8 @@ assigned disjoint tags. Distributed ownership is not promised.
 - Historical generation followed by wall-clock-paced live publishing in the same
   session; deterministic restart; bounded buffering and visible backpressure.
 - Admission, status, pause/resume, cancellation, tag release, guarded horizon
-  extension, explicit preflight retry and completed-session audit archival.
+  extension, explicit preflight retry, bounded completed-history archival, and
+  guarded disaster restore for fresh tag namespaces.
 - Structured JSON errors/status, bounded rotating operational logs, arrival
   observations and separately recorded human pattern review.
 
@@ -76,8 +77,8 @@ Live acceptance must record the actual stack build without credentials.
 The current model/response schema versions, CLI commands, structured error codes,
 ordering and recovery semantics form the compatibility baseline. Additive optional
 fields are allowed; breaking changes require explicit versioning and migration
-notes. Product version, model schema, SQLite schema (currently 8), archive format
-(currently 2), and generator identity are distinct. Do not rewrite old generator
+notes. Product version, model schema, SQLite schema (currently 10), archive format
+(currently 3), and generator identity are distinct. Do not rewrite old generator
 identity or downgrade a migrated database to make an old binary accept it.
 Version 1.0.0 is assigned only during release packaging, not by this plan.
 
@@ -116,7 +117,7 @@ set from Phase 2 results before release; they are not yet established.
 | Default queues: 100,000 points / 16 MiB per session; 1,000,000 points / 64 MiB global | Both point and byte limits matter; total process memory can exceed queue bytes |
 | Default free-disk floor: 64 MiB | Guard only; deployment must budget database, WAL, logs, backups and archives |
 | Default manufacturing: 250,000 node-clock and 2,000,000 expression-clock evaluations; 16 MiB estimated observation storage | Preserved for legacy/target-stopping models; opt-in windowed models use bounded ticks and checkpoints |
-| Archive export capped at 128 MiB, eligible finished sessions only | No claim of unlimited active-session retention or partitioned archival |
+| Archive export capped at 128 MiB; 1–10000 completed batches per history segment | Pause/stop for maintenance; keep every segment and receipt; no unresolved pruning |
 | Up to 1,000 horizon revisions | Extensions remain finite and guarded, not indefinite execution |
 
 Eight nodes over 72 hours at one-second ticks require 2,073,600 node evaluations,
@@ -128,18 +129,19 @@ or incremental process execution.
 
 Version 1.0 supports finite operating horizons with explicit extension or planned
 session rollover. It does not promise indefinite active-session history growth.
-Phase 3 must prove a forward-only rollover procedure preserving required process
-continuity and archive headroom. If that is insufficient for the qualified
-workload, implement bounded archival in portions before release. Never delete
+Phase 3 provides bounded audit-history rollover within the same session, preserving
+clocks and process checkpoints. Guarded extensions preserve the same identity.
+Maintenance requires a stopped worker and paused/finished session. Never delete
 unresolved history or reset a totalizer silently to make rollover work.
 
 ## Deferred beyond 1.0
 
 Graphical editing, cross-session/external live input subscriptions, distributed
 workers or ownership, arbitrary executable model code, unrestricted physical
-models, automatic throughput tuning and unlimited mutable schedules. Archive
-import/replay is not a recovery feature; backup restoration has a separate tested
-procedure. No exactly-once delivery or per-point acceptance guarantee is claimed.
+models, automatic throughput tuning and unlimited mutable schedules. Archive import/replay is not a recovery feature. Disaster restore quarantines
+old sessions permanently and starts new work only with fresh tag names; same-tag
+continuation after loss of the newest state is outside v1.0. Normal restart from
+the original latest database preserves exact process continuity. No exactly-once delivery or per-point acceptance guarantee is claimed.
 
 ## Remaining phases and release authority
 

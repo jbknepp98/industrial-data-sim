@@ -69,6 +69,62 @@ public class ProcessRecoveryTests
         }
     }
 
+    [Theory]
+    [InlineData("after_archive_export", false)]
+    [InlineData("before_archive_commit", false)]
+    [InlineData("after_archive_commit", true)]
+    public async Task KilledHistoryRolloverNeverLosesPendingWork(string boundary, bool committed)
+    {
+        using var files = new RuntimeFixture();
+        using var child = Start(files, boundary);
+        try
+        {
+            Assert.Equal("boundary-reached", await child.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(15)));
+            child.Kill(entireProcessTree: true);
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            await WaitForCrashFilesAsync(child, files);
+            using var recovered = new DurableRuntime(files.Database);
+            Assert.Equal(committed ? 1 : 2, recovered.Batches("session-a").Count);
+            Assert.Single(recovered.Batches("session-a"), batch => batch.Status == BatchStatus.Pending && batch.Payload is not null);
+            Assert.Equal(committed ? 1 : 0, recovered.ArchiveSegments("session-a").Count);
+            if (committed) recovered.VerifyArchiveSegment("session-a", recovered.ArchiveSegments("session-a")[0].ArchiveId, files.Folder);
+            Assert.Equal(6, recovered.GetSession("session-a").NextSlot);
+        }
+        finally { if (!child.HasExited) { child.Kill(entireProcessTree: true); await child.WaitForExitAsync(); } }
+    }
+
+    [Theory]
+    [InlineData("before_restore_commit", false)]
+    [InlineData("after_restore_commit", true)]
+    [InlineData("after_restore_publish", true)]
+    public async Task KilledRestoreCannotMakeHistoricalWorkRunnable(string boundary, bool quarantineCommitted)
+    {
+        using var files = new RuntimeFixture();
+        using var child = Start(files, boundary);
+        try
+        {
+            Assert.Equal("boundary-reached", await child.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(15)));
+            child.Kill(entireProcessTree: true);
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            await WaitForCrashFilesAsync(child, files);
+            string restored = Assert.Single(Directory.GetFiles(files.Folder, "recovered-*"), path => path.EndsWith(".partial", StringComparison.Ordinal) || path.EndsWith(".sqlite", StringComparison.Ordinal));
+            if (boundary != "after_restore_publish")
+                Assert.Equal("runtime.incomplete_state", Assert.Throws<RuntimeFailure>(() => new DurableRuntime(restored)).Error.Code);
+            else
+            {
+                Assert.True(quarantineCommitted);
+                using var recovered = new DurableRuntime(restored);
+                Assert.True(recovered.RecoveryInfo().IsRecovered);
+                Assert.Equal(BatchStatus.Pending, Assert.Single(recovered.Batches("session-a")).Status);
+                Assert.Equal("backup.session_quarantined", Assert.Throws<RuntimeFailure>(() => recovered.Generate("session-a")).Error.Code);
+            }
+            using var original = new DurableRuntime(files.Database);
+            Assert.Equal(SessionStatus.Ready, original.GetSession("session-a").Status);
+            Assert.Equal(3, original.GetSession("session-a").NextSlot);
+        }
+        finally { if (!child.HasExited) { child.Kill(entireProcessTree: true); await child.WaitForExitAsync(); } }
+    }
+
     [Fact]
     public async Task SeparateProcessCannotOpenOwnedDatabase()
     {

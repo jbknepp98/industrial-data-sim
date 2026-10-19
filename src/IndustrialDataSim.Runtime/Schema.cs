@@ -2,6 +2,13 @@ namespace IndustrialDataSim.Runtime;
 
 internal static class Schema
 {
+    internal const string VersionTen = """
+        CREATE TABLE recovery_sessions(
+          session_id TEXT PRIMARY KEY REFERENCES sessions(id), prior_state TEXT NOT NULL,
+          prior_error_code TEXT,prior_error_message TEXT);
+        PRAGMA user_version=10;
+        """;
+
     internal const string VersionNine = """
         CREATE TABLE archive_segments(
           id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),

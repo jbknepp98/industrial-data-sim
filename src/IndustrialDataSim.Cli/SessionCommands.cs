@@ -8,7 +8,7 @@ namespace IndustrialDataSim.Cli;
 public static partial class CliApplication
 {
     private const string SessionUsage =
-        "Usage: session archive-history <database> <session-id> <directory> <batch-limit>; session history <database> <session-id> [after-batch]; session verify-history <database> <session-id> <archive-id> <directory>; session verify-backup <snapshot> <trusted-sha256>; session backup <database> <private-directory>; session extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; session horizon <database> <session-id>; session start <database> <model-file>; session list <database> [after-session-id]; " +
+        "Usage: session restore <snapshot> <trusted-sha256> <source-schema> <directory>; session recovery-info <database>; session archive-history <database> <session-id> <directory> <batch-limit>; session history <database> <session-id> [after-batch]; session verify-history <database> <session-id> <archive-id> <directory>; session verify-backup <snapshot> <trusted-sha256>; session backup <database> <private-directory>; session extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; session horizon <database> <session-id>; session start <database> <model-file>; session list <database> [after-session-id]; " +
         "session status|pause|resume|release <database> <session-id>; " +
         "session archive|verify-archive <database> <session-id> <archive-directory>; session archive-info <database> <session-id>; " +
         "session cancel <database> <session-id> drain|discard-pending; " +
@@ -26,7 +26,8 @@ public static partial class CliApplication
         {
             "verify-backup" or "backup" or "horizon" or "start" or "status" or "pause" or "resume" or "release" or "archive-info" => args.Length == 4,
             "extend" => args.Length == 7,
-            "archive-history" or "verify-history" => args.Length == 6,
+            "restore" or "archive-history" or "verify-history" => args.Length == 6,
+            "recovery-info" => args.Length == 3,
             "history" => args.Length is 4 or 5,
             "list" => args.Length is 3 or 4,
             "cancel" or "retry-generation" or "archive" or "verify-archive" => args.Length == 5,
@@ -49,6 +50,9 @@ public static partial class CliApplication
 
         if (action == "extend" && !ValidExtensionArguments(args)) { WriteResult(output, [new("cli.extension_arguments", "$", "Use a UTC ISO-8601 end ending in Z, a nonnegative expected revision and a canonical request UUID. Inspect horizon first; reuse the same UUID only for identical arguments.")]); return 2; }
 
+        int sourceSchema = 0;
+        if (action == "restore" && (!int.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out sourceSchema) || sourceSchema is < 8 or > 10))
+        { WriteResult(output, [new("cli.restore_arguments", "$", "Use the source schema version 8–10 from the trusted backup receipt. Restore preserves old sessions as quarantined evidence and requires fresh tag names for new work.")]); return 2; }
         int historyLimit = 0;
         long historyCursor = 0;
         if ((action == "archive-history" && (!int.TryParse(args[5], NumberStyles.None, CultureInfo.InvariantCulture, out historyLimit) || historyLimit is < 1 or > 10000)) ||
@@ -71,6 +75,7 @@ public static partial class CliApplication
         object result;
         try
         {
+            if (action == "restore") return WriteSessionResponse(output, "restore", StateBackup.Restore(args[2], args[3], sourceSchema, args[5]));
             if (action == "verify-backup") return WriteSessionResponse(output, "verify-backup", StateBackup.Verify(args[2], args[3]));
             if (action == "backup") return WriteSessionResponse(output, "backup", StateBackup.Create(args[2], args[3]));
             string database = Path.GetFullPath(args[2]);
@@ -83,6 +88,7 @@ public static partial class CliApplication
             using var runtime = new DurableRuntime(database,
                 batchBytes > 0 ? new() { BatchBytes = batchBytes } : null,
                 logs, createIfMissing: action == "start");
+            if (action == "recovery-info") return WriteSessionResponse(output, "recovery-info", runtime.RecoveryInfo());
             if (action is "archive-history" or "history" or "verify-history")
             {
                 object historyResult;

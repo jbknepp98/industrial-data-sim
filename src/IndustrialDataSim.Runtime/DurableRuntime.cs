@@ -41,6 +41,8 @@ public sealed partial class DurableRuntime : IDisposable
         try { databasePath = Path.GetFullPath(path); }
         catch (Exception error) when (error is ArgumentException or NotSupportedException)
         { throw new RuntimeFailure("runtime.invalid_path", "State database path is invalid. Supply a valid local file path."); }
+        if (databasePath.EndsWith(".partial", StringComparison.OrdinalIgnoreCase))
+            throw new RuntimeFailure("runtime.incomplete_state", "A .partial file is an incomplete backup or recovery artifact, not runnable state. Preserve it for investigation and use the original database or a completed restore file; never rename it to bypass this guard.");
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
@@ -66,7 +68,7 @@ public sealed partial class DurableRuntime : IDisposable
             long version = Convert.ToInt64(Scalar("PRAGMA user_version;"));
             if (version == StateBackup.EvidenceSchemaVersion)
                 throw new RuntimeFailure("backup.evidence_only", "This is a recovery evidence snapshot, not runnable state. Retain the original database for restart. Do not edit the snapshot schema or replay its pending values; it cannot account for later Historian writes.");
-            if (version is not (0 or 1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9))
+            if (version is not (0 or 1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 or 10))
                 throw new RuntimeFailure("runtime.schema_version", "Unsupported state database version. Open it with the matching simulator version; do not reset or overwrite it.");
             Execute("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=1000;");
             long interrupted = 0;
@@ -87,13 +89,15 @@ public sealed partial class DurableRuntime : IDisposable
                 if (version < 7) Execute(Schema.VersionSeven);
                 if (version < 8) Execute(Schema.VersionEight);
                 if (version < 9) Execute(Schema.VersionNine);
-                interrupted = Convert.ToInt64(Scalar("SELECT COUNT(*) FROM batches WHERE state='Sending'"));
+                if (version < 10) Execute(Schema.VersionTen);
+                _ = ReadRecoveryPrefix();
+                interrupted = Convert.ToInt64(Scalar("SELECT COUNT(*) FROM batches WHERE state='Sending' AND session_id NOT IN (SELECT session_id FROM recovery_sessions)"));
                 Execute("""
                     UPDATE sessions SET state='Uncertain',error_code='delivery.interrupted',
                       error_message='Submission was interrupted. Preserve the queued batch and tag ownership; investigate acceptance before resuming. Do not replay.'
-                      WHERE id IN (SELECT session_id FROM batches WHERE state='Sending');
-                    UPDATE attempts SET state='Uncertain',error_code='delivery.interrupted' WHERE state='Sending';
-                    UPDATE batches SET state='Uncertain' WHERE state='Sending';
+                      WHERE id IN (SELECT session_id FROM batches WHERE state='Sending') AND id NOT IN (SELECT session_id FROM recovery_sessions);
+                    UPDATE attempts SET state='Uncertain',error_code='delivery.interrupted' WHERE state='Sending' AND batch_id IN (SELECT id FROM batches WHERE session_id NOT IN (SELECT session_id FROM recovery_sessions));
+                    UPDATE batches SET state='Uncertain' WHERE state='Sending' AND session_id NOT IN (SELECT session_id FROM recovery_sessions);
                     """);
             });
             Log(LogLevel.Information, "runtime.opened", "Open", "State database opened in its verified execution mode; startup recovery has committed.");
@@ -143,6 +147,9 @@ public sealed partial class DurableRuntime : IDisposable
         {
             if (Scalar("SELECT id FROM sessions WHERE id=$id", ("$id", model.Session.SessionId)) is not null)
                 throw new RuntimeFailure("runtime.session_exists", "This session ID already exists. Inspect or resume it, or use a new ID; configurations are immutable.");
+            if (ReadRecoveryPrefix() is string prefix &&
+                model.Session.OutputTags.Any(tag => !tag.Name.StartsWith(prefix, StringComparison.Ordinal)))
+                throw new RuntimeFailure("backup.fresh_namespace_required", "Recovered state permits new work only under its generated recovery tag prefix. Read recovery-info and use that prefix for every output tag; historical tags cannot be resumed or reused.");
             string profile = Key(model.Session.ConnectionProfile), dataset = Key(model.Session.Dataset);
             foreach (var tag in model.Session.OutputTags)
             {
@@ -306,7 +313,13 @@ public sealed partial class DurableRuntime : IDisposable
         lock (sync)
         {
             if (disposed) throw new RuntimeFailure("runtime.closed", "Runtime is closed. Open the state database before operating on sessions.");
-            try { return action(); }
+            try
+            {
+                if (sessionId is not null && !RecoveryReadOperations.Contains(operation) &&
+                    Scalar("SELECT session_id FROM recovery_sessions WHERE session_id=$id", ("$id", sessionId)) is not null)
+                    throw new RuntimeFailure("backup.session_quarantined", "This restored session is permanently quarantined: later delivery history may be missing. Inspect its retained evidence and recovery-info. Start a new session with the required fresh tag prefix; do not resume, discard, archive or replay this session.");
+                return action();
+            }
             catch (Exception error) when (error is SqliteException or IOException or UnauthorizedAccessException)
             {
                 var failure = StorageFailure();

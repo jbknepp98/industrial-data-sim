@@ -53,6 +53,57 @@ public class ArchiveHistoryTests
         Assert.Equal(Run(baselineFiles, false), Run(rolledFiles, true));
     }
 
+    [Fact]
+    public async Task ProductionSegmentRetainsReviewEvidenceAndNeverChangesPublishProgress()
+    {
+        using var files = new RuntimeFixture();
+        using var runtime = new DurableRuntime(files.Database, new() { BatchPoints = 3 }, mode: ExecutionMode.Production);
+        var server = new ProductionDeliveryTests.Server();
+        using var client = new HistorianClient(ProductionDeliveryTests.Profile(), new HttpClient(server));
+        var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+        await delivery.AdmitAsync(RuntimeFixture.Model().ToJsonString());
+        runtime.Generate("session-a");
+        Assert.True(await delivery.DeliverOneAsync("session-a"));
+        runtime.RecordUserReview("session-a", true);
+        runtime.Generate("session-a");
+        runtime.Pause("session-a");
+        var pending = Assert.Single(runtime.Batches("session-a"), b => b.Status == BatchStatus.Pending);
+        var progress = runtime.Progress("session-a");
+        var receipt = runtime.ArchiveHistory("session-a", files.Folder, 1);
+        runtime.VerifyArchiveSegment("session-a", receipt.ArchiveId, files.Folder);
+        Assert.Equal(progress, runtime.Progress("session-a"));
+        Assert.Equal(pending, Assert.Single(runtime.Batches("session-a")));
+        string exported = File.ReadAllText(Path.Combine(files.Folder, receipt.ArchiveId + ".jsonl"));
+        Assert.Contains("Accepted", exported);
+        Assert.Contains("Published", exported);
+        Assert.Equal(1, server.Writes);
+        runtime.Resume("session-a");
+        Assert.True(await delivery.DeliverOneAsync("session-a"));
+        Assert.Equal(2, server.Writes);
+    }
+
+    [Fact]
+    public void DiskPressurePreservesWindowedCheckpointBeforeResuming()
+    {
+        using var files = new RuntimeFixture();
+        var model = WindowedManufacturingTests.Model();
+        model["manufacturing"]!["execution"] = "windowed";
+        using var runtime = new DurableRuntime(files.Database, new() { BatchPoints = 7 });
+        runtime.AddSession(model.ToJsonString());
+        runtime.Generate("session-a");
+        var progress = runtime.Progress("session-a");
+        var batches = runtime.Batches("session-a");
+        var session = runtime.GetSession("session-a");
+        runtime.FreeDiskBytes = () => 0;
+        Assert.False(runtime.Generate("session-a").Progressed);
+        Assert.Equal(progress, runtime.Progress("session-a"));
+        Assert.Equal(batches, runtime.Batches("session-a"));
+        Assert.Equal(session, runtime.GetSession("session-a"));
+        runtime.FreeDiskBytes = () => long.MaxValue;
+        Assert.True(runtime.Generate("session-a").Progressed);
+        Assert.Equal(14, runtime.GetSession("session-a").NextSlot);
+    }
+
     [Theory]
     [InlineData("after_archive_export", false)]
     [InlineData("before_archive_commit", false)]

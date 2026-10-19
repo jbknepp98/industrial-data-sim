@@ -154,7 +154,7 @@ Added offline `production backup` / `session backup` evidence snapshots using
 SQLite backup and the runtime owner lock. Source state is not migrated. Completed
 snapshots include a SHA-256 receipt and reject execution to prevent replay from
 stale delivery history. See [state snapshots and recovery](state-backup-recovery.md).
-This is not a completed restore solution: V12/V13 remain open, with safe forward
+At this earlier checkpoint it was not a completed restore solution: V12/V13 remained open, with safe forward
 continuation, upgrade drills, disk pressure, retention and rollover still due.
 
 ## October 14 — Phase 3 verification and upgrade drills
@@ -166,7 +166,24 @@ Added upgrade rollback, process-checkpoint preservation and stale production
 snapshot drills. Full suite: 848 passed, zero build warnings/errors. No live
 Historian writes or existing demonstration database changes were made.
 
-Runnable restoration remains unresolved: older Pending state cannot prove that
+At this earlier checkpoint restoration remained unresolved: older Pending state cannot prove that
 later publishing never occurred. Preserve the evidence guard. Next work is a
 safe forward-continuation recovery procedure, followed by disk pressure,
-active-history retention and process-continuous rollover. V12 and V13 stay open.
+active-history retention and process-continuous rollover. V12 and V13 were open at that checkpoint.
+
+
+## October 14 — Phase 3 operational completion
+
+See [Phase 3 qualification](phase-3-qualification.md) and [the recovery runbook](state-backup-recovery.md).
+Schema 10 supports disaster restore with permanent quarantine of old sessions and
+mandatory fresh tags for new work. Normal restart from original state retains
+exact continuity. Bounded audit-history rollover preserves checkpoints, totals,
+clocks and ownership; unresolved work is never pruned. Full local build/tests:
+872 .NET, 28 Python, independent schema/gate/packaging checks passed. A real
+schema-8 CLI upgrade/rejection drill and 40,000-batch retention measurement passed.
+No live Historian writes or demonstration-state upgrades were performed.
+
+Next: Phase 4 clean-machine packaging, startup ownership/templates, dependency and
+security review, platform/stack compatibility. Phase 5 still requires the actual
+72-hour backfill plus seven-day live RC soak and user pattern review. Phase 6
+still requires final exact-artifact audit and explicit v1.0 release approval.

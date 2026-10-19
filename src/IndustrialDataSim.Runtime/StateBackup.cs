@@ -8,7 +8,7 @@ namespace IndustrialDataSim.Runtime;
 /// not a runnable database: an older snapshot cannot establish which later writes
 /// reached Historian. Unsupported schema versions also block older binaries.
 /// </summary>
-public static class StateBackup
+public static partial class StateBackup
 {
     public const int EvidenceSchemaVersion = 1000008;
 
@@ -28,7 +28,7 @@ public static class StateBackup
             }.ToString());
             input.Open();
             int version = Convert.ToInt32(Scalar(input, "PRAGMA user_version"));
-            if (version is < 1 or > 9)
+            if (version is < 1 or > 10)
                 throw new RuntimeFailure("backup.schema_version", "Source schema is unsupported. Use backup tooling compatible with that runtime; do not reset or edit the database.");
             string? mode = Scalar(input, "SELECT value FROM runtime_metadata WHERE key='execution_mode'") as string;
             if (mode is not ("production" or "simulation-only"))
@@ -53,7 +53,11 @@ public static class StateBackup
                     throw new RuntimeFailure("backup.integrity", "Snapshot integrity check failed. Preserve the source and partial evidence; check storage health before creating a new backup.");
             }
             using (var durable = new FileStream(partial, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) durable.Flush(true);
-            File.Move(partial, completed, overwrite: false);
+            try { ArchiveStorage.Publish(partial, completed); }
+            catch (RuntimeFailure)
+            {
+                throw new RuntimeFailure("backup.durability_failed", "Snapshot naming metadata could not be flushed durably. Original state is unchanged. Preserve any output, check local storage health and inspect the directory before retrying; an absent receipt is not a completed backup.");
+            }
             using var bytes = File.OpenRead(completed);
             string hash = Convert.ToHexString(SHA256.HashData(bytes));
             return new(id, version, mode, bytes.Length, hash,

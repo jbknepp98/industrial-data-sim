@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using IndustrialDataSim.Runtime;
 
+if (args.Length > 0 && args[0] == "history-load") return await HistoryRetentionProbe.RunAsync(args);
+
 // Manufacturing qualification measures admission/reconstruction separately from
 // delivery. Its fixed synthetic fixtures never accept connection credentials.
 if (args.Length > 0 && args[0] is "manufacturing" or "manufacturing-windowed" or "manufacturing-load" or "mixed-load")

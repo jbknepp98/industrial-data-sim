@@ -5,8 +5,6 @@ using IndustrialDataSim.Runtime;
 if (args.Length != 3) return 2;
 try
 {
-    using var runtime = new DurableRuntime(args[0], new() { BatchPoints = 3 });
-    runtime.AddSession(File.ReadAllText(args[1]));
     void StopAt(string stage)
     {
         if (stage != args[2]) return;
@@ -14,6 +12,21 @@ try
         Console.Out.Flush();
         Thread.Sleep(Timeout.Infinite);
     }
+    if (args[2].Contains("restore_", StringComparison.Ordinal))
+    {
+        using (var source = new DurableRuntime(args[0], new() { BatchPoints = 3 }))
+        {
+            source.AddSession(File.ReadAllText(args[1]));
+            source.Generate("session-a");
+        }
+        string directory = Path.GetDirectoryName(args[0])!;
+        var receipt = StateBackup.Create(args[0], directory);
+        StateBackup.RestoreCore(Path.Combine(directory, receipt.BackupId + ".evidence.sqlite"), receipt.Sha256,
+            receipt.SourceSchemaVersion, directory, StopAt);
+        return 0;
+    }
+    using var runtime = new DurableRuntime(args[0], new() { BatchPoints = 3 });
+    runtime.AddSession(File.ReadAllText(args[1]));
     runtime.FaultPoint = StopAt;
     if (args[2] is "before_horizon_commit" or "after_horizon_commit")
     {
@@ -29,6 +42,12 @@ try
     }
     var delivery = new SimulatedDelivery(runtime, new()) { FaultPoint = StopAt };
     await delivery.DeliverOneAsync("session-a");
+    if (args[2].Contains("archive_", StringComparison.Ordinal))
+    {
+        runtime.Generate("session-a");
+        runtime.Pause("session-a");
+        runtime.ArchiveHistory("session-a", Path.GetDirectoryName(args[0])!, 1);
+    }
     return 0;
 }
 catch (RuntimeFailure error)

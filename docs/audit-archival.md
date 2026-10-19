@@ -1,8 +1,7 @@
 # Explicit audit archival
 
 Schema version 5 introduced archival; schema version 6 adds production progress,
-preflight baselines and observations. Schema 7 adds durable horizon revisions and batch revision identity. Database schema 8 adds windowed process checkpoints. Current schema 9 adds
-bounded history segments. Take an evidence snapshot before upgrading; older
+preflight baselines and observations. Schema 7 adds durable horizon revisions and batch revision identity. Database schema 8 adds windowed process checkpoints. Schema 9 adds bounded history segments; current schema 10 adds recovery quarantine. Take an evidence snapshot before upgrading; older
 executables reject the new schema. Never lower user_version manually.
 
 Stop the host/worker, then choose a local archive directory outside version control:

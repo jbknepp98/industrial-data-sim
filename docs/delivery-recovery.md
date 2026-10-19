@@ -30,14 +30,13 @@ uncertain batch or proof that its intended value replaced an existing point.
 | Arrival observed | Reads found relevant session-tag data in the submitted simulated range. This is partial observational evidence. |
 | Intended behavior reviewed | The user reviewed the output/pattern and supplied feedback. This remains separate from transport progress and does not authorize replay. |
 
-`Published` and the observation/review fields are implemented in schema version 6. The current fake-only runtime's `Acknowledged` state retains its
+`Published` and the observation/review fields are implemented in schema version 6. The separate simulation runtime's `Acknowledged` state retains its
 synthetic whole-batch meaning. Do not relabel or reuse that database as production
-evidence. A production schema/mode boundary must distinguish the two explicitly.
+evidence. The production schema/mode boundary distinguishes them explicitly.
 
 Persist publish progress before releasing a normally completed request from the
 active queue. Preserve its range, hash, attempt outcome, and observational/review
-status. Final payload retention must be defined with the adapter implementation;
-uncertain payloads must remain available. Completion should say publishing finished
+status. Published payload bodies are released after durable transport completion; hashes, ranges, attempts and observations remain until verified archival. Pending and uncertain payloads remain available. Completion should say publishing finished
 and report observations plus user-review status, never claim every point was stored.
 
 Blind publishing does not mean ignoring HTTP errors. No application success body
@@ -70,8 +69,7 @@ silently advance Published or authorize retry.
    surface NeedsAttention and pause further affected-session publishing under
    an explicit monitor policy. They must never cause automatic resubmission.
 
-Monitor cadence, observation grace period, and production status/schema details
-must be specified and tested in the next adapter/monitor increment. Observation
+The implemented bounded observation cadence, grace period and status fields are specified in [production delivery v1](production-delivery-v1.md). Observation
 reads remain bounded and cannot affect deterministic generation or reorder writes.
 User feedback confirms intended process behavior; it is not a server receipt for
 omitted repetitions and does not erase an interrupted request's uncertainty.
@@ -151,3 +149,5 @@ not advance a production acknowledged checkpoint based solely on the word "OK".
 Use the [state snapshot procedure](state-backup-recovery.md) to preserve a stopped
 runtime database. Snapshots cannot run: an older Pending row is not evidence of
 non-delivery after the snapshot. Ordinary restart continues from original state.
+
+For lost-state disaster recovery, [guarded restore](state-backup-recovery.md) keeps every old session quarantined and requires fresh tags for new work. It never turns old Pending evidence into permission to publish.

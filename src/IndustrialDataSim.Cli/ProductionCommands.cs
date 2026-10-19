@@ -6,7 +6,7 @@ namespace IndustrialDataSim.Cli;
 
 public static partial class CliApplication
 {
-    private const string ProductionUsage = "Usage: production archive-history <database> <session-id> <directory> <batch-limit>; production history <database> <session-id> [after-batch]; production verify-history <database> <session-id> <archive-id> <directory>; production verify-backup <snapshot> <trusted-sha256>; production backup <database> <private-directory>; production extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; production horizon <database> <session-id>; production start <database> <model-file>; production run <database> <rounds>; production follow <database> <seconds 1–604800>; " +
+    private const string ProductionUsage = "Usage: production restore <snapshot> <trusted-sha256> <source-schema> <directory>; production recovery-info <database>; production archive-history <database> <session-id> <directory> <batch-limit>; production history <database> <session-id> [after-batch]; production verify-history <database> <session-id> <archive-id> <directory>; production verify-backup <snapshot> <trusted-sha256>; production backup <database> <private-directory>; production extend <database> <session-id> <endUtc> <expected-revision> <request-uuid>; production horizon <database> <session-id>; production start <database> <model-file>; production run <database> <rounds>; production follow <database> <seconds 1–604800>; " +
         "production list <database> [after-session-id]; production status|pause|resume|release|retry-preflight|archive-info <database> <session-id>; " +
         "production observations <database> <session-id> [after-batch-id]; production review <database> <session-id> accepted|needs-attention; " +
         "production cancel <database> <session-id> drain|discard-pending; production archive|verify-archive <database> <session-id> <directory>. " +
@@ -19,7 +19,8 @@ public static partial class CliApplication
         bool shape = action switch {
             "verify-backup" or "backup" or "horizon" or "start" or "run" or "follow" or "status" or "pause" or "resume" or "release" or "retry-preflight" or "archive-info" => args.Length == 4,
             "extend" => args.Length == 7,
-            "archive-history" or "verify-history" => args.Length == 6,
+            "restore" or "archive-history" or "verify-history" => args.Length == 6,
+            "recovery-info" => args.Length == 3,
             "history" => args.Length is 4 or 5,
             "list" => args.Length is 3 or 4,
             "observations" => args.Length is 4 or 5,
@@ -35,6 +36,9 @@ public static partial class CliApplication
             action == "observations" && args.Length == 5 && (!long.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out cursor) || cursor < 0))
         { WriteResult(output, [new("cli.usage", "$", ProductionUsage)]); return 2; }
         if (action == "extend" && !ValidExtensionArguments(args)) { WriteResult(output, [new("cli.extension_arguments", "$", "Use a UTC end ending in Z, a nonnegative expected revision and a request UUID. Inspect horizon before extending.")]); return 2; }
+        int sourceSchema = 0;
+        if (action == "restore" && (!int.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out sourceSchema) || sourceSchema is < 8 or > 10))
+        { WriteResult(output, [new("cli.restore_arguments", "$", "Use the source schema version 8–10 from the trusted backup receipt. Restore preserves old sessions as quarantined evidence and requires fresh tag names for new work.")]); return 2; }
         int historyLimit = 0;
         long historyCursor = 0;
         if ((action == "archive-history" && (!int.TryParse(args[5], NumberStyles.None, CultureInfo.InvariantCulture, out historyLimit) || historyLimit is < 1 or > 10000)) ||
@@ -53,11 +57,13 @@ public static partial class CliApplication
         int exit = 0;
         try
         {
+            if (action == "restore") return WriteProductionResponse(output, StateBackup.Restore(args[2], args[3], sourceSchema, args[5]));
             if (action == "verify-backup") return WriteProductionResponse(output, StateBackup.Verify(args[2], args[3]));
             if (action == "backup") return WriteProductionResponse(output, StateBackup.Create(args[2], args[3]));
             string database = Path.GetFullPath(args[2]);
             using var logs = new RuntimeFileLogger(Path.Combine(Path.GetDirectoryName(database)!, "logs", Path.GetFileName(database)));
             using var runtime = new DurableRuntime(database, logger: logs, createIfMissing: action == "start", mode: ExecutionMode.Production);
+            if (action == "recovery-info") return WriteProductionResponse(output, runtime.RecoveryInfo());
             if (action is "archive-history" or "history" or "verify-history")
             {
                 object historyResult;

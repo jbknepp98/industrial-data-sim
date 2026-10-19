@@ -16,13 +16,13 @@ production certification merely because unit tests pass.
 | V04 | Backpressure bounds point/byte queues without dropping or changing pending payloads | Slow scripted receiver, measured backlog drain, fairness, peak memory and disk measurements | 2 | Reference queues qualified; RC repeat open |
 | V05 | Healthy live lag/control targets in specification met | Separate process startup, IPC, round wait and transport timings; investigate known multi-second outliers; record p95/max/sample count | 2 | Reference measurements complete; RC qualification remains |
 | V06 | Supported memory, disk headroom and throughput documented | Repeated mixed-model runs on recorded reference hardware and exact stack; include preflight/readback overhead | 2 | Reference measurements complete; RC qualification remains |
-| V07 | Per-tag ordering and deterministic behavior survive interruption | Fake/scripted transport and forced-crash tests; compare independently generated per-tag streams across seeds, gates, sequences, faults and targets | 3 | Baseline |
-| V08 | Ambiguous publish stays Uncertain with no automatic replay | Fail before/after claim, during request and before local finish; prove retained payload, ownership and attempt evidence | 3 | Baseline |
-| V09 | Authentication/TLS/read failures explain corrective action and preserve state | Expired/rejected token, malformed response, unavailable service and trust failure drills; GET refresh only, no POST retry | 3 | Baseline |
-| V10 | Retention changes/expiry and external timestamp conflicts prevent unsafe known-unsent publish | Restart/extension/settings-change tests; prove queue preserved and explicit recovery path | 3 | Baseline |
-| V11 | One damaged session cannot terminate healthy work; storage damage is not hidden | Ready/Draining/Cancelling integrity cases, resident-host responsiveness, storage failure tests | 3 | Baseline |
-| V12 | Backup restoration and upgrades preserve durable evidence and forward-only behavior | Clean backup/restore rehearsal, schema migration and old-binary rejection; account for writes made after a backup before resuming it | 3 | Evidence verification and upgrade drills implemented; runnable restoration open |
-| V13 | Disk pressure and long-lived audit growth have a safe operational path | Measure active/finished history, verified archive, planned rollover with continuity, interruption during export; no unresolved pruning | 3 | Open |
+| V07 | Per-tag ordering and deterministic behavior survive interruption | Fake/scripted transport and forced-crash tests; compare independently generated per-tag streams across seeds, gates, sequences, faults and targets | 3 | Operationally qualified; RC repeat remains |
+| V08 | Ambiguous publish stays Uncertain with no automatic replay | Fail before/after claim, during request and before local finish; prove retained payload, ownership and attempt evidence | 3 | Operationally qualified; RC repeat remains |
+| V09 | Authentication/TLS/read failures explain corrective action and preserve state | Expired/rejected token, malformed response, unavailable service and trust failure drills; GET refresh only, no POST retry | 3 | Operationally qualified; RC repeat remains |
+| V10 | Retention changes/expiry and external timestamp conflicts prevent unsafe known-unsent publish | Restart/extension/settings-change tests; prove queue preserved and explicit recovery path | 3 | Operationally qualified; RC repeat remains |
+| V11 | One damaged session cannot terminate healthy work; storage damage is not hidden | Ready/Draining/Cancelling integrity cases, resident-host responsiveness, storage failure tests | 3 | Operationally qualified; RC repeat remains |
+| V12 | Backup restoration and upgrades preserve durable evidence and forward-only behavior | Guarded fresh-tag disaster restore, normal-restart continuity, schema migration and actual old-binary rejection; no replay of snapshot history | 3 | Operationally qualified; RC repeat remains |
+| V13 | Disk pressure and long-lived audit growth have a safe operational path | Measure active/finished history, verified archive, planned rollover with continuity, interruption during export; no unresolved pruning | 3 | Operationally qualified; RC repeat remains |
 | V14 | Clean installation/startup/shutdown/restart works on each declared platform | Build release artifacts, checksums, dependency inventory; fresh-machine runbooks and one configured restart owner | 4 | Open |
 | V15 | Credential handling and diagnostics meet public-repository standards | Dependency review, permissions/TLS checks, artifact scan, safe actionable errors and bounded logs; no values/configuration in operational logs | 4 | Baseline; release review open |
 | V16 | Exact Historian/Pulse build and platform combinations qualified | Record nonsecret versions/settings and test protocol behavior on deployment candidates; publish compatibility table | 4–5 | Open |
@@ -62,3 +62,7 @@ limits, upgrading live state or creating production writes.
 Phase 2 evidence: [bounded execution and qualification report](phase-2-qualification.md).
 Reference p95 targets passed without removing outliers. Operational recovery,
 clean-machine compatibility and full live soak remain in their assigned phases.
+
+Phase 3 evidence: [operational recovery and history qualification](phase-3-qualification.md).
+Disaster recovery supports fresh tag namespaces only; exact continuity uses the
+latest original database. Operational phase completion is not v1.0 release approval.

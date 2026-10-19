@@ -2,10 +2,10 @@
 
 ## October 14 release Phase 3 increment
 
-The complete local .NET suite passed 848 tests with zero build warnings/errors.
+The final Phase 3 local .NET suite passed 872 tests with zero build warnings/errors.
 See [snapshot recovery verification](state-backup-recovery.md) for the upgrade,
 stale-state and read-only verification drills. No live Historian writes were
-needed. Runnable restore and retention/rollover qualification remain open.
+needed. Guarded fresh-tag restore and history-rollover qualification are recorded in the [Phase 3 report](phase-3-qualification.md). Same-tag disaster restore remains outside v1.0.
 
 The local SDK command launcher stalled before building. Direct MSBuild completed
 using the repository SDK, `DOTNET_ROOT` and `DOTNET_HOST_PATH` pointing to that
