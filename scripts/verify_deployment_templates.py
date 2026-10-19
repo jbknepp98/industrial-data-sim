@@ -2,6 +2,7 @@
 """Validate startup template structure/native syntax without installing a service."""
 import argparse
 import json
+import os
 from pathlib import Path
 import plistlib
 import subprocess
@@ -28,17 +29,43 @@ def verify(package):
         elif sys.platform == 'win32':
             # Parse through Task Scheduler's native schema, but never RegisterTask.
             # Pass the path as an argument, not interpolated PowerShell code.
-            script = Path(folder) / 'validate.ps1'
-            script.write_text('param([string]$Template)\n$ErrorActionPreference="Stop"\n$service=New-Object -ComObject "Schedule.Service"\n$service.Connect()\n$task=$service.NewTask(0)\n$task.XmlText=[IO.File]::ReadAllText($Template)\n')
-            command = ['powershell', '-NoProfile', '-File', str(script), str(deployment / 'industrial-data-sim.task.xml')]
+            # Inline, fixed code avoids dependence on PowerShell's .ps1 file
+            # execution policy. The template path is data, never command text.
+            powershell = r"""
+$ErrorActionPreference='Stop'
+$stage='connect'
+try {
+  $service=New-Object -ComObject 'Schedule.Service'
+  $service.Connect()
+  $stage='parse'
+  $task=$service.NewTask(0)
+  $task.XmlText=[IO.File]::ReadAllText($env:SIM_TEMPLATE_VALIDATION_PATH)
+} catch {
+  @{stage=$stage; hresult=$_.Exception.HResult} | ConvertTo-Json -Compress
+  exit 1
+}
+"""
+            command = ['powershell', '-NoProfile', '-NonInteractive', '-Command', powershell]
+
         else:
             service = Path(folder) / 'industrial-data-sim.service'
             content = (deployment / 'industrial-data-sim.service').read_text()
             content = content.replace('/absolute/python3', sys.executable).replace('/absolute/package', str(package)).replace('/absolute/private', folder)
             service.write_text(content)
             command = ['systemd-analyze', 'verify', str(service)]
-        result = subprocess.run(command, capture_output=True, timeout=30)
+        env = os.environ.copy()
+        env['SIM_TEMPLATE_VALIDATION_PATH'] = str(deployment / 'industrial-data-sim.task.xml')
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30, env=env)
         if result.returncode:
+            if sys.platform == 'win32':
+                # Only reviewed stage and integer code are exposed, never native
+                # exception text, paths, task XML or machine account details.
+                try:
+                    detail = json.loads(result.stdout)
+                    if detail.get('stage') in ('connect', 'parse') and type(detail.get('hresult')) is int:
+                        print(json.dumps({'code': 'package.native_parser', 'stage': detail['stage'], 'hresult': detail['hresult']}))
+                except (ValueError, AttributeError):
+                    pass
             raise ValueError('Native template parser rejected the template')
     print(json.dumps({'outcome': 'Passed', 'checks': ['restart ownership', 'native template syntax'], 'servicesInstalled': 0}))
 
