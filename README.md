@@ -185,3 +185,10 @@ provide a reproducible synthetic baseline and identify remaining load/retention 
 The two-cell [packaging demonstration](docs/packaging-demo-2026-09-20.md) combines
 [string SKU routing](docs/sku-routing-v1.md) with a 72-hour backfill and
 [wall-clock paced production](docs/production-follow.md).
+
+## Packaged candidates
+
+See [installation and startup](docs/installation.md), [platform/stack compatibility](docs/compatibility.md)
+and [Phase 4 qualification](docs/phase-4-qualification.md). Candidate builds are
+self-contained; the optional startup supervisor uses Python. These candidates
+are not the approved v1.0.0 release.

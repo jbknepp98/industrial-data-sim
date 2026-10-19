@@ -1,0 +1,6 @@
+{
+  "database": "/absolute/private/state/production.sqlite",
+  "environmentFile": "/absolute/private/connection.env",
+  "executable": "/absolute/package/app/IndustrialDataSim.Cli",
+  "maximumRestarts": 0
+}

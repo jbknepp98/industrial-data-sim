@@ -20,14 +20,17 @@ def load_config(path):
     if len(raw) > 65536:
         raise ValueError('host.config_limit: Keep startup configuration within 64 KiB.')
     config = json.loads(raw)
-    allowed = {'database', 'environmentFile', 'dotnet', 'maximumRestarts'}
-    if not isinstance(config, dict) or set(config) - allowed or any(not isinstance(config.get(key), str) or not config[key] for key in ('database', 'environmentFile', 'dotnet')):
-        raise ValueError('host.config_fields: Supply database, environmentFile and dotnet paths, plus optional maximumRestarts; do not put credentials in startup JSON.')
+    allowed = {'database', 'environmentFile', 'dotnet', 'executable', 'maximumRestarts'}
+    if not isinstance(config, dict) or set(config) - allowed or any(not isinstance(config.get(key), str) or not config[key] for key in ('database', 'environmentFile')):
+        raise ValueError('host.config_fields: Supply database, environmentFile and exactly one dotnet or executable path, plus optional maximumRestarts; do not put credentials in startup JSON.')
+    launchers = [key for key in ('dotnet', 'executable') if key in config]
+    if len(launchers) != 1 or not isinstance(config[launchers[0]], str) or not config[launchers[0]]:
+        raise ValueError('host.config_launcher: Supply exactly one executable path for a published package or dotnet path for a source build.')
     restarts = config.get('maximumRestarts', 0)
     if type(restarts) is not int or not 0 <= restarts <= 3:
         raise ValueError('host.restart_limit: maximumRestarts must be an integer from 0 through 3; zero disables automatic process restart.')
     config['maximumRestarts'] = restarts
-    for key in ('database', 'environmentFile', 'dotnet'):
+    for key in ('database', 'environmentFile', launchers[0]):
         config[key] = str((path.parent / config[key]).resolve())
     if not Path(config['database']).is_file():
         raise ValueError('host.state_missing: Admit the first production model before hosting; startup never creates or replaces state.')
@@ -37,8 +40,10 @@ def load_config(path):
 def run(config):
     root = Path(__file__).resolve().parents[1]
     settings = environment(Path(config['environmentFile']))
-    command = [config['dotnet'], str(root / 'src/IndustrialDataSim.Cli/bin/Release/net10.0/IndustrialDataSim.Cli.dll'),
-               'production-host', 'run', config['database']]
+    # Published packages run their own apphost; source builds retain SDK support.
+    command = ([config['executable']] if 'executable' in config else
+               [config['dotnet'], str(root / 'src/IndustrialDataSim.Cli/bin/Release/net10.0/IndustrialDataSim.Cli.dll')])
+    command += ['production-host', 'run', config['database']]
     stopping = threading.Event()
     child = None
     def stop(*_):

@@ -1,0 +1,23 @@
+# User service template. Replace every /absolute path before use.
+# This service owns restart policy: Python maximumRestarts MUST remain zero.
+[Unit]
+Description=Industrial data simulator (existing durable state)
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=/absolute/private
+ExecStart=/absolute/python3 /absolute/package/scripts/run_production_host.py /absolute/private/host.json
+ExecStop=/absolute/package/app/IndustrialDataSim.Cli production-host stop /absolute/private/state/production.sqlite
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=120
+KillSignal=SIGINT
+UMask=0077
+NoNewPrivileges=true
+# Controls require the same temporary namespace for local pipe access.
+PrivateTmp=false
+
+[Install]
+WantedBy=default.target

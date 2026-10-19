@@ -64,3 +64,29 @@ class HostSupervisorTests(unittest.TestCase):
             self.assertEqual(130, run({'database': 'retained.db', 'environmentFile': '.env', 'dotnet': 'dotnet', 'maximumRestarts': 3}))
             launch.assert_called_once()
             child.send_signal.assert_called_once()
+
+class PackagedHostTests(unittest.TestCase):
+    def test_packaged_launcher_and_exclusive_launcher_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / 'state.db').touch()
+            config = folder / 'host.json'
+            base = {'database': 'state.db', 'environmentFile': '.env', 'executable': 'app'}
+            config.write_text(json.dumps(base))
+            self.assertEqual(str((folder / 'app').resolve()), load_config(config)['executable'])
+            for change in ({'dotnet': 'PRIVATE'}, {'executable': False}, {'executable': ''}):
+                config.write_text(json.dumps({**base, **change}))
+                with self.assertRaises(ValueError) as raised:
+                    load_config(config)
+                self.assertNotIn('PRIVATE', str(raised.exception))
+
+    def test_package_runs_directly_without_sdk(self):
+        from unittest.mock import MagicMock, patch
+        from run_production_host import run
+        child = MagicMock()
+        child.wait.return_value = 0
+        with patch('run_production_host.environment', return_value={}), \
+             patch('run_production_host.signal.signal'), \
+             patch('run_production_host.subprocess.Popen', return_value=child) as launch:
+            self.assertEqual(0, run({'database': 'state.db', 'environmentFile': '.env', 'executable': 'app', 'maximumRestarts': 0}))
+            self.assertEqual(['app', 'production-host', 'run', 'state.db'], launch.call_args.args[0])

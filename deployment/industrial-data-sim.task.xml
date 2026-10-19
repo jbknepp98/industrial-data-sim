@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Template: replace absolute paths; select the dedicated same-user account during import. No password is stored here.</Description></RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger></Triggers>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>false</AllowHardTerminate>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+  </Settings>
+  <Actions>
+    <Exec>
+      <Command>C:\absolute\python.exe</Command>
+      <Arguments>"C:\absolute\package\scripts\run_production_host.py" "C:\absolute\private\host.json"</Arguments>
+      <WorkingDirectory>C:\absolute\private</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>

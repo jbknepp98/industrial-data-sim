@@ -49,3 +49,41 @@ jobs:
       - run: dotnet tools/IndustrialDataSim.CapacityProbe/bin/Release/net10.0/IndustrialDataSim.CapacityProbe.dll mixed-load 60
 
       - run: dotnet tools/IndustrialDataSim.CapacityProbe/bin/Release/net10.0/IndustrialDataSim.CapacityProbe.dll history-load 1000
+
+  packages:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            rid: linux-x64
+          - os: macos-15
+            rid: osx-arm64
+          - os: windows-2022
+            rid: win-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - run: python scripts/package_release.py --rid ${{ matrix.rid }} --output .tools/candidate
+      - run: python scripts/verify_package.py .tools/candidate/industrial-data-sim-0.4.0-phase4.1-${{ matrix.rid }}.zip --require-clean
+      - run: python scripts/verify_deployment_templates.py .tools/candidate/industrial-data-sim-0.4.0-phase4.1-${{ matrix.rid }}
+      - run: dotnet list src/IndustrialDataSim.Cli package --vulnerable --include-transitive --format json --output-version 1 > .tools/candidate/dependency-audit.json
+      - run: python scripts/check_dependency_audit.py .tools/candidate/dependency-audit.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-${{ matrix.rid }}
+          path: |
+            .tools/candidate/*.zip
+            .tools/candidate/*.sha256
+            .tools/candidate/dependency-audit.json
+          if-no-files-found: error
+          retention-days: 14

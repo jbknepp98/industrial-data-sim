@@ -62,6 +62,10 @@ using the same state. This does not reset Failed/Uncertain sessions, re-admit a
 model, rerun a batch or extend a horizon. Ctrl+C/TERM forwards graceful shutdown
 and disables supervisor restart. Logs remain under the database's `logs` folder.
 
+For packaged executables, replace `dotnet` with `executable` pointing to the
+package apphost. Do not supply both. See [installation and templates](installation.md)
+for the single-owner policy and platform-specific stop procedure.
+
 For machine startup, configure a user-owned launchd job (macOS), systemd user
 service (Linux), or scheduled task (Windows) to invoke this script with absolute
 Python/config paths and a private working directory. Choose **one** restart
@@ -77,7 +81,7 @@ Before an upgrade, gracefully stop and back up the database using the establishe
 shutdown procedure. Preserve immutable models and original batches. Restart the
 same database, inspect last round/session cursors and failed/uncertain counts,
 and check current Historian values for arrivals/changes. Do not infer that counts
-prove complete delivery. Schema version 7 migrates on opening old state: the
+prove complete delivery. Current schema version 10 migrates on opening old state: the
 older running packaging demonstrations were not migrated during this increment.
 
 The October acceptance report records two concurrent Test sessions, live pause/
