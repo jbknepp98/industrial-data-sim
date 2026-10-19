@@ -1,5 +1,9 @@
 # Reproducing verification
 
+## October 19 release Phase 3 platform completion
+
+Implementation commit `5818203` passed [Linux, macOS and Windows CI](https://github.com/jbknepp98/industrial-data-sim/actions/runs/39316708960), including history-retention, host and capacity checks. The local evidence below was collected October 14.
+
 ## October 14 release Phase 3 increment
 
 The final Phase 3 local .NET suite passed 872 tests with zero build warnings/errors.

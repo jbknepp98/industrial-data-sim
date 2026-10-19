@@ -41,7 +41,7 @@ The final local build passed **872 .NET tests**, zero warnings/errors. All
 six invalid schema cases, 100 gate scenarios/3,722 emitted samples, and the
 72-hour packaging and coordinated-speed oracles. These are synthetic/local
 checks; no live Historian data was written and no existing demonstration state
-was upgraded. Current platform CI is recorded below once available.
+was upgraded. Completed platform CI is recorded below.
 
 The isolated real-CLI upgrade drill built commit `54de022` (schema 8), checkpointed
 synthetic work, upgraded it with the current CLI to schema 10, and compared saved
@@ -139,5 +139,8 @@ with its actual deployment storage and stack.
   paths completed. Its root cause was not established; no product behavior was
   changed to mask it.
 
-Platform CI: pending this commit's run. Release-candidate repeat of these gates
-remains part of final release qualification even after Phase 3 implementation closes.
+Platform CI finalized October 19, 2026: implementation commit `5818203` passed
+[Linux, macOS and Windows verification](https://github.com/jbknepp98/industrial-data-sim/actions/runs/39316708960),
+including the new history-retention smoke test. The measurements above remain
+dated October 14. Release-candidate repeat of these gates remains part of final
+release qualification even after Phase 3 implementation closes.
