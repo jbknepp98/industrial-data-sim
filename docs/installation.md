@@ -98,3 +98,5 @@ changes. Published counts are not acceptance receipts. Reserve at least the
 reference workload's 10 GiB planning allowance; increase it for retained
 archives/backups and larger models. An intentional maintenance stop is outside
 healthy live-latency measurements. A finite horizon still needs explicit extension.
+
+Native template references: [Task Scheduler XML and principal settings](https://learn.microsoft.com/en-us/windows/win32/taskschd/logon-trigger-example--xml-). The template uses a dedicated non-elevated account selected by the operator; it does not adopt the administrator account in the documentation example.

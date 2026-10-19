@@ -5,9 +5,9 @@ claimed. ZIP artifacts bundle .NET and SQLite native components for their RID.
 
 | Artifact RID | Qualification target | Evidence |
 | --- | --- | --- |
-| linux-x64 | GitHub ubuntu-24.04 x64 | Extracted-package CI pending |
-| osx-arm64 | GitHub macos-15 ARM64; local macOS 26.2 ARM64 | Extracted-package CI/local check pending |
-| win-x64 | GitHub windows-2022 x64 | Extracted-package CI pending |
+| linux-x64 | GitHub ubuntu-24.04 x64 | Extracted-package CI passed (`afb669d`) |
+| osx-arm64 | GitHub macos-15 ARM64; local macOS 26.2 ARM64 | Extracted-package CI and downloaded CI artifact on local Mac passed (`afb669d`) |
+| win-x64 | GitHub windows-2022 x64 | Extracted-package CI passed (`afb669d`) |
 
 Other architectures, musl/Alpine, Windows ARM64, macOS Intel, containers for the
 simulator, unattended reboot and service-manager registration are unqualified.
@@ -32,3 +32,6 @@ transition evidence promptly and do not infer missing-point delivery failure. Pu
 continuity on the exact packaged candidate remain Phase 5 acceptance. Earlier
 live evidence does not substitute for an exact-candidate test. Do not restart,
 upgrade or reconfigure these containers merely to collect compatibility evidence.
+
+Candidate artifacts and all three package checks: [CI run](https://github.com/jbknepp98/industrial-data-sim/actions/runs/39325253000).
+Runner CPU labels follow [GitHub's published matrix](https://docs.github.com/en/actions/reference/runners/github-hosted-runners); the actual native executables were exercised on each listed runner.

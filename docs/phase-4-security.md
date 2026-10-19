@@ -11,7 +11,9 @@ trusting them. Candidate ZIPs are not code-signed/notarized release artifacts.
 The build enables NuGet audit for direct and transitive dependencies; warnings
 are errors. Network/feed failures must fail the build. A separate CI JSON audit
 is retained beside artifacts. No advisory result is a permanent safety guarantee;
-repeat on the exact release candidate. Dependencies are resolved from declared
+repeat on the exact release candidate. This NuGet check does not audit the OS
+or prove the bundled runtime free of vulnerabilities; review the exact runtime
+patch and OS advisories at release as well. Dependencies are resolved from declared
 versions; the shipped deps inventory records the actual runtime selections.
 
 Reviewed boundaries: HTTPS origins only; redirect forwarding disabled; private

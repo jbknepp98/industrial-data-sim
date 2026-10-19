@@ -36,7 +36,14 @@ reported no vulnerabilities or feed problems. Native launchd plist validation
 passed without registration. Existing .NET runtime behavior is unchanged;
 the complete .NET suite and three-platform package checks run in CI.
 
-CI implementation commit/run: pending.
+Package implementation commit `afb669d` passed all three native package jobs in
+[CI run 39325253000](https://github.com/jbknepp98/industrial-data-sim/actions/runs/39325253000).
+The exact macOS artifact was downloaded and passed the same clean-manifest
+verification on the local Mac. All six jobs passed: package qualification and
+full regression on Linux, macOS and Windows, including 872 .NET tests and
+36 Python tests per platform. The downloaded macOS package bundles .NET 10.0.13;
+the earlier local development package used 10.0.12. Each artifact records its
+actual runtime and dependency versions.
 
 Reproduce from a clean checkout with .NET 10 SDK and Python 3.12:
 
@@ -65,6 +72,11 @@ source commit from product version. Builds are not claimed byte-for-byte reprodu
   and Windows hard termination is disabled in the template.
 - Dependency listing alone can exit successfully with findings: CI additionally
   parses audit JSON and refuses vulnerabilities or feed problems.
+
+- Windows native parsing rejected the UTF-8 declaration when the task XML was
+  passed as a Unicode COM string. Removing the byte-encoding declaration passed
+  the native check. The validator now uses fixed inline PowerShell and exposes
+  only a reviewed stage and numeric error code on failure.
 
 ## Remaining release gates
 

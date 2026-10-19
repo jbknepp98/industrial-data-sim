@@ -191,3 +191,23 @@ still requires final exact-artifact audit and explicit v1.0 release approval.
 ## October 19 — Phase 3 platform completion
 
 Implementation commit `5818203` is pushed and passed [Linux, macOS and Windows CI](https://github.com/jbknepp98/industrial-data-sim/actions/runs/39316708960), including the new history-retention smoke test. Phase 3 is complete under the documented fresh-tag disaster-recovery policy. Continue with Phase 4; the live RC soak and final release approval remain outstanding.
+
+## October 19 — Phase 4 packaged candidate qualified
+
+Implementation `afb669d` passed [all six CI jobs](https://github.com/jbknepp98/industrial-data-sim/actions/runs/39325253000):
+872 .NET tests, 36 Python tests and native package/template checks on Linux x64,
+macOS ARM64 and Windows x64. Candidate 0.4.0-phase4.1 ZIPs, checksums and NuGet
+audit evidence are retained in that run for 14 days. The exact clean macOS CI ZIP
+also passed locally. See [Phase 4 qualification](phase-4-qualification.md),
+[installation](installation.md), and [compatibility](compatibility.md).
+
+Local Historian and Pulse are both 2.0-gc1; immutable ARM64 image digests and a
+successful TLS/authentication/read-only Test probe are recorded. No production
+state was opened/migrated, no service installed, and no samples published.
+
+Next: Phase 5 exact-candidate 72-hour backfill and seven-day live acceptance,
+including actual deployment restart ownership, restart/extension drills, arrival
+observations, timely backfill evidence before seven-day retention removes it,
+and user pattern review. The owner still needs to select distribution licensing;
+private-CA revocation is not implemented. These and signing/trust expectations
+must be reviewed before release. Do not call this candidate v1.0.0.

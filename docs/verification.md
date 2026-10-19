@@ -1,5 +1,14 @@
 # Reproducing verification
 
+## October 19 release Phase 4 packaged candidate
+
+Commit `afb669d` passed [all six package/regression CI jobs](https://github.com/jbknepp98/industrial-data-sim/actions/runs/39325253000):
+872 .NET tests and 36 Python tests on each OS, plus self-contained package,
+checksum, ownership, restart and native startup-template checks. The downloaded
+macOS artifact also passed on the local Mac. See [Phase 4 report](phase-4-qualification.md)
+for reproduction, initial Windows XML failure/fix, dependency review, read-only
+stack compatibility and remaining live-release gates.
+
 ## October 19 release Phase 3 platform completion
 
 Implementation commit `5818203` passed [Linux, macOS and Windows CI](https://github.com/jbknepp98/industrial-data-sim/actions/runs/39316708960), including history-retention, host and capacity checks. The local evidence below was collected October 14.
