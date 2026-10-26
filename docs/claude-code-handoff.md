@@ -261,7 +261,8 @@ with databases. Do not merge transferred state with another copy that has advanc
    Prepare 72-hour historical ranges and a continuing live horizon using windowed
    manufacturing execution; do not just raise precompiled-model limits.
 4. With the user, authorize the exact live run and test Dataset/fresh namespace.
-   Backfill and transition seamlessly into seven days of real time without
+   Backfill and transition seamlessly into three hours of real time (owner scope
+   decision October 26, 2026; originally seven days) without
    re-admission, reset clocks or new random seeds. Target-bounded models may finish.
 5. Record arrivals/changes separately from Published progress. Measure queue,
    memory/disk, per-session fairness, backlog drain, control latency and published
@@ -278,7 +279,8 @@ with databases. Do not merge transferred state with another copy that has advanc
 
 ## Limits and decisions still open
 
-- No v1.0 release approval yet; seven-day exact-candidate live soak remains open.
+- No v1.0 release approval yet; three-hour exact-candidate live soak remains open
+  (reduced from seven days by owner decision October 26, 2026).
 - OS startup templates were parsed and package lifecycles tested, but no actual
   service registration/boot test was performed on the user's deployment machine.
 - No project distribution license selected by owner; public GitHub visibility is

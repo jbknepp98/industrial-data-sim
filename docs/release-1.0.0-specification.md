@@ -94,11 +94,19 @@ scope decision and updated acceptance evidence, not a silent test relaxation.
 | Concurrency | Four active sessions, eight output tags each; at least two share a Dataset with disjoint tags |
 | Model mix | Simple signals, gated sequences, two-cell SKU manufacturing, and a production-target model |
 | Time resolution | One-second observation interval; one-second manufacturing process clock where applicable |
-| Historical/live duration | 72-hour backfill followed by seven days live for continuing models; target-bounded models complete normally |
+| Historical/live duration | 72-hour backfill followed by three hours live for continuing models (owner scope decision, October 26, 2026; previously seven days); target-bounded models complete normally |
 | Backfill recovery | Sustained generation/publish rate exceeds live demand and backlog decreases without starving another session |
 | Live freshness target | p95 newest published timestamp lag at most 10 seconds during healthy steady-state operation, excluding deliberately suppressed tags |
 | Control target | p95 status/pause response at most five seconds and no request deadline exceeded during healthy reference workload |
 | Memory/storage | Bounded queues at configured limits; no unexplained sustained memory growth; measure peak memory, disk growth and required headroom |
+
+Scope decision, October 26, 2026: the owner reduced the release-candidate live
+soak from seven days to three hours, keeping the 72-hour backfill. The shorter run
+still exercises the backfill-to-live transition, steady-state lag/control targets,
+a planned restart and a horizon extension, but it does not demonstrate multi-day
+memory/disk stability, retention purge interaction or long-run audit rollover under
+live load. Release notes must state this as a known limitation of v1.0.0 evidence.
+Phase 2/3 long-history measurements remain the evidence for those bounds.
 
 Lag is local publish progress, not proof that Historian retained every point.
 Measure current-value arrival/change indicators separately. Report sample counts,
@@ -151,7 +159,7 @@ the original latest database preserves exact process continuity. No exactly-once
 3. **Operations:** failure drills, backup/restore, upgrade, retention and rollover.
 4. **Packaging:** clean-machine artifacts, startup templates, compatibility,
    dependency/security review and installation/upgrade runbooks.
-5. **Acceptance:** release-candidate 72-hour backfill and seven-day live soak,
+5. **Acceptance:** release-candidate 72-hour backfill and three-hour live soak,
    restart/extension drills, arrival observations and user pattern approval.
 6. **Release:** final audit, exact-candidate CI and artifact checks, release notes,
    known limitations, approval and immutable `v1.0.0` tag/artifacts.
