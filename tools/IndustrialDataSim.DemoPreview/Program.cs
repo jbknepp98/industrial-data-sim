@@ -6,9 +6,14 @@ using IndustrialDataSim.Core.Simulation;
 // Offline demonstration evidence, bounded to 100000 candidate slots and 16 MiB.
 // Uses the unchanged full model and the production window generator. Shortening
 // only the preview fence preserves all source/gate clocks and random schedules.
-if (args.Length != 1)
+// An optional second argument raises the preview fence (default 72 hours, at
+// most 96) so a backfill-plus-live acceptance model can be reviewed end to end.
+// The slot and byte budgets below still apply, so long previews need a coarser
+// preview copy of the sampling interval.
+int previewHours = 72;
+if (args.Length is < 1 or > 2 || (args.Length == 2 && (!int.TryParse(args[1], out previewHours) || previewHours is < 1 or > 96)))
 {
-    Console.WriteLine("{\"valid\":false,\"code\":\"preview.usage\",\"message\":\"Supply one model file. The probe previews at most its first 72 hours; it never connects to a Historian.\"}");
+    Console.WriteLine("{\"valid\":false,\"code\":\"preview.usage\",\"message\":\"Supply one model file and optionally a preview length of 1-96 hours (default 72). The probe never connects to a Historian.\"}");
     return 2;
 }
 try
@@ -25,11 +30,11 @@ try
     }
     var model = loaded.Definition!;
     var end = model.Session.EndUtc;
-    if ((end - model.Session.StartUtc) > TimeSpan.FromHours(72)) end = model.Session.StartUtc.AddHours(72);
+    if ((end - model.Session.StartUtc) > TimeSpan.FromHours(previewHours)) end = model.Session.StartUtc.AddHours(previewHours);
     long interval = model.SamplingIntervalMs * TimeSpan.TicksPerMillisecond;
     long slots = ((end - model.Session.StartUtc).Ticks - 1) / interval + 1;
     if (slots > 100000 / model.Session.OutputTags.Count)
-        return Fail("preview.slot_limit", "The first 72 hours exceed 100000 candidate slots. Increase the sampling interval or reduce the preview model's end time.");
+        return Fail("preview.slot_limit", "The previewed hours exceed 100000 candidate slots. Increase the preview copy's sampling interval or request fewer hours.");
     var data = model.Session.OutputTags.ToDictionary(t => t.Name, _ => new List<TvqPoint>());
     long cursor = 0, size = 0;
     while (true)
