@@ -1,6 +1,7 @@
 # Candidate installation and operation
 
-Phase 4 produces **0.4.0-phase4.1**, not v1.0.0. Packages are self-contained:
+The Phase 5 acceptance candidate is **1.0.0-rc.1** (Phase 4 produced 0.4.0-phase4.1);
+neither is v1.0.0. Packages are self-contained:
 .NET is bundled, and neither a .NET SDK nor Python is needed for direct CLI use.
 The optional startup supervisor requires Python 3.12 or later (standard library
 only). See compatibility.md for the tested OS/CPU matrix and outstanding live RC

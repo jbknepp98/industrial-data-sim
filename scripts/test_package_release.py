@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
-from package_release import digest, build
+from package_release import digest, build, is_candidate_version
 from verify_package import verify
 
 
@@ -22,6 +22,14 @@ class PackageIntegrityTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build('unused', 'osx-arm64', '1.0.0', target)
             self.assertFalse(target.exists())
+
+    def test_candidate_versions_are_accepted_and_releases_refused(self):
+        for version in ('1.0.0-rc.1', '1.0.0-rc.12', '0.4.0-phase4.1'):
+            with self.subTest(version=version):
+                self.assertTrue(is_candidate_version(version))
+        for version in ('1.0.0', '1.0.0-rc.0', '1.0.0-rc.01', '1.0.0-rc1', '1.0.1-rc.1', '2.0.0-rc.1', ' 1.0.0-rc.1'):
+            with self.subTest(version=version):
+                self.assertFalse(is_candidate_version(version))
 
     def test_corrupt_archive_is_refused_before_execution(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -14,7 +14,43 @@ simulator, unattended reboot and service-manager registration are unqualified.
 Hosted runners include native OS prerequisites; this is a clean extraction
 without an SDK/runtime dependency, not proof on every bare OS installation.
 
-## Local Timebase deployment, October 19, 2026
+## Local Timebase deployment, November 20, 2026 (Phase 5 target)
+
+The local stack was upgraded through 2.0-gc4 and 2.0-gc6 to the 2.0.0 release
+after the October baseline. Phase 5 acceptance targets this deployment. Read-only
+Docker identity inspection:
+
+| Component | Image tag | Immutable image/repository digest | Architecture |
+| --- | --- | --- | --- |
+| Historian | timebase/historian:2.0.0 | sha256:a16b8e33604312c506559ef21669b935e19b5645b5cac8743fce6cf8066887f7 | linux/arm64 |
+| Pulse | timebase/pulse:2.0.0 | sha256:e96725f3af8a4b7d55d5a1438b2da583de146d4620b85abd8f2b0bf775297c86 | linux/arm64 |
+
+The Pulse root CA was rotated on October 21, 2026; clients need the new root
+in their PEM trust bundle. The earlier `Test` Dataset no longer existed after the
+upgrade. A new `Test` Dataset was created for simulator acceptance only (purge
+age seven days, purge size zero, late-data settings left at server defaults).
+Other Datasets on the deployment belong to other work and must not be written,
+reconfigured or deleted by simulator testing.
+
+Read-only Python probe: passed with verified TLS, token acquisition and expected
+Test settings. No values were written.
+
+C# adapter preflight (`production start`, development build of `05af1db`, scratch
+state database, three fresh `CompatSmoke-20261120.*` tags): admitted after
+authentication, existence, settings, tag inventory and current-value reads. It
+parsed `lateToleranceMs` 0 and `lateAgeDays` 30. `production run` was not invoked,
+so no values were written; the session is left unpublished in ignored local state.
+This is a compatibility smoke check, not exact-candidate evidence.
+
+Historian 2.0.0 Dataset settings expose late-data tolerance (`ldt`, ms; server
+default 0) and late-data age (`lda`, days; server default 30) plus read-only size,
+tag-count and age fields. The adapter already reads `ldt`/`lda` as optional and
+ignores unrecognized members, so the new fields do not change preflight. The
+simulator never sends an older timestamp than one already sent for the same tag
+and depends on neither setting; the 72-hour backfill is far inside the 30-day
+default. This is a reasoned expectation, not yet exact-candidate live evidence.
+
+## Local Timebase deployment, October 19, 2026 (superseded)
 
 User screenshot and read-only Docker identity inspection agree on:
 
