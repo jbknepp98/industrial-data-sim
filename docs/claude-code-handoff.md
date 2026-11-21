@@ -32,7 +32,9 @@ generator identity, database schema, or archive format.
   3 recovery/retention; 4 self-contained packaging and compatibility baseline.
 - Current packaged candidate: `0.4.0-phase4.1`, **not v1.0.0**. Update, November 20,
   2026: Phase 5 acceptance uses `1.0.0-rc.2` (rc.1 could not parse Historian 2.0.0
-  write receipts), the default of `package_release.py`.
+  write receipts), the default of `package_release.py`. Update, November 21, 2026: the rc.2
+  acceptance run passed; see the Phase 5 results in `phase-5-acceptance-plan.md`.
+  The owner pattern review (V19) and Phase 6 remain.
 - SQLite schema: **10**. Archive export format: **3**. Evidence-only snapshot
   schema marker: **1000008**, deliberately not runnable.
 - Last fully qualified implementation: `afb669d`.
@@ -251,6 +253,9 @@ with databases. Do not merge transferred state with another copy that has advanc
 
 ## Next work: Phase 5, then Phase 6
 
+Status, November 21, 2026: steps 1–6 are done with rc.2. Step 7, the owner
+pattern review, is pending, and step 8 (Phase 6) follows it.
+
 1. Confirm current stack identity, credentials/TLS trust, Dataset retention,
    available disk and the chosen deployment machine/account/startup owner.
    Inspect the acceptance matrix; do not restart an old demo as the RC run.
@@ -281,8 +286,9 @@ with databases. Do not merge transferred state with another copy that has advanc
 
 ## Limits and decisions still open
 
-- No v1.0 release approval yet; three-hour exact-candidate live soak remains open
-  (reduced from seven days by owner decision October 26, 2026).
+- No v1.0 release approval yet. The three-hour exact-candidate live soak (reduced
+  from seven days by owner decision October 26, 2026) passed with rc.2 on
+  November 21, 2026; owner pattern review is pending.
 - OS startup templates were parsed and package lifecycles tested, but no actual
   service registration/boot test was performed on the user's deployment machine.
 - No project distribution license selected by owner; public GitHub visibility is

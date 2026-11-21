@@ -74,3 +74,40 @@ with the real anchor before admission.
 Stop conditions: any Failed or Uncertain session, a timestamp-order violation,
 or a security/diagnostic problem. Preserve state; never replay or resume
 Uncertain work; a repair means a new rc and a rerun of affected steps.
+
+## Results: smoke and main run (November 21, 2026)
+
+Candidate as frozen above, on the local Mac (macOS 26.2 ARM64) against
+Historian/Pulse 2.0.0, Dataset `Test` (purge age 7 days, size 0, late-data
+defaults). The driver is `scripts/run_rc_acceptance.py`; the raw state, logs and
+samples are kept in ignored local storage.
+
+Smoke runs, short horizon (`SMOKE-*` namespaces):
+- **rc.1**: Uncertain on its first publish, because it could not parse the 2.0.0
+  write receipt. Nothing was resent, and the candidate was superseded.
+- **rc.2, first smoke run**: the driver stopped on its own parsing bug (a nested
+  horizon reply) and stopped the host cleanly. No session failed. The driver was
+  fixed in `8e7be3f`, a tooling-only change outside the package.
+- **rc.2, second smoke run**: everything passed. Catch-up took 21 s. The
+  extension, restart, and pause/resume drills all passed. Status p95 was 375 ms
+  and live lag p95 was 1.24 s.
+
+Main run: namespace `RC1-20261121T0041`, anchor 2026-11-21T00:41Z, seed 20261120.
+The workload was regenerated for that anchor and the preview passed.
+
+| Gate | Observation | Result |
+| --- | --- | --- |
+| V02 | Four sessions and 32 tags all progressed. 1,090,408 points were stored, read back after the run: Utilities 250,721; PackagingLine 256,188; ProcessCell 531,444; BatchReactor 52,055. | Passed |
+| V03/V17 | The 72-hour backfill reached real time without re-admission. Catch-up times after the anchor: BatchReactor (6 h backfill) 130 s, PackagingLine 1,246 s, Utilities and ProcessCell 1,316 s. Live operation continued to 04:03Z, 3 h 22 min after the anchor and 3 h after catch-up. | Passed |
+| V04 | The maximum queued points in any sample was 0. Every session drained at completion. | Passed |
+| V05 | Status p95 was 909 ms over the whole run (max 2.93 s, during catch-up) and 826 ms after catch-up (max 2.04 s), against a target of 5 s or less. Live lag p95 was 1.57 s (max 5.26 s; after catch-up 1.42 s, max 4.73 s; 2,254 samples), against a target of 10 s or less. Pause took 260 ms and resume 257 ms. | Passed |
+| V06 | Process memory was 50–129 MB, with the peak at startup and catch-up; after catch-up it held steady between 72 and 86 MB. The state database grew linearly to 45 MB. | Recorded |
+| V08 | No session was Failed or Uncertain. The runtime logged no warnings or errors, so no `delivery.points_dropped` was reported. No batch was resent. | Passed |
+| V16 | rc.2 publishes to 2.0.0, accepts its write receipt, and the 72-hour backfill was stored without drops. | Passed for this stack |
+| V18 | Two horizon extensions per continuing session (revisions 1 and 2). In the restart drill at 02:03Z, the graceful stop took 0.6 s and the restart from the same database kept the same revision with forward-only cursors in all four sessions. | Passed |
+| V17 | BatchReactor stopped on target: `ProducedKg` reached exactly 6,500 at live +90 min (02:11Z) and the session completed. The continuing sessions completed at the extended end. | Passed |
+| V19 | Read-only Historian read-back compared 5,504 preview minutes across 168 tag-windows. There are ten event windows: backfill start, the 30 h and 60 h faults, a shift changeover, the reactor backfill, the anchor, the live fault at 72 h 45 m, the restart and reactor end, the pause, and the run end. It found 0 value or quality mismatches and 0 ordering violations, and analog values were identical. Arrival indicators changed for every session. The full trends for owner review are on the run's trend page. | Awaiting owner review |
+
+Read-back confirmed 5 bad-quality samples and 19 `LineReady` transitions, both
+matching the preview. Published progress and read-back are evidence of what
+was stored, not per-point receipts; absence never authorizes replay.
