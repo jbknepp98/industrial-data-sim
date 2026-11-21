@@ -1,6 +1,6 @@
 # Design note: plant simulation (interview, areas, transaction loop)
 
-Status: **proposal for owner review**, November 21, 2026. No code has changed.
+Status: **approved with owner decisions**, November 21, 2026. No code has changed.
 This is a new major capability. Its working name is **2.0**: it builds on 1.1.0
 (open-ended sessions), which stays paused pending the owner soak.
 
@@ -94,8 +94,9 @@ It subscribes to events from other areas. Areas can be switched on per demo.
 | **Warehouse** (later) | Released batches | `wh`: lots, locations, inventory transactions | — | Stock levels for shipping |
 | **Shipping** (later) | Sales orders, inventory | `ship`: picks, loads, shipments, carriers | Dock and scale tags | Late shipments trace back through the loop |
 
-The shared reference data lives in `ref`: site, areas, lines, equipment, SKUs,
-BOM, shifts, people.
+Shared reference data (site, areas, lines, equipment, SKUs, BOM, shifts, people)
+lives in the simulation's own reference tables, for example
+`BluebirdBev_Equipment` (see owner decisions, round 2).
 
 ### First slice: Production → Maintenance
 
@@ -224,7 +225,39 @@ plants; editing a running plant (change it by regenerating).
 
 Each milestone ends with an owner-reviewed preview or live check, as in 1.x.
 
-## Open questions for the owner
+## Owner decisions, round 2 (November 21, 2026)
+
+1. **One shared Postgres database.** It is a container on the Timebase Docker
+   network, and every simulation reuses the database `flow_data_sim`.
+2. **Table names are `SimulationName_TablePurpose`,** for example
+   `AcmeNuggs_MaintenanceTickets` or `BluebirdBev_ProductionOrders`. This
+   replaces the per-area schemas (`prod`, `maint`, …) described above: the area
+   is expressed in the table purpose instead. It overrides the
+   `atlas-demo-database` "schemas rather than prefixes" rule for this tool.
+3. **Simple rule-based scheduler,** with no optimization.
+4. **People are generated from the interview:** technicians, operators,
+   certifications.
+5. **First proving story:** rebuild **Bluebird Bev** and compare it with the
+   hand-built version.
+6. **Keep simulations small for now:** at most **2 lines**, the minimum staff to
+   tell the story, few SKUs. Validation enforces these limits so a model cannot
+   quietly grow.
+
+Consequences for the design:
+
+- **Ownership in a shared database.** A simulation only ever creates, writes or
+  drops tables carrying its own `SimulationName_` prefix. It checks that no
+  other simulation already owns the name before creating anything, which
+  mirrors the 1.x tag-ownership rule and the rule of never touching Datasets it
+  did not create. Removing a simulation drops only its own tables, and only
+  after confirmation.
+- **The row-version sequence and the read-only Connect role** are shared across
+  the database. Each simulation's tables get their own trigger.
+- **Identifier case.** Postgres folds unquoted names to lower case, so the
+  exact name `AcmeNuggs_MaintenanceTickets` must be double-quoted in every query,
+  including Connect's. The generated mapping spec always quotes them.
+
+## Open questions for the owner (answered above)
 
 1. **Postgres location:** a container in the same Docker network as Timebase
    (recommended), or an existing server?
