@@ -90,25 +90,12 @@ Windowed manufacturing already runs tick by tick from a bounded checkpoint, and
 `holdLast` patterns to `repeat` (the shift timeline becomes one 8-hour cycle).
 ProcessCell already repeats.
 
-### 4. Bounded storage: automatic history retention
+### 4. Storage growth (no automatic deletion)
 
-Open-ended sessions need audit history cleaned up while the host runs.
-Proposal: a host setting `historyRetention` (default **7 days**, matching the
-Test Dataset's purge age). On a bounded timer, the host deletes Published batch
-rows, attempt records and observations older than the retention age.
-
-What is never deleted:
-- Pending, Sending and Uncertain work;
-- cursors, process checkpoints and tag progress;
-- the model and its horizon revisions.
-
-Cleanup runs as small transactions between delivery rounds. It never blocks
-publishing for long, and each pass is logged once as `history.pruned`.
-
-This deliberately changes the 1.0 rule of no automatic deletion (owner
-decision 2 below). The deleted rows are local audit records of what was sent;
-Historian keeps the data itself, so nothing is resent or lost. If you want a
-permanent audit trail, the existing manual `archive-history` stays available.
+All audit history is kept (owner decision 2), so the local database grows with
+the number of points published. The 1.1.0 docs give the growth estimate and the
+manual trim path (pause, `archive-history`, resume). The existing free-disk floor
+stops generation safely, keeping all work, before the disk fills.
 
 ### 5. Target-bounded models
 
