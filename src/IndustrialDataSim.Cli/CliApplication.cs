@@ -28,7 +28,7 @@ public static partial class CliApplication
         if (args.Length > 0 && args[0] == "production") return RunProductionCommand(args, output, stop);
         if (args.Length > 0 && args[0] is "host" or "live") return RunHostCommand(args, output, stop);
         if (args.Length > 0 && args[0] == "session") return RunSessionCommand(args, output, stop);
-        if (args.Length > 0 && args[0] == "plant") return RunPlantCommand(args, output);
+        if (args.Length > 0 && args[0] == "plant") return RunPlantCommand(args, output, stop);
         if (args.Length != 2 || args[0] is not ("validate-dataset" or "validate-session" or "validate-simulation" or "dry-run" or "explain-process"))
         {
             WriteResult(output, [new("cli.usage", "$",

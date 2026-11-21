@@ -1,12 +1,13 @@
-# Plant simulation (milestone 1: offline engine)
+# Plant simulation
 
 Design and owner decisions: [design-plant-simulation.md](design-plant-simulation.md).
 Example: [examples/plants/bluebird-bev.json](../examples/plants/bluebird-bev.json),
 a rebuild of the Bluebird Bev demo.
 
-Milestone 1 simulates the **Production → Maintenance loop** offline. Nothing is
-written to Postgres or Historian yet: the Postgres writer is milestone 2, and the
-live Docker run is milestone 3.
+It simulates the **Production → Maintenance loop**. Milestone 1 is the offline
+engine and preview; milestone 2 writes the records to Postgres
+(`flow_data_sim`); milestone 3 runs a plant live in Docker, writing rows to
+Postgres and tags to Historian.
 
 ## Commands
 
@@ -24,6 +25,50 @@ plant preview <model> <output.json> [hoursAfterAnchor 1-720, default 24] [anchor
   - the line state segments and the breakdowns;
   - every tag sampled at 60 s.
 - **The command prints row counts only.**
+
+## Postgres: flow_data_sim (milestone 2)
+
+The database runs in the container `flow-data-sim-pg` on the Timebase Docker
+network (alias `flow-data-sim-pg`, port 5432). From the Mac it is published only
+on `127.0.0.1:5435`. Run
+[deployment/postgres/01_bootstrap.sql](../deployment/postgres/01_bootstrap.sql)
+once as the database owner. It creates:
+
+- **Roles:** `flowsim_writer` (the simulator) and `flowsim_reader` (for Connect).
+  The reader can read every simulation table and nothing else.
+- **`flowsim_row_version`:** a shared sequence, plus the trigger that stamps
+  `row_version` on every insert and update. This is the connector's watermark.
+- **`flowsim_simulations`:** the registry. It records which simulation owns
+  which table prefix, the admitted model and anchor, and delivery progress.
+
+Commands (each needs `FLOWSIM_PG_CONNECTION`, a writer connection string kept in
+a private env file):
+
+```
+plant build <model> [anchorUtc]       admit the plant and create its 16 tables
+plant sync <simulation> [throughUtc]  apply records up to a time (never past now)
+plant status [simulation]             registration and progress
+plant remove <simulation> --confirm   drop that simulation's tables and registration only
+```
+
+- **Ownership:** a simulation only creates or drops tables with its own prefix.
+  Admission is refused when another simulation owns the prefix, when
+  unregistered tables already use it, or when a different model is already
+  registered under the name. Repeating a build with the same model and anchor
+  changes nothing.
+- **No duplicates or gaps:** each engine change has a sequence number. Rows and
+  the registry's `applied_sequence` commit in one transaction, so a crash at
+  any point leaves a state that the next sync continues exactly.
+- **The stored model and anchor are the source of truth.** A restart replays
+  exactly the same history, and the engine is tested so that replaying further
+  never changes earlier records. A model that no longer reproduces the stored
+  history stops with `plant.history_mismatch`.
+- **Every table** has its natural key as the primary key, plus `row_version`,
+  `modified_utc` (the simulated change time), `is_deleted` and `deleted_utc`.
+
+Integration tests run against a real database when `FLOWSIM_TEST_PG` holds a
+writer connection string. They create and remove their own uniquely named
+simulations.
 
 ## How the loop works
 
