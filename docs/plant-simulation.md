@@ -97,6 +97,9 @@ produce. Only rows and tag samples at or before now are delivered.
   before each batch and cleared after it. A graceful stop always finishes the
   batch in flight. If the process is killed mid-batch, the next start skips that
   batch and counts it in `uncertain_batches`; it never resends it.
+- **Retention check:** at start the host reads the Dataset's purge age. If the
+  backfill begins before it, the host logs `plant.retention_warning`: Historian
+  will drop those oldest points, while Postgres keeps every row.
 - **One host per simulation:** a Postgres advisory lock refuses a second host
   (`plant.host_running`).
 - **Log:** the host prints one JSON line per change of condition:

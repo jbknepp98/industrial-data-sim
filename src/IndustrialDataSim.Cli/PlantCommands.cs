@@ -178,6 +178,13 @@ public static partial class CliApplication
         var host = new PlantHost(store, model, historian, dataset);
         void Line(object value) { output.WriteLine(JsonSerializer.Serialize(value, JsonOptions)); output.Flush(); }
         Line(new { @event = "plant.started", simulation, dataset, startUtc = model.StartUtc, lookaheadHours = host.LookaheadHours });
+        // Historian drops points older than the Dataset's purge age. Say so up front
+        // instead of letting the oldest backfill disappear without explanation.
+        historian.Authenticate(CancellationToken.None).GetAwaiter().GetResult();
+        var settings = historian.ReadDatasetSettings(dataset, CancellationToken.None).GetAwaiter().GetResult();
+        if (settings.PurgeAgeDays > 0 && model.StartUtc < DateTimeOffset.UtcNow.AddDays(-settings.PurgeAgeDays))
+            Line(new { @event = "plant.retention_warning", purgeAgeDays = settings.PurgeAgeDays,
+                message = "The backfill starts before this Dataset's purge age, so Historian will drop the oldest tag points. Postgres keeps every row. Use a shorter backfill or a Dataset with a longer purge age to keep them." });
         bool caughtUp = false;
         var lastReport = DateTimeOffset.MinValue;
         long rows = 0, points = 0;
