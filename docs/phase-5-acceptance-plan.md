@@ -1,4 +1,4 @@
-# Phase 5 acceptance plan (1.0.0-rc.1)
+# Phase 5 acceptance plan (1.0.0-rc.2)
 
 Prepared November 20, 2026. This plan is reviewed before any acceptance write.
 Gate IDs refer to the [acceptance matrix](release-1.0.0-acceptance.md). The live
@@ -8,13 +8,16 @@ duration is three hours after a 72-hour backfill (owner scope decision, October 
 
 | Item | Value |
 | --- | --- |
-| Version | `1.0.0-rc.1` |
-| Source commit | `a66d611` (clean CI build) |
-| CI run | [44839471116](https://github.com/jbknepp98/industrial-data-sim/actions/runs/44839471116), all six jobs passed |
-| Executed artifact | `industrial-data-sim-1.0.0-rc.1-osx-arm64.zip`, SHA-256 `66b66861c663d61659640ab99ce3806bc784fc3acf51430b06f72eb425efed35` |
+| Version | `1.0.0-rc.2` |
+| Source commit | `e866609` (clean CI build) |
+| CI run | [44842881320](https://github.com/jbknepp98/industrial-data-sim/actions/runs/44842881320), all six jobs passed |
+| Executed artifact | `industrial-data-sim-1.0.0-rc.2-osx-arm64.zip`, SHA-256 `a0b1f23fb7d2c2bbf38fef00f7fe2846a47698b597529ef05cd8b4a4d9435648` |
 | Local verification | `verify_package.py --require-clean` passed; dependency audit clean |
 | Schemas | SQLite 10, archive format 3 |
 | Target stack | Timebase Historian/Pulse 2.0.0 ([compatibility](compatibility.md)) |
+
+Superseded: `1.0.0-rc.1` (`a66d611`) could not parse the Historian 2.0.0 write
+receipt; its smoke run's first batch went Uncertain and was not resent.
 
 Later commits that only add tooling or documentation outside the package
 allowlist do not change this candidate. Any change to packaged code or files
@@ -46,7 +49,7 @@ for generators) and independently checks per-tag ordering, exclusive SKU
 routing, gate suppression, monotonic totalizers and target completion inside
 the initial live horizon. Trial workload (anchor 2026-11-21T15:00Z): passed,
 29 SKU changes, 19 shift edges, 5 bad-quality samples, target at live +90 min.
-All four models also validate with the packaged binary. Regenerate and re-preview
+All four models also validated with the rc.1 package; the run admits them with rc.2. Regenerate and re-preview
 with the real anchor before admission.
 
 ## Run procedure (requires owner approval of anchor and namespace)
