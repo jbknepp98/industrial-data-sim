@@ -1,7 +1,7 @@
 # Design note: open-ended sessions (1.1.0)
 
 Status: **approved with owner decisions**, November 21, 2026. See "Owner decisions" below.
-Implementation: steps 1–3 and 5 done. User guide: [open-ended-sessions.md](open-ended-sessions.md).
+Implementation: steps 1–6 done (1.1.0-rc.1). The owner soak (step 7) is next. User guide: [open-ended-sessions.md](open-ended-sessions.md).
 No database schema change was needed: backfill resolves to a concrete `startUtc`
 before admission, and an open end is stored as a header without `endUtc`.
 
@@ -174,3 +174,33 @@ current time with empty queues, which confirms the wall-clock guard without a
 fence. Simulated delivery prunes payloads, so this does not measure
 production-mode audit growth. That is covered by the 1.0 acceptance figure
 (about 45 MB for 1.09 million points).
+
+## Step 6 result: 1.1.0-rc.1 Docker smoke (November 21, 2026)
+
+The candidate is `1.1.0-rc.1`, from commit `3434fd9`
+([CI run 44920478833](https://github.com/jbknepp98/industrial-data-sim/actions/runs/44920478833)).
+
+- **CI:** all package jobs passed. The offline jobs first failed because the
+  session-header JSON schema didn't yet accept schemaVersion 2. The schema was
+  fixed in `3fa0f5a`; schemas are not packaged, so the candidate is unchanged.
+  [CI run 44920820331](https://github.com/jbknepp98/industrial-data-sim/actions/runs/44920820331)
+  then passed all seven jobs.
+- **Package:** the linux-arm64 package (SHA-256 `352a68ff…de375`) passed
+  `verify_package.py --require-clean` in a native ARM64 Debian container. The
+  dependency audit was clean.
+
+The smoke ran natively in Docker on the Timebase stack network against
+Historian 2.0.0. It used the example open-ended model with `backfill: "2h"`
+under namespace `OPEN-20261121T154455` in `Test`:
+
+| Check | Result |
+| --- | --- |
+| Admission | Valid, no warnings (every pattern repeats). Backfill resolved at admission. |
+| Backfill to live | Caught up within the first status poll, about 3 s after host start |
+| `docker stop` (SIGINT) and restart | Exit 130; Ready; per-tag timestamps forward only |
+| Pause / resume | 259 ms / 388 ms |
+| Cancel `drain` | Cancelled 11 s after the request |
+| Status p95 / max | 366 ms / 382 ms |
+| Live lag p95 / max | 1.15 s / 11.0 s (46 samples). The maximum is the first sample after the 30 s pause. |
+
+No session was Failed or Uncertain, and nothing was resent.
