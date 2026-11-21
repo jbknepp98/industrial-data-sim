@@ -28,6 +28,8 @@ public sealed partial class DurableRuntime : IDisposable
     private string? generationAfter;
     internal Action<string>? FaultPoint { get; set; }
     internal Func<long>? FreeDiskBytes { get; set; }
+    /// <summary>Wall clock for open-ended sessions; replaceable in tests.</summary>
+    internal Func<DateTimeOffset> UtcNow { get; set; } = () => DateTimeOffset.UtcNow;
 
     public DurableRuntime(string path, RuntimeLimits? limits = null, ILogger<DurableRuntime>? logger = null, bool createIfMissing = true, ExecutionMode mode = ExecutionMode.Simulation)
     {

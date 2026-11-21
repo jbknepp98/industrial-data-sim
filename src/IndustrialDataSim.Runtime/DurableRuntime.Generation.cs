@@ -55,6 +55,13 @@ public sealed partial class DurableRuntime
                 "Restore verified process state. Do not reset the cursor or replay submitted values.", id);
             return new(id, false, failure.Error.Message);
         }
+        // An open-ended session never generates past the wall clock, in any
+        // mode: even an unpaced run must not publish future timestamps.
+        if (model.Session.OpenEnded)
+        {
+            var now = UtcNow();
+            if (notAfterUtc is not { } fence || fence > now) notAfterUtc = now;
+        }
         var window = GenerationWindow.Generate(model, session.NextSlot, limits.CandidateSlotsPerTurn, limits.BatchPoints, limits.BatchBytes, notAfterUtc);
         if (window.Error is { } error)
         {

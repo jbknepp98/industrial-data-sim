@@ -82,6 +82,8 @@ internal static partial class ManufacturingDefinitionLoader
         bool windowed = spec.TryGetProperty("execution", out var executionMode);
         if (windowed && (executionMode.ValueKind != JsonValueKind.String || executionMode.GetString() != "windowed"))
             throw Fail(path + ".execution", "Use windowed for bounded checkpoint execution, or omit execution for the legacy precompiled model.");
+        if (session.OpenEnded && !windowed)
+            throw Fail(path + ".execution", "An open-ended session (no endUtc) needs execution: windowed. Precompiled and target-bounded models need an endUtc.");
         long tickMs = Integer(spec, "tickMs", path, 1);
         long tickTicks = checked(tickMs * TimeSpan.TicksPerMillisecond);
         var array = Field(spec, "nodes", path);

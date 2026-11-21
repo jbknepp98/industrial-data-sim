@@ -21,6 +21,14 @@ public static class DryRun
     {
         var session = definition.Session;
         long intervalTicks = definition.SamplingIntervalMs * TimeSpan.TicksPerMillisecond;
+        if (session.OpenEnded)
+        {
+            // An open-ended session has no end to preview. Show its first part:
+            // as many whole timestamps as fit the preview limit, from startUtc.
+            long samples = Math.Max(1, MaximumPoints / session.OutputTags.Count);
+            definition = definition.WithEnd(session.StartUtc.AddTicks(checked(samples * intervalTicks)));
+            session = definition.Session;
+        }
         long durationTicks = (session.EndUtc - session.StartUtc).Ticks;
         // Ceiling division for [start,end). Do not use floating-point seconds:
         // they can drift or put a point exactly on the exclusive end boundary.

@@ -43,6 +43,8 @@ public sealed partial class DurableRuntime
             }
             if (Scalar("SELECT archive_id FROM sessions WHERE id=$id", ("$id", id)) is string)
                 throw new RuntimeFailure("extension.archived", "Archived sessions cannot be extended. Preserve their audit history and use a new session with appropriate tag ownership.");
+            if (model.Session.OpenEnded)
+                throw new RuntimeFailure("extension.open_horizon", "This session is open-ended and runs until stopped, so there is no end to extend. Cancel it to end it.");
             if (revision != expectedRevision)
                 throw new RuntimeFailure("extension.stale_revision", "expectedRevision is stale. Inspect the current horizon and submit a new request based on that revision.");
             if (revision >= 1000)
@@ -97,7 +99,7 @@ public sealed partial class DurableRuntime
     {
         var admitted = LoadModel(id, includeHorizon: false);
         var current = Horizon(id);
-        return (object)new { sessionId = id, current.Revision, admittedEndUtc = admitted.Session.EndUtc,
+        return (object)new { sessionId = id, current.Revision, openEnded = admitted.Session.OpenEnded, admittedEndUtc = admitted.Session.EndUtc,
             effectiveEndUtc = current.EndUtc, session = GetSession(id),
             notice = "A later end preserves the original sampling grid and patterns. Finite schedules keep their terminal behavior; they do not repeat automatically." };
     }, sessionId: id);

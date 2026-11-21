@@ -57,7 +57,7 @@ public class SessionDefinitionLoaderTests
     [InlineData("connectionProfile", "\"https://example.invalid\"", "session.invalid_identifier")]
     [InlineData("sessionId", "\"\"", "session.invalid_identifier")]
     [InlineData("sessionId", "\"has space\"", "session.invalid_identifier")]
-    [InlineData("schemaVersion", "2", "session.unsupported_version")]
+    [InlineData("schemaVersion", "3", "session.unsupported_version")]
     [InlineData("schemaVersion", "1.5", "session.unsupported_version")]
     [InlineData("schemaVersion", "1.0", "session.unsupported_version")]
     [InlineData("schemaVersion", "\"1\"", "session.unsupported_version")]

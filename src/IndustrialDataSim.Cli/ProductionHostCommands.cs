@@ -133,7 +133,7 @@ public static partial class CliApplication
                 var loaded = SimulationDefinitionLoader.Load(request.Configuration!);
                 if (!loaded.IsValid) { WriteResult(writer, loaded.Errors); return 1; }
                 var settings = delivery.AdmitAsync(request.Configuration!, CancellationToken.None).GetAwaiter().GetResult();
-                result = new { settings, session = SessionView(runtime.GetSession(loaded.Definition!.Session.SessionId)) };
+                result = new { settings, warnings = loaded.Warnings, session = SessionView(runtime.GetSession(loaded.Definition!.Session.SessionId)) };
             }
             else
             {

@@ -14,7 +14,7 @@ namespace IndustrialDataSim.Core.Configuration;
 public static partial class SessionDefinitionLoader
 {
     private static readonly string[] RootProperties =
-        ["schemaVersion", "sessionId", "connectionProfile", "dataset", "startUtc", "endUtc", "outputTags"];
+        ["schemaVersion", "sessionId", "connectionProfile", "dataset", "startUtc", "backfill", "endUtc", "outputTags"];
 
     public static SessionLoadResult Load(string json)
     {
@@ -33,14 +33,26 @@ public static partial class SessionDefinitionLoader
         }
 
         CheckProperties(root, RootProperties, "$", errors);
+        int schema = 0;
         if (!root.TryGetProperty("schemaVersion", out JsonElement version))
         {
             errors.Add(new("session.required", "$.schemaVersion", "This field is required."));
         }
-        else if (version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out int v) || v != 1)
+        else if (version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out schema) || schema is not (1 or 2))
         {
             errors.Add(new("session.unsupported_version", "$.schemaVersion",
-                "Only schemaVersion 1 is supported; use the integer literal 1."));
+                "Use schemaVersion 1, or 2 for backfill and open-ended sessions (integer literal)."));
+            schema = 0;
+        }
+        if (root.TryGetProperty("backfill", out _))
+        {
+            // Backfill depends on the admission time. The CLI resolves it to a
+            // concrete startUtc before validation, admission or preview, so a
+            // stored model is always fully concrete and restarts are deterministic.
+            errors.Add(new(schema == 1 ? "session.backfill_requires_v2" : "session.backfill_unresolved", "$.backfill",
+                schema == 1
+                    ? "backfill needs schemaVersion 2. Set schemaVersion to 2, or use startUtc."
+                    : "backfill is resolved to startUtc by the CLI when the model is validated, previewed or admitted. Load it through the CLI, or supply startUtc."));
         }
 
         string? id = ReadString(root, "sessionId", "$", errors);
@@ -54,8 +66,11 @@ public static partial class SessionDefinitionLoader
             errors.Add(datasetError);
         }
 
-        DateTimeOffset? start = ReadUtc(root, "startUtc", errors);
-        DateTimeOffset? end = ReadUtc(root, "endUtc", errors);
+        DateTimeOffset? start = root.TryGetProperty("backfill", out _) && !root.TryGetProperty("startUtc", out _)
+            ? null : ReadUtc(root, "startUtc", errors);
+        // schemaVersion 2 may omit endUtc: the session then runs until stopped.
+        bool openEnded = schema == 2 && !root.TryGetProperty("endUtc", out _);
+        DateTimeOffset? end = openEnded ? SessionDefinition.OpenEndUtc : ReadUtc(root, "endUtc", errors);
         if (start.HasValue && end.HasValue && end <= start)
         {
             errors.Add(new("session.invalid_time_range", "$.endUtc",
@@ -68,8 +83,8 @@ public static partial class SessionDefinitionLoader
             return new(null, errors.AsReadOnly());
         }
 
-        return new(new SessionDefinition(1, id!, profile!, dataset!, start!.Value,
-            end!.Value, tags.AsReadOnly()), Array.Empty<ValidationError>());
+        return new(new SessionDefinition(schema, id!, profile!, dataset!, start!.Value,
+            end!.Value, tags.AsReadOnly()) { OpenEnded = openEnded }, Array.Empty<ValidationError>());
     }
 
     internal static JsonDocument? Parse(string json, out ValidationError? error)

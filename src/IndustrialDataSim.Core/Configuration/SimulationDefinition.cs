@@ -33,6 +33,16 @@ public sealed class SimulationDefinition
                 "Process checkpoint clock does not match the saved sample cursor. Restore verified state; do not regenerate or edit the checkpoint."));
     }
 
+    /// <summary>The same model with a bounded end, used to preview an open-ended session.</summary>
+    internal SimulationDefinition WithEnd(DateTimeOffset endUtc) =>
+        new(Session with { EndUtc = endUtc }, SamplingIntervalMs, Generators)
+        {
+            Execution = Execution,
+            HasProductionTarget = HasProductionTarget,
+            ProcessTrace = ProcessTrace,
+            OmittedProcessTransitions = OmittedProcessTransitions
+        };
+
     public bool HasProductionTarget { get; internal init; }
     public IReadOnlyList<ProcessTransition> ProcessTrace { get; internal init; } = [];
     public int OmittedProcessTransitions { get; internal init; }
@@ -44,5 +54,7 @@ public sealed class SimulationDefinition
 public sealed record SimulationLoadResult(
     SimulationDefinition? Definition, IReadOnlyList<ValidationError> Errors)
 {
+    /// <summary>Advisories for a valid model, such as patterns that will stop changing.</summary>
+    public IReadOnlyList<ValidationError> Warnings { get; init; } = [];
     public bool IsValid => Definition is not null && Errors.Count == 0;
 }

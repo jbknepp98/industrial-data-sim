@@ -45,6 +45,7 @@ public static partial class CliApplication
             (action == "history" && args.Length == 5 && (!long.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out historyCursor) || historyCursor < 0)))
         { WriteResult(output, [new("cli.history_arguments", "$", "Use 1–10000 batches per history segment and a nonnegative receipt cursor. Stop the host and pause active sessions before archiving history.")]); return 2; }
         string? configuration = null;
+        IReadOnlyList<ValidationError> warnings = [];
         if (action == "start")
         {
             var input = ReadInputFile(args[3]);
@@ -52,6 +53,7 @@ public static partial class CliApplication
             var loaded = Core.Configuration.SimulationDefinitionLoader.Load(input.Json!);
             if (!loaded.IsValid) { WriteResult(output, loaded.Errors); return 1; }
             configuration = input.Json;
+            warnings = loaded.Warnings;
         }
         object result;
         int exit = 0;
@@ -84,7 +86,7 @@ public static partial class CliApplication
             {
                 using var client = new HistorianClient(HistorianConnection.FromEnvironment());
                 var delivery = new ProductionDelivery(runtime, client);
-                if (action == "start") result = new { settings = delivery.AdmitAsync(configuration!, stop).GetAwaiter().GetResult(),
+                if (action == "start") result = new { settings = delivery.AdmitAsync(configuration!, stop).GetAwaiter().GetResult(), warnings,
                     message = "Production session admitted after read-only preflight. No TVQ write has started. Inspect Dataset retention settings before production run." };
                 else
                 {

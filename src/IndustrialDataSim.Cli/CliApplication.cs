@@ -63,7 +63,7 @@ public static partial class CliApplication
         var model = SimulationDefinitionLoader.Load(input.Json!);
         if (!model.IsValid || command == "validate-simulation")
         {
-            WriteResult(output, model.Errors);
+            WriteResult(output, model.Errors, model.Warnings);
             return model.IsValid ? 0 : 1;
         }
         if (command == "explain-process")
@@ -91,6 +91,8 @@ public static partial class CliApplication
             valid = true,
             errors = Array.Empty<ValidationError>(),
             mode = "offline",
+            warnings = model.Warnings,
+            openEnded = model.Definition!.Session.OpenEnded,
             sessionId = model.Definition!.Session.SessionId,
             dataset = model.Definition.Session.Dataset,
             generatorVersion = 1,
@@ -117,7 +119,11 @@ public static partial class CliApplication
             }
             // Accept an editor's BOM, but do not replace malformed UTF-8 bytes.
             int offset = count >= 3 && buffer[0] == 0xef && buffer[1] == 0xbb && buffer[2] == 0xbf ? 3 : 0;
-            return (new UTF8Encoding(false, true).GetString(buffer, offset, count - offset), null, 0);
+            string json = new UTF8Encoding(false, true).GetString(buffer, offset, count - offset);
+            // A relative backfill becomes a concrete startUtc now, before any
+            // validation, preview or admission, so the admitted model is fixed.
+            json = BackfillResolver.Resolve(json, DateTimeOffset.UtcNow, out var backfillError);
+            return backfillError is null ? (json, null, 0) : (null, backfillError, 1);
         }
         catch (DecoderFallbackException)
         {
@@ -131,16 +137,15 @@ public static partial class CliApplication
         }
     }
 
-    private static void WriteResult(TextWriter output, IReadOnlyList<ValidationError> errors)
+    private static void WriteResult(TextWriter output, IReadOnlyList<ValidationError> errors, IReadOnlyList<ValidationError>? warnings = null)
     {
         // Version this small response envelope independently of the future
         // session schema. No caller-supplied argument is reflected in output.
-        WriteResponse(output, new
-        {
-            schemaVersion = 1,
-            valid = errors.Count == 0,
-            errors
-        }, new("cli.output_limit", "$",
+        // Warnings appear only when present, keeping earlier responses unchanged.
+        object response = warnings is { Count: > 0 }
+            ? new { schemaVersion = 1, valid = errors.Count == 0, errors, warnings }
+            : new { schemaVersion = 1, valid = errors.Count == 0, errors };
+        WriteResponse(output, response, new("cli.output_limit", "$",
             "The response exceeds 4 MiB. Reduce the configuration size, correct any known validation issues, and rerun the command."));
     }
 

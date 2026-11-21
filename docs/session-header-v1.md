@@ -1,5 +1,7 @@
 # Session header v1
 
+> schemaVersion 2 (1.1.0) adds `backfill` and optional `endUtc`; see [open-ended sessions](open-ended-sessions.md).
+
 This is a small, offline configuration contract. A successful validation means
 the header is well-formed, not that a complete simulation can execute. Generator
 definitions, sampling, seeds, and preview limits belong to the implemented

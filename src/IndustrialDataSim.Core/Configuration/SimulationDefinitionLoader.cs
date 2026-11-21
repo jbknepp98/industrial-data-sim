@@ -141,10 +141,40 @@ public static class SimulationDefinitionLoader
                 };
             }
         }
+        if (errors.ErrorCount == 0 && session!.OpenEnded)
+        {
+            // Owner decision: open-ended sessions may use holdLast patterns, but
+            // say which ones will stop changing so a flat line is never a surprise.
+            var warnings = new List<ValidationError>();
+            int index = 0;
+            foreach (var generator in generators.EnumerateArray())
+            {
+                string tag = generator.GetProperty("tag").GetString()!;
+                if (HoldsLast(definitions[tag]))
+                    warnings.Add(new("simulation.pattern_holds_last", $"$.generators[{index}]",
+                        "This open-ended session runs until stopped, but this pattern finishes its schedule and then holds its last value. Set its end policy to repeat to keep it changing."));
+                index++;
+            }
+            return new(new(session, interval, new ReadOnlyDictionary<string, GeneratorDefinition>(definitions)), []) { Warnings = warnings.AsReadOnly() };
+        }
         return errors.ErrorCount == 0
             ? new(new(session!, interval, new ReadOnlyDictionary<string, GeneratorDefinition>(definitions)), [])
             : new(null, errors.AsReadOnly());
     }
+
+    /// <summary>True when a pattern stops changing after a finite schedule.</summary>
+    private static bool HoldsLast(GeneratorDefinition pattern) => pattern switch
+    {
+        StaircaseGeneratorDefinition staircase => staircase.Steps.Count > 1,
+        SequenceGeneratorDefinition => true,
+        BooleanTimelineGeneratorDefinition timeline => timeline.PeriodTicks is null && timeline.Steps.Count > 1,
+        StringTimelineGeneratorDefinition timeline => timeline.PeriodTicks is null && timeline.Steps.Count > 1,
+        BooleanGateGeneratorDefinition gate => HoldsLast(gate.Pattern),
+        // Branches restart whenever a repeating trigger changes; otherwise they run once.
+        BooleanSwitchGeneratorDefinition choice => choice.Trigger is not BooleanTimelineGeneratorDefinition { PeriodTicks: not null } &&
+            (HoldsLast(choice.WhenFalse) || HoldsLast(choice.WhenTrue)),
+        _ => false
+    };
 
     internal static GeneratorDefinition? ReadPattern(JsonElement generator, OutputTagDefinition? output,
         string path, ValidationErrors errors, ref int remainingRandomHolds, bool sequenceChild = false, bool switchBranch = false, bool gateChild = false)

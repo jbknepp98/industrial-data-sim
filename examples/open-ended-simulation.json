@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "generatorVersion": 1,
+  "session": {
+    "schemaVersion": 2,
+    "sessionId": "example-open-ended",
+    "connectionProfile": "local-development",
+    "dataset": "Example Dataset",
+    "backfill": "72h",
+    "outputTags": [
+      { "name": "Example.Line.Running", "valueType": "boolean" },
+      { "name": "Example.Line.SKU", "valueType": "string" },
+      { "name": "Example.Line.Speed", "valueType": "number" },
+      { "name": "Example.Tank.Temperature", "valueType": "number" }
+    ]
+  },
+  "samplingIntervalMs": 1000,
+  "generators": [
+    {
+      "tag": "Example.Line.Running",
+      "kind": "booleanTimeline",
+      "afterSteps": "repeat",
+      "steps": [
+        { "value": false, "durationMs": 1800000 },
+        { "value": true, "durationMs": 27000000 }
+      ]
+    },
+    {
+      "tag": "Example.Line.SKU",
+      "kind": "stringTimeline",
+      "afterSteps": "repeat",
+      "steps": [
+        { "value": "SKU-A", "durationMs": 10800000 },
+        { "value": "SKU-B", "durationMs": 7200000 }
+      ]
+    },
+    {
+      "tag": "Example.Line.Speed",
+      "kind": "booleanGate",
+      "triggerTag": "Example.Line.Running",
+      "whenFalse": "pauseAndSuppress",
+      "pattern": {
+        "kind": "randomIntegerHold",
+        "minimum": 110,
+        "maximum": 130,
+        "seed": 11,
+        "durationMs": 3600000,
+        "holdDurationRangeMs": { "minimum": 300000, "maximum": 900000 },
+        "adjacentValues": "requireChange",
+        "afterDuration": "repeat"
+      }
+    },
+    {
+      "tag": "Example.Tank.Temperature",
+      "kind": "staircase",
+      "afterSteps": "repeat",
+      "seed": 5,
+      "maxTotalDurationMs": 86400000,
+      "steps": [
+        { "value": 18, "durationRangeMs": { "minimum": 21600000, "maximum": 28800000 } },
+        { "value": 22, "durationRangeMs": { "minimum": 28800000, "maximum": 36000000 } },
+        { "value": 20, "durationRangeMs": { "minimum": 14400000, "maximum": 21600000 } }
+      ]
+    }
+  ]
+}

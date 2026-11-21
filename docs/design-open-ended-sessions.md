@@ -1,6 +1,9 @@
 # Design note: open-ended sessions (1.1.0)
 
 Status: **approved with owner decisions**, November 21, 2026. See "Owner decisions" below.
+Implementation: steps 1–3 done. User guide: [open-ended-sessions.md](open-ended-sessions.md).
+No database schema change was needed: backfill resolves to a concrete `startUtc`
+before admission, and an open end is stored as a header without `endUtc`.
 
 ## Requirement (owner, November 21, 2026)
 
