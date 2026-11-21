@@ -69,7 +69,7 @@ its actual elapsed local time. Its clock is not delayed to that sample. Coarse
 sampling can miss a short sequence step entirely. A session can end partway
 through a sequence; all patterns are still validated up front.
 
-`afterSequence` must be explicit and currently accepts only `holdLast`. After
+`afterSequence` must be explicit: `holdLast`, or `repeat` from 1.1.0 (see [repeating patterns](repeat-patterns.md)). After
 the final scheduled interval, freeze its final scheduled value, not whichever
 value happened to be sampled last. Thus changing sample frequency does not
 change the post-sequence value. The session's end remains exclusive.

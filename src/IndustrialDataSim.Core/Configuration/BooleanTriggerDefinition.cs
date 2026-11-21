@@ -5,26 +5,47 @@ namespace IndustrialDataSim.Core.Configuration;
 
 internal sealed record BooleanTimelineStep(long StartTicks, long EndTicks, bool Value);
 
-internal sealed record BooleanTimelineGeneratorDefinition(IReadOnlyList<BooleanTimelineStep> Steps) : GeneratorDefinition
+/// <param name="PeriodTicks">Null holds the final state after the last step.
+/// Otherwise the steps repeat on a fixed cycle of this length (afterSteps: repeat).</param>
+internal sealed record BooleanTimelineGeneratorDefinition(
+    IReadOnlyList<BooleanTimelineStep> Steps, long? PeriodTicks = null) : GeneratorDefinition
 {
     internal (bool Value, long SinceTicks) StateAt(long elapsedTicks)
+    {
+        long cycle = 0, local = elapsedTicks;
+        if (PeriodTicks is { } period)
+        {
+            cycle = elapsedTicks / period;
+            local = elapsedTicks % period;
+        }
+        int index = Find(local);
+        var step = Steps[index];
+        if (PeriodTicks is not { } p) return (step.Value, step.StartTicks);
+        // A state that is equal on both sides of a cycle boundary is one
+        // continuous activation; its clock must not restart at the boundary.
+        if (Steps.Count == 1) return (step.Value, 0);
+        if (index == 0 && cycle > 0 && Steps[^1].Value == step.Value)
+            return (step.Value, (cycle - 1) * p + Steps[^1].StartTicks);
+        return (step.Value, cycle * p + step.StartTicks);
+    }
+
+    private int Find(long local)
     {
         int low = 0, high = Steps.Count;
         while (low < high)
         {
             int middle = low + (high - low) / 2;
-            if (elapsedTicks < Steps[middle].EndTicks) high = middle;
+            if (local < Steps[middle].EndTicks) high = middle;
             else low = middle + 1;
         }
-        var step = Steps[Math.Min(low, Steps.Count - 1)];
-        return (step.Value, step.StartTicks);
+        return Math.Min(low, Steps.Count - 1);
     }
 
     internal override JsonElement? Evaluate(long elapsedTicks) => JsonSerializer.SerializeToElement(StateAt(elapsedTicks).Value);
 }
 
 internal sealed record BooleanSwitchGeneratorDefinition(
-    string TriggerTag, SequenceGeneratorDefinition WhenFalse, SequenceGeneratorDefinition WhenTrue,
+    string TriggerTag, GeneratorDefinition WhenFalse, GeneratorDefinition WhenTrue,
     GeneratorDefinition? Trigger = null) : GeneratorDefinition
 {
     internal override JsonElement? Evaluate(long elapsedTicks)
@@ -50,9 +71,7 @@ internal static class BooleanTriggerDefinitionLoader
         long before = errors.ErrorCount;
         if (output is not null && output.ValueType != "boolean")
             errors.Add(new("simulation.timeline_requires_boolean", path + ".tag", "Declare the timeline output as boolean."));
-        string? after = SessionDefinitionLoader.ReadString(generator, "afterSteps", path, errors);
-        if (after is not null && after != "holdLast")
-            errors.Add(new("simulation.invalid_after_steps", path + ".afterSteps", "Use holdLast."));
+        string? after = SessionDefinitionLoader.ReadAfterPolicy(generator, "afterSteps", path, errors);
         if (!generator.TryGetProperty("steps", out var steps) || steps.ValueKind != JsonValueKind.Array ||
             steps.GetArrayLength() == 0 || steps.GetArrayLength() > 1000)
         {
@@ -90,7 +109,9 @@ internal static class BooleanTriggerDefinitionLoader
             else resolved.Add(new(total, end, state));
             total = end;
         }
-        return errors.ErrorCount == before ? new BooleanTimelineGeneratorDefinition(resolved.AsReadOnly()) : null;
+        return errors.ErrorCount == before
+            ? new BooleanTimelineGeneratorDefinition(resolved.AsReadOnly(), after == "repeat" ? total : null)
+            : null;
     }
 
     internal static GeneratorDefinition? LoadSwitch(JsonElement generator, OutputTagDefinition? output,
@@ -108,7 +129,7 @@ internal static class BooleanTriggerDefinitionLoader
         return errors.ErrorCount == before ? new BooleanSwitchGeneratorDefinition(trigger!, whenFalse!, whenTrue!) : null;
     }
 
-    private static SequenceGeneratorDefinition? ReadBranch(JsonElement generator, string name,
+    private static GeneratorDefinition? ReadBranch(JsonElement generator, string name,
         OutputTagDefinition? output, string path, ValidationErrors errors, ref int remainingHolds)
     {
         if (!generator.TryGetProperty(name, out var branch) || branch.ValueKind != JsonValueKind.Object)
@@ -117,6 +138,6 @@ internal static class BooleanTriggerDefinitionLoader
             return null;
         }
         return SimulationDefinitionLoader.ReadPattern(branch, output, path + "." + name, errors,
-            ref remainingHolds, switchBranch: true) as SequenceGeneratorDefinition;
+            ref remainingHolds, switchBranch: true);
     }
 }

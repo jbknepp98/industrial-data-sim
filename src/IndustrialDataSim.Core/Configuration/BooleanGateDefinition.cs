@@ -9,9 +9,11 @@ internal sealed record GateInterval(long StartTicks, long EndTicks, long ActiveB
 /// Pure gating from known simulated input. Immutable open intervals preserve
 /// exact elapsed time across pauses, including transitions between sample slots.
 /// </summary>
+/// <param name="PeriodTicks">Set when the trigger timeline repeats: OpenIntervals
+/// then describe one cycle and ActivePerCycle is the open time in each cycle.</param>
 internal sealed record BooleanGateGeneratorDefinition(
     string TriggerTag, string WhenFalse, GeneratorDefinition Pattern,
-    IReadOnlyList<GateInterval>? OpenIntervals = null) : GeneratorDefinition
+    IReadOnlyList<GateInterval>? OpenIntervals = null, long? PeriodTicks = null, long ActivePerCycle = 0) : GeneratorDefinition
 {
     internal BooleanGateGeneratorDefinition Bind(GeneratorDefinition source)
     {
@@ -19,6 +21,19 @@ internal sealed record BooleanGateGeneratorDefinition(
         if (source is ConstantGeneratorDefinition constant)
         {
             if (constant.Value.GetBoolean()) intervals.Add(new(0, long.MaxValue, 0));
+        }
+        else if (source is BooleanTimelineGeneratorDefinition { PeriodTicks: { } period } cyclic)
+        {
+            // One cycle of open intervals. The final step ends at the cycle
+            // boundary; a state true on both sides simply continues.
+            long active = 0;
+            foreach (var step in cyclic.Steps)
+            {
+                if (!step.Value) continue;
+                intervals.Add(new(step.StartTicks, step.EndTicks, active));
+                active += step.EndTicks - step.StartTicks;
+            }
+            return this with { OpenIntervals = intervals.AsReadOnly(), PeriodTicks = period, ActivePerCycle = active };
         }
         else if (source is BooleanTimelineGeneratorDefinition timeline)
         {
@@ -38,9 +53,15 @@ internal sealed record BooleanGateGeneratorDefinition(
         return this with { OpenIntervals = intervals.AsReadOnly() };
     }
 
-    private GateInterval? OpenAt(long elapsedTicks)
+    private (GateInterval Interval, long Cycle, long Local)? OpenAt(long elapsedTicks)
     {
         var intervals = OpenIntervals ?? throw new InvalidOperationException("Gate was not bound during validation.");
+        long cycle = 0;
+        if (PeriodTicks is { } period)
+        {
+            cycle = elapsedTicks / period;
+            elapsedTicks %= period;
+        }
         int low = 0, high = intervals.Count;
         while (low < high)
         {
@@ -48,18 +69,19 @@ internal sealed record BooleanGateGeneratorDefinition(
             if (intervals[middle].StartTicks <= elapsedTicks) low = middle + 1;
             else high = middle;
         }
-        return low > 0 && elapsedTicks < intervals[low - 1].EndTicks ? intervals[low - 1] : null;
+        return low > 0 && elapsedTicks < intervals[low - 1].EndTicks ? (intervals[low - 1], cycle, elapsedTicks) : null;
     }
 
     internal override bool EmitsAt(long elapsedTicks) => OpenAt(elapsedTicks) is not null;
 
     internal override JsonElement? Evaluate(long elapsedTicks)
     {
-        var interval = OpenAt(elapsedTicks) ?? throw new InvalidOperationException("A closed gate must not be evaluated for output.");
+        var (interval, cycle, within) = OpenAt(elapsedTicks) ?? throw new InvalidOperationException("A closed gate must not be evaluated for output.");
         // Both modes initially wait for first true. Later false spans either
         // stop the pattern clock or advance it without creating any TVQ points.
+        // A repeating trigger adds the open time of every completed cycle.
         long local = WhenFalse == "pauseAndSuppress"
-            ? interval.ActiveBeforeTicks + (elapsedTicks - interval.StartTicks)
+            ? cycle * ActivePerCycle + interval.ActiveBeforeTicks + (within - interval.StartTicks)
             : elapsedTicks - OpenIntervals![0].StartTicks;
         return Pattern.Evaluate(local);
     }

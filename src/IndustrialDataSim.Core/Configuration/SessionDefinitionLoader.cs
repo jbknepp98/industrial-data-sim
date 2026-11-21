@@ -169,6 +169,24 @@ public static partial class SessionDefinitionLoader
         return value.GetString()!;
     }
 
+    /// <summary>
+    /// Reads a finite pattern's end policy: holdLast keeps the final value,
+    /// repeat restarts the pattern on a fixed cycle. Returns null when invalid.
+    /// </summary>
+    internal static string? ReadAfterPolicy(JsonElement item, string name, string path, ValidationErrors errors)
+    {
+        string? value = ReadString(item, name, path, errors);
+        if (value is null or "holdLast" or "repeat") return value;
+        string code = name switch
+        {
+            "afterSequence" => "simulation.invalid_after_sequence",
+            "afterDuration" => "simulation.invalid_after_duration",
+            _ => "simulation.invalid_after_steps"
+        };
+        errors.Add(new(code, path + "." + name, "Use holdLast or repeat."));
+        return null;
+    }
+
     private static void CheckIdentifier(string? value, string path, ValidationErrors errors)
     {
         if (value is not null && !IdentifierPattern().IsMatch(value))

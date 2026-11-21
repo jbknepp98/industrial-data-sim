@@ -41,7 +41,7 @@ like a fixed duration. A session may finish before this pattern does.
 - `requireChange`: every new choice differs from the previous value. This requires
   at least two values in the range, even if a particular plan has just one hold.
 
-`afterDuration` currently accepts only `holdLast`: the final value continues
+`afterDuration` accepts `holdLast` or, from 1.1.0, `repeat` (see [repeating patterns](repeat-patterns.md)). With `holdLast`, the final value continues
 through session end after the exact scheduled duration. That continuation is
 outside the bounded hold schedule. A containing [sequence](sequence-v1.md) instead advances to its next pattern
 when this scheduled interval finishes.

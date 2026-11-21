@@ -1,5 +1,7 @@
 # Boolean-controlled sequences
 
+> From 1.1.0, `afterSteps` also accepts `repeat`; see [repeating patterns](repeat-patterns.md).
+
 This first trigger increment connects a simulated Boolean tag in the same session
 to a numeric response tag. The trigger can be a `booleanTimeline` or Boolean
 `constant`. The response uses `booleanSwitch`, with explicit False/True sequence

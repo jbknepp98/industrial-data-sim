@@ -133,7 +133,7 @@ public class StaircaseSimulationTests
     public void UnsupportedEndPolicyIsRejected()
     {
         var model = Model();
-        model["generators"]![0]!["afterSteps"] = "repeat";
+        model["generators"]![0]!["afterSteps"] = "loop";
         Invalid(model, "simulation.invalid_after_steps");
     }
 

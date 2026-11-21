@@ -21,13 +21,10 @@ internal static class StaircaseDefinitionLoader
             errors.Add(new("simulation.staircase_requires_number", path + ".tag",
                 "A staircase must target an output declared as number."));
         }
-        string? afterSteps = SessionDefinitionLoader.ReadString(generator, "afterSteps", path, errors);
-        if (afterSteps is not null && afterSteps != "holdLast")
-        {
-            errors.Add(new("simulation.invalid_after_steps", path + ".afterSteps", "Use holdLast."));
-        }
+        string? afterSteps = SessionDefinitionLoader.ReadAfterPolicy(generator, "afterSteps", path, errors);
         long budget = MaximumDurationMs;
-        if (generator.TryGetProperty("maxTotalDurationMs", out var limit))
+        bool hasBudget = generator.TryGetProperty("maxTotalDurationMs", out var limit);
+        if (hasBudget)
         {
             budget = ReadDuration(limit, path + ".maxTotalDurationMs", errors);
         }
@@ -124,24 +121,42 @@ internal static class StaircaseDefinitionLoader
             errors.Add(new("simulation.infeasible_duration_limit", path + ".maxTotalDurationMs",
                 "maxTotalDurationMs cannot fit all fixed durations and minimum random durations. Increase the limit or reduce those durations."));
         }
+        // A repeat cycle must have one fixed length: the sum of fixed durations,
+        // or maxTotalDurationMs when any duration is random.
+        long? cycleMs = !hasRange ? minimumTotal : hasBudget ? budget : null;
+        if (afterSteps == "repeat" && cycleMs is null)
+        {
+            errors.Add(new("simulation.repeat_needs_fixed_cycle", path + ".maxTotalDurationMs",
+                "A repeating staircase with random durations needs maxTotalDurationMs to set its cycle length. Add it, or use holdLast."));
+        }
         if (errors.ErrorCount != initialErrors) return null;
 
-        var resolved = new List<StaircaseStep>(parsed.Count);
-        long elapsedMs = 0;
-        long remainingMinimum = minimumTotal;
-        for (int i = 0; i < parsed.Count; i++)
+        StaircaseGeneratorDefinition Resolve(long cycle)
         {
-            var step = parsed[i];
-            remainingMinimum -= step.MinimumMs;
-            // Reserve every later minimum before choosing this dwell. This is
-            // uniform within the current feasible integer range, not uniform
-            // across all possible schedules. Earlier steps get first choice.
-            long upper = Math.Min(step.MaximumMs, budget - elapsedMs - remainingMinimum);
-            long dwell = StableDurationChoice.Choose(seed, i, step.MinimumMs, upper);
-            elapsedMs += dwell;
-            resolved.Add(new(elapsedMs * TimeSpan.TicksPerMillisecond, step.Value));
+            string stream = CycleStream.For("staircase-duration-v1", cycle);
+            var resolved = new List<StaircaseStep>(parsed.Count);
+            long elapsedMs = 0;
+            long remainingMinimum = minimumTotal;
+            for (int i = 0; i < parsed.Count; i++)
+            {
+                var step = parsed[i];
+                remainingMinimum -= step.MinimumMs;
+                // Reserve every later minimum before choosing this dwell. This is
+                // uniform within the current feasible integer range, not uniform
+                // across all possible schedules. Earlier steps get first choice.
+                long upper = Math.Min(step.MaximumMs, budget - elapsedMs - remainingMinimum);
+                long dwell = StableDurationChoice.Choose(stream, seed, i, step.MinimumMs, upper);
+                elapsedMs += dwell;
+                resolved.Add(new(elapsedMs * TimeSpan.TicksPerMillisecond, step.Value));
+            }
+            return new StaircaseGeneratorDefinition(resolved.AsReadOnly())
+            {
+                CycleTicks = cycleMs * TimeSpan.TicksPerMillisecond,
+                Repeat = afterSteps == "repeat",
+                Replan = Resolve
+            };
         }
-        return new StaircaseGeneratorDefinition(resolved.AsReadOnly());
+        return Resolve(0);
     }
 
     private static long ReadDuration(JsonElement value, string path, ValidationErrors errors)

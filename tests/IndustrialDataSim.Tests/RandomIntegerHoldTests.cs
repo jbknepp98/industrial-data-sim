@@ -129,7 +129,7 @@ public class RandomIntegerHoldTests
     [InlineData("durationMs", "9", "simulation.infeasible_hold_schedule")]
     [InlineData("durationMs", "922337203685478", "simulation.invalid_integer")]
     [InlineData("adjacentValues", "\"unknown\"", "simulation.invalid_adjacent_values")]
-    [InlineData("afterDuration", "\"repeat\"", "simulation.invalid_after_duration")]
+    [InlineData("afterDuration", "\"loop\"", "simulation.invalid_after_duration")]
     [InlineData("holdDurationRangeMs", "null", "simulation.invalid_hold_duration")]
     [InlineData("holdDurationRangeMs", "{\"minimum\":20,\"maximum\":10}", "simulation.invalid_hold_duration")]
     [InlineData("holdDurationRangeMs", "{\"minimum\":10}", "simulation.invalid_integer")]

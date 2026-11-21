@@ -4,15 +4,17 @@ using IndustrialDataSim.Core.Validation;
 namespace IndustrialDataSim.Core.Configuration;
 
 internal sealed record StringTimelineStep(long StartTicks, long EndTicks, string Value);
-internal sealed record StringTimelineGeneratorDefinition(IReadOnlyList<StringTimelineStep> Steps) : GeneratorDefinition
+internal sealed record StringTimelineGeneratorDefinition(
+    IReadOnlyList<StringTimelineStep> Steps, long? PeriodTicks = null) : GeneratorDefinition
 {
     internal string ValueAt(long elapsedTicks)
     {
+        long local = PeriodTicks is { } period ? elapsedTicks % period : elapsedTicks;
         int low = 0, high = Steps.Count;
         while (low < high)
         {
             int middle = low + (high - low) / 2;
-            if (elapsedTicks < Steps[middle].EndTicks) high = middle;
+            if (local < Steps[middle].EndTicks) high = middle;
             else low = middle + 1;
         }
         return Steps[Math.Min(low, Steps.Count - 1)].Value;
@@ -34,9 +36,7 @@ internal static class SkuRoutingDefinitionLoader
         long before = errors.ErrorCount;
         if (output is not null && output.ValueType != "string")
             errors.Add(new("simulation.string_timeline_requires_string", path + ".tag", "Declare the string timeline output as string."));
-        string? after = SessionDefinitionLoader.ReadString(generator, "afterSteps", path, errors);
-        if (after is not null && after != "holdLast")
-            errors.Add(new("simulation.invalid_after_steps", path + ".afterSteps", "Use holdLast."));
+        string? after = SessionDefinitionLoader.ReadAfterPolicy(generator, "afterSteps", path, errors);
         if (!generator.TryGetProperty("steps", out var steps) || steps.ValueKind != JsonValueKind.Array || steps.GetArrayLength() is < 1 or > 1000)
         {
             errors.Add(new("simulation.invalid_string_steps", path + ".steps", "Supply 1 through 1000 string timeline steps."));
@@ -65,7 +65,9 @@ internal static class SkuRoutingDefinitionLoader
             if (value is not null) resolved.Add(new(total, end, value));
             total = end;
         }
-        return errors.ErrorCount == before ? new StringTimelineGeneratorDefinition(resolved.AsReadOnly()) : null;
+        return errors.ErrorCount == before
+            ? new StringTimelineGeneratorDefinition(resolved.AsReadOnly(), after == "repeat" ? total : null)
+            : null;
     }
 
     internal static GeneratorDefinition? LoadRoute(JsonElement generator, OutputTagDefinition? output, string path, ValidationErrors errors)
@@ -105,22 +107,71 @@ internal static class SkuRoutingDefinitionLoader
                 errors.Add(new("simulation.duplicate_sku_route", path + ".sku", "Only one route may claim a SKU for the same SKU and readiness sources. Assign distinct SKU values to the cells."));
                 continue;
             }
-            // Union the source transitions. There are at most 2000 intervals;
-            // the final interval holds indefinitely, just like either source.
-            var boundaries = new SortedSet<long>(sku.Steps.Select(s => s.StartTicks)) { 0 };
-            if (readySource is BooleanTimelineGeneratorDefinition timeline)
-                boundaries.UnionWith(timeline.Steps.Select(s => s.StartTicks));
+            // Union the source transitions. A finite route has at most 2000
+            // intervals and its final interval holds indefinitely, like either
+            // source. Repeating sources compile one shared cycle instead.
+            long? skuPeriod = sku.PeriodTicks;
+            long? readyPeriod = (readySource as BooleanTimelineGeneratorDefinition)?.PeriodTicks;
+            bool readyIsTimeline = readySource is BooleanTimelineGeneratorDefinition;
+            if (readyIsTimeline && (skuPeriod is null) != (readyPeriod is null))
+            {
+                errors.Add(new("simulation.route_repeat_mismatch", path + ".readyTag", "The SKU timeline and readiness timeline must both repeat or both hold their last value. Set afterSteps the same way on both."));
+                continue;
+            }
+            long? period = skuPeriod;
+            if (skuPeriod is { } a && readyPeriod is { } b) period = LeastCommonMultiple(a, b);
+            var boundaries = new SortedSet<long> { 0 };
+            if (period is { } cycle)
+            {
+                if (!AddCycleStarts(boundaries, sku.Steps.Select(s => s.StartTicks), skuPeriod!.Value, cycle) ||
+                    (readySource is BooleanTimelineGeneratorDefinition repeating &&
+                     !AddCycleStarts(boundaries, repeating.Steps.Select(s => s.StartTicks), readyPeriod!.Value, cycle)))
+                {
+                    errors.Add(new("simulation.route_cycle_limit", path + ".skuTag", FormattableString.Invariant($"The combined repeat cycle of the SKU and readiness timelines needs more than {MaximumRouteIntervals} intervals. Use cycle lengths that divide evenly into each other.")));
+                    continue;
+                }
+            }
+            else
+            {
+                boundaries.UnionWith(sku.Steps.Select(s => s.StartTicks));
+                if (readySource is BooleanTimelineGeneratorDefinition timeline)
+                    boundaries.UnionWith(timeline.Steps.Select(s => s.StartTicks));
+            }
             var starts = boundaries.ToArray();
             var steps = new List<BooleanTimelineStep>();
             for (int i = 0; i < starts.Length; i++)
             {
-                long start = starts[i], end = i + 1 < starts.Length ? starts[i + 1] : long.MaxValue;
+                long start = starts[i], end = i + 1 < starts.Length ? starts[i + 1] : period ?? long.MaxValue;
                 bool ready = readySource is BooleanTimelineGeneratorDefinition source ? source.StateAt(start).Value : ((ConstantGeneratorDefinition)readySource).Value.GetBoolean();
                 bool active = ready && string.Equals(sku.ValueAt(start), route.Sku, StringComparison.Ordinal);
                 if (steps.Count > 0 && steps[^1].Value == active) steps[^1] = steps[^1] with { EndTicks = end };
                 else steps.Add(new(start, end, active));
             }
-            definitions[name] = new BooleanTimelineGeneratorDefinition(steps.AsReadOnly());
+            definitions[name] = new BooleanTimelineGeneratorDefinition(steps.AsReadOnly(), period);
+            continue;
         }
+    }
+
+    private const int MaximumRouteIntervals = 20_000;
+
+    private static bool AddCycleStarts(SortedSet<long> boundaries, IEnumerable<long> starts, long period, long cycle)
+    {
+        long copies = cycle / period;
+        foreach (long start in starts)
+            for (long k = 0; k < copies; k++)
+            {
+                boundaries.Add(k * period + start);
+                if (boundaries.Count > MaximumRouteIntervals) return false;
+            }
+        return true;
+    }
+
+    private static long LeastCommonMultiple(long a, long b)
+    {
+        long x = a, y = b;
+        while (y != 0) (x, y) = (y, x % y);
+        // Cap instead of overflowing: an oversized cycle fails the interval limit.
+        long factor = a / x;
+        return factor > long.MaxValue / b ? long.MaxValue / b * b : factor * b;
     }
 }

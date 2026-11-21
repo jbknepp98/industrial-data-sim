@@ -1,5 +1,7 @@
 # Deterministic staircase generator
 
+> From 1.1.0, `afterSteps` also accepts `repeat`; see [repeating patterns](repeat-patterns.md).
+
 Use `kind: "staircase"` for a numeric tag with explicit step values and dwell
 periods. The combined `simulation-v1.schema.json` includes this additive v1
 pattern. Existing constant and ramp behavior is unchanged.

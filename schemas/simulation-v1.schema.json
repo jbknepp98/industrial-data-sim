@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Offline simulation v1: signals, sequences, and Boolean triggers",
-  "description": "Version 1 offline model. Constants retain their original semantics. Ramps use finite binary64 arithmetic at sample timestamps. Runtime checks exact tag/type matching, bounds, generator coverage, and strict integer tokens; dry-run separately applies point/byte limits and checks generated arithmetic. Staircases use positive whole-millisecond durations and explicit holdLast behavior; runtime also checks cumulative duration overflow. Random duration ranges require an explicit uint32 seed; optional maxTotalDurationMs reserves remaining minima. Runtime checks ordered ranges and budget feasibility. Random integer holds fill durationMs exactly; runtime validates schedule feasibility, value ranges, and hold allocation limits. Sequences compose finite staircase and random-integer schedules on local clocks. Runtime checks cumulative duration overflow and shared allocation limits. Boolean switches require a declared local Boolean constant or timeline; runtime binds dependencies and prevents unsupported input types. Boolean gates omit closed slots; pause or continue after first true. Runtime validates source binding; preview pointCount counts emitted points while its limit applies to candidate slots. String timelines hold exact string values; SKU routes compare them case-sensitively and require readiness. Runtime validates direct source types and rejects duplicate route claims for the same sources and SKU.",
+  "description": "Version 1 offline model. Constants retain their original semantics. Ramps use finite binary64 arithmetic at sample timestamps. Runtime checks exact tag/type matching, bounds, generator coverage, and strict integer tokens; dry-run separately applies point/byte limits and checks generated arithmetic. Staircases use positive whole-millisecond durations and an explicit end policy: holdLast keeps the final value, repeat restarts on a fixed cycle (see docs/repeat-patterns.md); runtime also checks cumulative duration overflow. Random duration ranges require an explicit uint32 seed; optional maxTotalDurationMs reserves remaining minima. Runtime checks ordered ranges and budget feasibility. Random integer holds fill durationMs exactly; runtime validates schedule feasibility, value ranges, and hold allocation limits. Sequences compose finite staircase and random-integer schedules on local clocks. Runtime checks cumulative duration overflow and shared allocation limits. Boolean switches require a declared local Boolean constant or timeline; runtime binds dependencies and prevents unsupported input types. Boolean gates omit closed slots; pause or continue after first true. Runtime validates source binding; preview pointCount counts emitted points while its limit applies to candidate slots. String timelines hold exact string values; SKU routes compare them case-sensitively and require readiness. Runtime validates direct source types and rejects duplicate route claims for the same sources and SKU.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -106,7 +106,7 @@
                 "const": "staircase"
               },
               "afterSteps": {
-                "const": "holdLast"
+                "enum": ["holdLast", "repeat"]
               },
               "steps": {
                 "type": "array",
@@ -281,7 +281,7 @@
                 ]
               },
               "afterDuration": {
-                "const": "holdLast"
+                "enum": ["holdLast", "repeat"]
               }
             }
           },
@@ -303,7 +303,7 @@
                 "const": "sequence"
               },
               "afterSequence": {
-                "const": "holdLast"
+                "enum": ["holdLast", "repeat"]
               },
               "steps": {
                 "type": "array",
@@ -342,7 +342,7 @@
                 "const": "booleanTimeline"
               },
               "afterSteps": {
-                "const": "holdLast"
+                "enum": ["holdLast", "repeat"]
               },
               "steps": {
                 "type": "array",
@@ -454,7 +454,7 @@
                 "const": "stringTimeline"
               },
               "afterSteps": {
-                "const": "holdLast"
+                "enum": ["holdLast", "repeat"]
               },
               "steps": {
                 "type": "array",
@@ -533,7 +533,7 @@
               "const": "staircase"
             },
             "afterSteps": {
-              "const": "holdLast"
+              "enum": ["holdLast", "repeat"]
             },
             "steps": {
               "type": "array",
@@ -703,7 +703,7 @@
               ]
             },
             "afterDuration": {
-              "const": "holdLast"
+              "enum": ["holdLast", "repeat"]
             }
           }
         }
@@ -722,7 +722,7 @@
           "const": "sequence"
         },
         "afterSequence": {
-          "const": "holdLast"
+          "enum": ["holdLast", "repeat"]
         },
         "steps": {
           "type": "array",
@@ -804,7 +804,7 @@
               "const": "staircase"
             },
             "afterSteps": {
-              "const": "holdLast"
+              "enum": ["holdLast", "repeat"]
             },
             "steps": {
               "type": "array",
@@ -974,7 +974,7 @@
               ]
             },
             "afterDuration": {
-              "const": "holdLast"
+              "enum": ["holdLast", "repeat"]
             }
           }
         },
@@ -991,7 +991,7 @@
               "const": "sequence"
             },
             "afterSequence": {
-              "const": "holdLast"
+              "enum": ["holdLast", "repeat"]
             },
             "steps": {
               "type": "array",

@@ -1,7 +1,7 @@
 # String SKU tracking and exclusive routing
 
 `stringTimeline` emits exact strings from 1–1000 positive, whole-millisecond
-steps. Each step has `value` and `durationMs`; `afterSteps` must be `holdLast`.
+steps. Each step has `value` and `durationMs`; `afterSteps` is `holdLast`, or `repeat` from 1.1.0 (see [repeating patterns](repeat-patterns.md)).
 The output must be declared `string`. Boundaries are half-open and independent
 of sample interval, output declaration order, queue size and restart.
 

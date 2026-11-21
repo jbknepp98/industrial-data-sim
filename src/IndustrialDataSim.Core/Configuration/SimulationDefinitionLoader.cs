@@ -182,6 +182,26 @@ public static class SimulationDefinitionLoader
             errors.Add(new("simulation.unsupported_gate_pattern", path + ".kind", "Use a constant, ramp, staircase, randomIntegerHold, or sequence."));
             return null;
         }
+        var pattern = ReadKind(kind, generator, output, path, errors, ref remainingRandomHolds);
+        if (pattern is StaircaseGeneratorDefinition { Repeat: true } schedule)
+        {
+            string policy = kind == "randomIntegerHold" ? ".afterDuration" : ".afterSteps";
+            if (sequenceChild)
+            {
+                errors.Add(new("simulation.repeat_in_sequence_step", path + policy,
+                    "Steps of a sequence cannot repeat on their own. Use holdLast here and set afterSequence to repeat."));
+                return null;
+            }
+            // CycleTicks is always known when repeat validated; zero cannot occur.
+            return new RepeatingScheduleGeneratorDefinition(schedule.CycleTicks!.Value,
+                cycle => cycle == 0 ? schedule : schedule.Replan!(cycle));
+        }
+        return pattern;
+    }
+
+    private static GeneratorDefinition? ReadKind(string? kind, JsonElement generator, OutputTagDefinition? output,
+        string path, ValidationErrors errors, ref int remainingRandomHolds)
+    {
         switch (kind)
         {
             case "stringTimeline": return SkuRoutingDefinitionLoader.LoadTimeline(generator, output, path, errors);

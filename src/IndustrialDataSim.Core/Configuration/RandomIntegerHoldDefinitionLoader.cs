@@ -22,11 +22,9 @@ internal static class RandomIntegerHoldDefinitionLoader
         long seed = ReadInteger(generator, "seed", 0, uint.MaxValue, path, errors);
         long duration = ReadInteger(generator, "durationMs", 1, MaximumDurationMs, path, errors, milliseconds: true);
         string? adjacent = SessionDefinitionLoader.ReadString(generator, "adjacentValues", path, errors);
-        string? after = SessionDefinitionLoader.ReadString(generator, "afterDuration", path, errors);
+        string? after = SessionDefinitionLoader.ReadAfterPolicy(generator, "afterDuration", path, errors);
         if (adjacent is not null && adjacent is not ("allowRepeat" or "requireChange"))
             errors.Add(new("simulation.invalid_adjacent_values", path + ".adjacentValues", "Use allowRepeat or requireChange."));
-        if (after is not null && after != "holdLast")
-            errors.Add(new("simulation.invalid_after_duration", path + ".afterDuration", "Use holdLast."));
         // Do not diagnose range ordering using fallback zeros from invalid fields.
         if (validBounds && (minimum > maximum || (minimum == maximum && adjacent == "requireChange")))
             errors.Add(new("simulation.invalid_integer_range", path + ".maximum",
@@ -64,8 +62,50 @@ internal static class RandomIntegerHoldDefinitionLoader
                 "No exact schedule fits durationMs and the hold bounds within 10000 holds. Adjust durationMs or the hold bounds; a fixed hold duration must divide durationMs exactly."));
             return null;
         }
-        int count = (int)StableDurationChoice.Choose("integer-hold-count-v1", (uint)seed, 0, fewest, most);
-        if (count > remainingHolds)
+        StaircaseGeneratorDefinition Resolve(long cycle)
+        {
+            int count = (int)StableDurationChoice.Choose(CycleStream.For("integer-hold-count-v1", cycle), (uint)seed, 0, fewest, most);
+            string durations = CycleStream.For("integer-hold-duration-v1", cycle);
+            string values = CycleStream.For("integer-hold-value-v1", cycle);
+            var steps = new List<StaircaseStep>(count);
+            long remaining = duration;
+            long previous = 0;
+            for (int i = 0; i < count; i++)
+            {
+                long later = count - i - 1;
+                // Both remaining minima and remaining capacity matter. This prevents
+                // a short final remainder or an oversized final hold. Products fit
+                // Int64: at most 9999 * MaximumDurationMs < long.MaxValue.
+                long low = Math.Max(lower, remaining - later * upper);
+                long high = Math.Min(upper, remaining - later * lower);
+                long dwell = StableDurationChoice.Choose(durations, (uint)seed, i, low, high);
+                long value;
+                if (i > 0 && adjacent == "requireChange")
+                {
+                    // Draw from a compressed range then skip the previous integer.
+                    // No retry loop, including a two-value range or Int32 extremes.
+                    value = StableDurationChoice.Choose(values, (uint)seed, i, minimum, maximum - 1);
+                    if (value >= previous) value++;
+                }
+                else value = StableDurationChoice.Choose(values, (uint)seed, i, minimum, maximum);
+                remaining -= dwell;
+                steps.Add(new((duration - remaining) * TimeSpan.TicksPerMillisecond, JsonSerializer.SerializeToElement(value)));
+                previous = value;
+            }
+            // Reuse half-open interval lookup and explicit holdLast behavior. This
+            // returns a finite schedule that a sequence can compose; delivery state
+            // remains outside this generator. A repeat cycle is exactly durationMs.
+            return new StaircaseGeneratorDefinition(steps.AsReadOnly())
+            {
+                CycleTicks = duration * TimeSpan.TicksPerMillisecond,
+                Repeat = after == "repeat",
+                Replan = Resolve
+            };
+        }
+        var first = Resolve(0);
+        // The model-wide hold limit applies to the first cycle. Later cycles are
+        // planned one at a time and each stays within 10000 holds.
+        if (first.Steps.Count > remainingHolds)
         {
             // Do not alter a tag's random choices to squeeze it into the global
             // limit: that would make its behavior depend on generator ordering.
@@ -73,36 +113,8 @@ internal static class RandomIntegerHoldDefinitionLoader
                 "Resolved random-integer schedules exceed 10000 total holds per model. Shorten durations, increase hold durations, or split the model."));
             return null;
         }
-        remainingHolds -= count;
-        var steps = new List<StaircaseStep>(count);
-        long remaining = duration;
-        long previous = 0;
-        for (int i = 0; i < count; i++)
-        {
-            long later = count - i - 1;
-            // Both remaining minima and remaining capacity matter. This prevents
-            // a short final remainder or an oversized final hold. Products fit
-            // Int64: at most 9999 * MaximumDurationMs < long.MaxValue.
-            long low = Math.Max(lower, remaining - later * upper);
-            long high = Math.Min(upper, remaining - later * lower);
-            long dwell = StableDurationChoice.Choose("integer-hold-duration-v1", (uint)seed, i, low, high);
-            long value;
-            if (i > 0 && adjacent == "requireChange")
-            {
-                // Draw from a compressed range then skip the previous integer.
-                // No retry loop, including a two-value range or Int32 extremes.
-                value = StableDurationChoice.Choose("integer-hold-value-v1", (uint)seed, i, minimum, maximum - 1);
-                if (value >= previous) value++;
-            }
-            else value = StableDurationChoice.Choose("integer-hold-value-v1", (uint)seed, i, minimum, maximum);
-            remaining -= dwell;
-            steps.Add(new((duration - remaining) * TimeSpan.TicksPerMillisecond, JsonSerializer.SerializeToElement(value)));
-            previous = value;
-        }
-        // Reuse half-open interval lookup and explicit holdLast behavior. This
-        // returns a finite schedule that a sequence can compose; delivery state
-        // remains outside this generator.
-        return new StaircaseGeneratorDefinition(steps.AsReadOnly());
+        remainingHolds -= first.Steps.Count;
+        return first;
     }
 
     private static long ReadInteger(JsonElement obj, string name, long minimum, long maximum,
