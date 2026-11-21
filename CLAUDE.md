@@ -20,3 +20,13 @@ quarantines prior sessions and requires fresh tag names.
 
 The handoff includes a suggested first-session prompt, architecture map, verified
 commits, reproduction commands, known limits and a concrete next-work checklist.
+
+Plant simulation (working name 2.0, November 21–22, 2026): see
+`docs/plant-simulation.md` and `docs/design-plant-simulation.md`. The interview
+skill is `skills/flow-data-simulator` (installed copy: `~/.claude/skills`).
+Running deployment: Postgres container `flow-data-sim-pg` (database
+`flow_data_sim`) and plant container `bluebirdbev-plant` (image
+`flow-data-simulator:2.0.0-dev`, built locally from source, not a release),
+writing tags to the `Test` Dataset. A simulation only touches tables with its
+own prefix; never touch another simulation's tables.
+
