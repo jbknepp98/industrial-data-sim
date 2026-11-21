@@ -41,7 +41,7 @@ public static partial class PlantModelLoader
         if (root.ValueKind != JsonValueKind.Object)
             return new(null, [new("plant.object_required", "$", "The plant model must be a JSON object.")]);
         SessionDefinitionLoader.CheckProperties(root, ["schemaVersion", "kind", "simulation", "seed", "timeline", "sampleIntervalMs",
-            "tagRoot", "shifts", "skus", "lines", "people", "customers", "parts", "demand", "maintenance", "incidents"], "$", errors);
+            "tagRoot", "shifts", "skus", "lines", "people", "customers", "parts", "demand", "maintenance", "incidents", "quality", "shipping"], "$", errors);
         if (!root.TryGetProperty("schemaVersion", out var version) || version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out int v) || v != 1)
             errors.Add(new("plant.unsupported_version", "$.schemaVersion", "Use schemaVersion 1 (integer literal)."));
         if (Text(root, "kind", "$", errors) is { } kind && kind != "plant")
@@ -92,13 +92,15 @@ public static partial class PlantModelLoader
             string note = item.TryGetProperty("note", out _) ? Text(item, "note", path, errors) ?? "" : "";
             return new PlantIncident(mode, anchorUtc + (offset ?? TimeSpan.Zero), note);
         }, optional: true);
+        var quality = root.TryGetProperty("quality", out _) ? Quality(root, skus, anchorUtc, errors) : null;
+        var shipping = root.TryGetProperty("shipping", out _) ? Shipping(root, errors) : null;
         if (errors.ErrorCount > 0 || simulation is null) return new(null, errors.AsReadOnly());
         foreach (var (incident, index) in incidents.Select((i, n) => (i, n)))
             if (incident.AtUtc < start || (end is { } stop && incident.AtUtc >= stop))
                 errors.Add(new("plant.incident_outside_timeline", $"$.incidents[{index}].at", "Place the incident inside the plant's timeline (after the backfill start and before endUtc)."));
         if (errors.ErrorCount > 0) return new(null, errors.AsReadOnly());
         return new(new PlantModel(simulation, simulation.ToLowerInvariant() + "_", tagRoot, seed, start, end, anchorUtc, sample,
-            shifts, skus, lines, operators, technicians, customers, parts, demand, maintenance!, incidents), []);
+            shifts, skus, lines, operators, technicians, customers, parts, demand, maintenance!, incidents) { Quality = quality, Shipping = shipping }, []);
     }
 
     private static (DateTimeOffset Start, DateTimeOffset? End) Timeline(JsonElement root, DateTimeOffset anchor, ValidationErrors errors)
@@ -289,6 +291,70 @@ public static partial class PlantModelLoader
         }
         else errors.Add(new("plant.minor_stops_required", path + ".minorStops", "Supply minorStops with perRunHour (0 for none) and minutes."));
         return new(detection, Range(item, "responseMinutes", path, 0, 480, errors), modes, preventive, minor);
+    }
+
+    private static PlantQuality? Quality(JsonElement root, IReadOnlyList<PlantSku> skus, DateTimeOffset anchor, ValidationErrors errors)
+    {
+        const string path = "$.quality";
+        var item = root.GetProperty("quality");
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            errors.Add(new("plant.object_required", path, "Supply quality as an object with parameters, labMinutes, holdMinutes and optional excursions, or leave it out."));
+            return null;
+        }
+        SessionDefinitionLoader.CheckProperties(item, ["parameters", "labMinutes", "holdMinutes", "excursions"], path, errors);
+        var parameters = List(item, "parameters", path, 1, 4, errors, (p, pPath) =>
+        {
+            SessionDefinitionLoader.CheckProperties(p, ["name", "unit", "target", "lower", "upper", "sigma", "skuOffsets"], pPath, errors);
+            string name = Id(p, "name", pPath, errors) ?? "";
+            double target = Number(p, "target", pPath, -1e6, 1e6, errors), lower = Number(p, "lower", pPath, -1e6, 1e6, errors), upper = Number(p, "upper", pPath, -1e6, 1e6, errors);
+            if (!(lower < target && target < upper))
+                errors.Add(new("plant.invalid_spec", pPath, "Use lower < target < upper."));
+            var offsets = new Dictionary<string, double>(StringComparer.Ordinal);
+            if (p.TryGetProperty("skuOffsets", out var map))
+            {
+                if (map.ValueKind != JsonValueKind.Object) errors.Add(new("plant.invalid_offsets", pPath + ".skuOffsets", "Use an object of SKU code to offset, for example {\"BB-BR-20\": 0.75}."));
+                else foreach (var entry in map.EnumerateObject())
+                {
+                    if (skus.All(s => s.Code != entry.Name)) errors.Add(new("plant.unknown_sku", pPath + ".skuOffsets", "Reference SKU codes declared under skus."));
+                    else if (entry.Value.ValueKind != JsonValueKind.Number || !entry.Value.TryGetDouble(out double offset) || !double.IsFinite(offset))
+                        errors.Add(new("plant.invalid_number", pPath + ".skuOffsets", "Offsets must be finite numbers."));
+                    else offsets[entry.Name] = offset;
+                }
+            }
+            return new PlantQualityParameter(name, Text(p, "unit", pPath, errors) ?? "", target, lower, upper, Number(p, "sigma", pPath, 0, 1e6, errors), offsets);
+        });
+        Unique(parameters.Select(p => p.Name), path + ".parameters", "quality parameter name", errors);
+        var excursions = List(item, "excursions", path, 0, 6, errors, (e, ePath) =>
+        {
+            SessionDefinitionLoader.CheckProperties(e, ["parameter", "from", "until", "shift", "sku", "note"], ePath, errors);
+            string parameter = Text(e, "parameter", ePath, errors) ?? "";
+            if (parameters.All(p => p.Name != parameter)) errors.Add(new("plant.unknown_parameter", ePath + ".parameter", "Reference a quality parameter name."));
+            var from = Signed(Text(e, "from", ePath, errors));
+            var until = Signed(Text(e, "until", ePath, errors));
+            if (from is null || until is null || until <= from)
+                errors.Add(new("plant.invalid_excursion_time", ePath, "Use signed durations relative to the anchor with from before until, for example \"from\": \"-10d\", \"until\": \"-6d\"."));
+            string? sku = e.TryGetProperty("sku", out _) ? Text(e, "sku", ePath, errors) : null;
+            if (sku is not null && skus.All(s => s.Code != sku)) errors.Add(new("plant.unknown_sku", ePath + ".sku", "Reference a SKU code declared under skus, or leave sku out to affect every SKU."));
+            return new PlantExcursion(parameter, anchor + (from ?? TimeSpan.Zero), anchor + (until ?? TimeSpan.Zero),
+                Number(e, "shift", ePath, -1e6, 1e6, errors), sku, e.TryGetProperty("note", out _) ? Text(e, "note", ePath, errors) ?? "" : "");
+        }, optional: true);
+        return new(parameters, Range(item, "labMinutes", path, 1, 1440, errors), Range(item, "holdMinutes", path, 10, 10080, errors), excursions);
+    }
+
+    private static PlantShipping? Shipping(JsonElement root, ValidationErrors errors)
+    {
+        const string path = "$.shipping";
+        var item = root.GetProperty("shipping");
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            errors.Add(new("plant.object_required", path, "Supply shipping as an object with delayHours and carriers, or leave it out."));
+            return null;
+        }
+        SessionDefinitionLoader.CheckProperties(item, ["delayHours", "carriers"], path, errors);
+        var carriers = List(item, "carriers", path, 1, 4, errors, (c, cPath) => c.ValueKind == JsonValueKind.String && c.GetString()!.Length is > 0 and <= 80
+            ? c.GetString()! : Invalid(errors, cPath, "plant.invalid_text", "Use carrier names of 1–80 characters."));
+        return new(Range(item, "delayHours", path, 0, 240, errors), carriers);
     }
 
     // ---- small typed readers; each reports a precise path and a correction ----

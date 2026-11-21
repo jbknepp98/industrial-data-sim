@@ -1,6 +1,6 @@
 # Design note: plant simulation (interview, areas, transaction loop)
 
-Status: **approved with owner decisions**, November 21, 2026. Milestone 1 (offline engine) implemented; see [plant-simulation.md](plant-simulation.md).
+Status: **approved with owner decisions**, November 21, 2026. Milestones 1–6 implemented (November 21–22, 2026); see [plant-simulation.md](plant-simulation.md).
 This is a new major capability. Its working name is **2.0**: it builds on 1.1.0
 (open-ended sessions), which stays paused pending the owner soak.
 

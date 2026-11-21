@@ -1,0 +1,263 @@
+<title>Plant Preview</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; a two-line plant timeline on top, then a selected breakdown where signals and records sit side by side, then the tables. */
+:root {
+  --bg: #eef1f3; --panel: #ffffff; --ink: #142028; --muted: #5a6b76; --rule: #d6dde2; --chip: #e5eaee;
+  --accent: #2f6fdb;
+  --run: #2e8b6a; --change: #c98a1b; --down: #c8413b; --maint: #7a5cc8; --minor: #e07b39; --idle: #b8c2c9;
+  --warn-band: rgba(200,65,59,.10);
+  --display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1418; --panel: #172027; --ink: #e2e9ee; --muted: #93a3ae; --rule: #2a3640; --chip: #22303a;
+  --accent: #6c9cf0; --run: #4fbf95; --change: #e2a94a; --down: #ef6b64; --maint: #a68cf0; --minor: #f19a5e; --idle: #4b5862;
+  --warn-band: rgba(239,107,100,.14); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1418; --panel: #172027; --ink: #e2e9ee; --muted: #93a3ae; --rule: #2a3640; --chip: #22303a;
+  --accent: #6c9cf0; --run: #4fbf95; --change: #e2a94a; --down: #ef6b64; --maint: #a68cf0; --minor: #f19a5e; --idle: #4b5862;
+  --warn-band: rgba(239,107,100,.14); color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px; }
+h1, h2, h3 { font-family: var(--display); margin: 0; text-wrap: balance; letter-spacing: .01em; }
+h1 { font-size: 2.1rem; font-weight: 700; }
+h2 { font-size: 1.35rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; max-width: 70ch; color: var(--muted); }
+.eyebrow { font: 500 .72rem var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+header { display: grid; gap: 8px; }
+section { display: grid; gap: 12px; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 16px; min-width: 0; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+.fact { background: var(--panel); padding: 12px 14px; display: grid; gap: 2px; }
+.fact b { font: 600 1.35rem var(--display); font-variant-numeric: tabular-nums; }
+.fact span { font-size: .78rem; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .8rem; color: var(--muted); align-items: center; }
+.sw { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.scroll { overflow-x: auto; }
+svg text { font-family: var(--mono); fill: var(--muted); }
+.gantt { width: 100%; min-width: 760px; display: block; }
+.marker { cursor: pointer; }
+.marker:focus { outline: none; }
+.marker:focus-visible path, .marker:hover path { stroke: var(--ink); stroke-width: 2; }
+.incident-head { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: baseline; justify-content: space-between; }
+.chip { font: 500 .75rem var(--mono); padding: 3px 9px; border-radius: 999px; background: var(--chip); color: var(--ink); white-space: nowrap; }
+.chip.planted { background: var(--accent); color: var(--panel); }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.step { border-left: 3px solid var(--rule); padding: 4px 10px; display: grid; gap: 1px; }
+.step b { font: 600 .9rem var(--display); }
+.step span { font: .78rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.step em { font-style: normal; font-size: .78rem; color: var(--muted); }
+.charts { display: grid; gap: 6px; }
+.chart { width: 100%; height: 120px; display: block; }
+.chart-label { font: 500 .75rem var(--mono); color: var(--muted); }
+table { border-collapse: collapse; font: .8rem var(--mono); font-variant-numeric: tabular-nums; width: 100%; }
+th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--panel); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.tablebar { display: flex; flex-wrap: wrap; gap: 6px; }
+button.tab { font: 500 .78rem var(--mono); padding: 5px 10px; border-radius: 6px; border: 1px solid var(--rule); background: var(--panel); color: var(--ink); cursor: pointer; }
+button.tab[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+button.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tablebox { max-height: 420px; overflow: auto; border: 1px solid var(--rule); border-radius: 6px; }
+ul.gaps { margin: 0; padding-left: 20px; color: var(--muted); display: grid; gap: 6px; max-width: 80ch; }
+ul.gaps b { color: var(--ink); font-weight: 600; }
+.note { font-size: .82rem; color: var(--muted); }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Plant simulation · milestone 1 · offline preview</div>
+    <h1 id="page-title">Plant preview</h1>
+    <p id="intro">Simulated on one clock. Orders drive the lines, breakdowns show up in the signals first, the detector opens a maintenance ticket, and the line stays down until a technician completes it. Nothing has been written to Postgres or Historian.</p>
+  </header>
+
+  <div class="facts" id="facts"></div>
+
+  <section>
+    <h2>What each line did</h2>
+    <div class="legend" id="legend"></div>
+    <div class="panel scroll"><svg class="gantt" id="gantt" role="img" aria-label="Line state timeline with maintenance tickets"></svg></div>
+    <p class="note">Diamonds are breakdowns, colored by ticket priority; a filled ring marks a planted story incident. Squares are preventive maintenance. Select a diamond to see that breakdown below.</p>
+  </section>
+
+  <section>
+    <h2>One breakdown, signals and records together</h2>
+    <div class="panel" style="display:grid; gap:16px">
+      <div class="incident-head"><h3 id="inc-title">Loading…</h3><div id="inc-chips" style="display:flex; gap:6px; flex-wrap:wrap"></div></div>
+      <div class="steps" id="inc-steps"></div>
+      <div class="charts" id="inc-charts"></div>
+      <div class="cols" id="inc-records"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Tables the connector will poll</h2>
+    <p>Final state of every table at the end of the preview, with its physical name in <span style="font-family:var(--mono)">flow_data_sim</span>. In the live plant each row appears and changes at its simulated time.</p>
+    <div class="tablebar" id="tablebar"></div>
+    <div class="tablebox" id="tablebox"></div>
+  </section>
+
+  <section id="notes-section" hidden>
+    <h2>Notes for the reviewer</h2>
+    <ul class="gaps" id="notes"></ul>
+  </section>
+</div>
+
+<script>
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const STATE = { Running: '--run', Changeover: '--change', Down: '--down', Maintenance: '--maint', MinorStop: '--minor', Idle: '--idle' };
+const PRIORITY = { Critical: '--down', High: '--down', Medium: '--change', Low: '--muted' };
+let D, START;
+const at = h => new Date(START.getTime() + h * 3600e3);
+const fmt = h => { if (h == null) return '—'; const d = at(h); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' ' + d.toISOString().slice(11, 16) + 'Z'; };
+const fmtIso = s => s ? s.slice(5, 16).replace('T', ' ') + 'Z' : '—';
+
+function facts() {
+  const s = D.summary;
+  const items = [
+    [D.lines.length + (D.lines.length === 1 ? ' line' : ' lines'), D.lines.join(' and ')],
+    [Math.round(D.hours / 24) + ' days', fmt(0) + ' to ' + fmt(D.hours)],
+    [s.salesOrders, 'Sales orders, ' + s.completedOrders + ' completed'],
+    [(s.onTimePercent ?? 0) + '%', 'Completed on time'],
+    [s.breakdowns, 'Breakdowns, ' + s.plantedBreakdowns + ' planted'],
+    [s.correctiveTickets + ' + ' + s.preventiveTickets, 'Corrective + preventive tickets'],
+    [s.meanMinutesToRepair + ' min', 'Mean repair time'],
+    [D.changeCount.toLocaleString(), 'Row inserts and updates'],
+    [D.tagCount, 'Tags']
+  ];
+  document.getElementById('facts').innerHTML = items.map(([b, t]) => `<div class="fact"><b>${b}</b><span>${t}</span></div>`).join('');
+  document.getElementById('legend').innerHTML = Object.entries(STATE).map(([k, v]) => `<span><i class="sw" style="background:var(${v})"></i>${k === 'MinorStop' ? 'Minor stop' : k}</span>`).join('');
+}
+
+function gantt() {
+  const svg = document.getElementById('gantt');
+  const W = 1000, left = 46, right = 8, rowH = 30, tickRow = 18, lines = D.lines;
+  const H = 26 + lines.length * (rowH + tickRow + 14);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const x = h => left + (h / D.hours) * (W - left - right);
+  for (let d = 0; d <= D.hours; d += 24) {
+    el('line', { x1: x(d), x2: x(d), y1: 18, y2: H - 4, stroke: css('--rule'), 'stroke-width': 1 }, svg);
+    if (d < D.hours) el('text', { x: x(d) + 3, y: 12, 'font-size': 10 }, svg).textContent = at(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  }
+  el('line', { x1: x(D.anchorHour), x2: x(D.anchorHour), y1: 16, y2: H - 2, stroke: css('--accent'), 'stroke-width': 2 }, svg);
+  el('text', { x: x(D.anchorHour) - 4, y: H - 4, 'font-size': 10, 'text-anchor': 'end', fill: css('--accent') }, svg).textContent = 'anchor (now)';
+  lines.forEach((line, i) => {
+    const y = 22 + i * (rowH + tickRow + 14);
+    el('text', { x: 0, y: y + rowH / 2 + 4, 'font-size': 12, fill: css('--ink') }, svg).textContent = line;
+    for (const [l, a, b, state] of D.segments) if (l === line)
+      el('rect', { x: x(a), y, width: Math.max(.4, x(b) - x(a)), height: rowH, fill: css(STATE[state] || '--idle') }, svg);
+    for (const pm of D.pm) if (pm.line === line && pm.start != null) {
+      const g = el('g', {}, svg);
+      el('rect', { x: x(pm.start) - 4, y: y + rowH + 5, width: 8, height: 8, fill: css('--maint') }, g);
+      el('title', {}, g).textContent = `${pm.id} preventive maintenance, ${fmt(pm.start)}`;
+    }
+    for (const inc of D.incidents) if (inc.line === line) {
+      const cx = x(inc.failed), cy = y + rowH + 9;
+      const g = el('g', { class: 'marker', tabindex: 0, role: 'button', 'aria-label': `${D.modes[inc.mode]} at ${fmt(inc.failed)}` }, svg);
+      const prio = inc.records.ticket ? inc.records.ticket.priority : 'Medium';
+      if (inc.planted) el('circle', { cx, cy, r: 8, fill: 'none', stroke: css('--accent'), 'stroke-width': 2 }, g);
+      el('path', { d: `M${cx} ${cy - 6} L${cx + 6} ${cy} L${cx} ${cy + 6} L${cx - 6} ${cy} Z`, fill: css(PRIORITY[prio]) }, g);
+      el('title', {}, g).textContent = `${D.modes[inc.mode]}, ${fmt(inc.failed)}`;
+      g.addEventListener('click', () => show(inc));
+      g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); show(inc); } });
+    }
+  });
+}
+
+function chart(container, label, points, inc, opts = {}) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `<div class="chart-label">${label}</div>`;
+  const svg = el('svg', { class: 'chart', viewBox: '0 0 1000 120', preserveAspectRatio: 'none', role: 'img', 'aria-label': label });
+  wrap.appendChild(svg); container.appendChild(wrap);
+  const [a, b] = inc.window;
+  const vals = points.map(p => p[1]);
+  let lo = opts.lo ?? Math.min(...vals), hi = opts.hi ?? Math.max(...vals);
+  if (!isFinite(lo)) { lo = 0; hi = 1; }
+  if (hi - lo < 1e-9) { hi += 1; lo -= 1; }
+  const x = h => (h - a) / (b - a) * 1000, y = v => 112 - (v - lo) / (hi - lo) * 104;
+  if (inc.warning > 0) el('rect', { x: x(Math.max(a, inc.failed - inc.warning)), y: 0, width: x(inc.failed) - x(Math.max(a, inc.failed - inc.warning)), height: 120, fill: css('--warn-band') }, svg);
+  if (inc.repaired != null) el('rect', { x: x(inc.failed), y: 0, width: x(inc.repaired) - x(inc.failed), height: 120, fill: css('--down'), opacity: .12 }, svg);
+  let d = '', prev = null;
+  for (const [h, v] of points) {
+    if (prev != null && h - prev > 2 / 60 && opts.gaps) d += ` M${x(h)},${y(v)}`;
+    else d += (d ? ' L' : 'M') + `${x(h)},${y(v)}`;
+    prev = h;
+  }
+  el('path', { d, fill: 'none', stroke: css(opts.color || '--accent'), 'stroke-width': 1.6, 'vector-effect': 'non-scaling-stroke' }, svg);
+  for (const m of inc.marks) el('line', { x1: x(m.h), x2: x(m.h), y1: 0, y2: 120, stroke: css(m.color), 'stroke-width': 1.2, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke' }, svg);
+  el('text', { x: 4, y: 12, 'font-size': 11 }, svg).textContent = (Math.round(hi * 100) / 100).toString();
+  el('text', { x: 4, y: 116, 'font-size': 11 }, svg).textContent = (Math.round(lo * 100) / 100).toString();
+}
+
+function rowsTable(title, rows) {
+  if (!rows || !rows.length) return '';
+  const cols = Object.keys(rows[0]);
+  const v = x => x === null || x === undefined ? '<span style="color:var(--muted)">null</span>' : typeof x === 'string' && /^\d{4}-\d\d-\d\dT/.test(x) ? fmtIso(x) : String(x);
+  return `<div style="min-width:0"><div class="chart-label" style="margin-bottom:6px">${title}</div><div class="scroll"><table><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>${rows.map(r => `<tr>${cols.map(c => `<td>${v(r[c])}</td>`).join('')}</tr>`).join('')}</table></div></div>`;
+}
+
+function show(inc) {
+  const r = inc.records, t = r.ticket, hours = s => s ? (new Date(s) - START) / 3600e3 : null;
+  document.getElementById('inc-title').textContent = `${D.modes[inc.mode]} · ${inc.line} ${inc.unit}`;
+  document.getElementById('inc-chips').innerHTML = (inc.planted ? '<span class="chip planted">Planted story incident</span>' : '<span class="chip">Random breakdown</span>') +
+    (t ? `<span class="chip">${t.ticket_id} · ${t.priority}</span>` : '');
+  const steps = [
+    ['Signals warn', inc.warning ? fmt(inc.failed - inc.warning) : '—', inc.warning ? `Vibration starts rising ${inc.warning} h before` : 'No warning period'],
+    ['Unit fails', fmt(inc.failed), 'Line speed drops to zero'],
+    ['Detector fires', t ? fmtIso(t.created_utc) : '—', t ? `Downtime ${r.downtime.downtime_id} and ticket opened` : 'After the preview ends'],
+    ['Assigned', t ? fmtIso(t.assigned_utc) : '—', t && t.technician_id ? `Technician ${t.technician_id}` : 'Waiting'],
+    ['Repair starts', t ? fmtIso(t.started_utc) : '—', 'Technician on site'],
+    ['Back in service', t ? fmtIso(t.completed_utc) : '—', r.parts && r.parts.length ? `Parts: ${r.parts.map(p => p.part_id + ' ×' + p.quantity).join(', ')}` : '']
+  ];
+  document.getElementById('inc-steps').innerHTML = steps.map(([b, s, e], i) => `<div class="step" style="border-color:var(${i < 2 ? '--down' : i < 3 ? '--change' : '--run'})"><b>${b}</b><span>${s}</span><em>${e}</em></div>`).join('');
+  inc.marks = [{ h: inc.failed, color: '--down' }];
+  if (t) {
+    inc.marks.push({ h: hours(t.created_utc), color: '--change' });
+    if (t.completed_utc) inc.marks.push({ h: hours(t.completed_utc), color: '--run' });
+  }
+  const charts = document.getElementById('inc-charts');
+  charts.innerHTML = '';
+  chart(charts, `${inc.line}.Speed (cases/min)`, inc.trends.speed, inc, { lo: 0, color: '--run' });
+  chart(charts, `${inc.line}.${inc.unit}.Vibration (mm/s): shaded band is the warning period`, inc.trends.vibration, inc, { lo: 0, color: '--down' });
+  if (inc.trends.fill) chart(charts, `${inc.line}.${inc.unit}.FillVolume (oz, only while filling)`, inc.trends.fill, inc, { color: '--accent', gaps: true });
+  document.getElementById('inc-records').innerHTML = t
+    ? rowsTable(D.prefix + 'downtimeevents', [r.downtime]) + rowsTable(D.prefix + 'maintenancetickets', [t]) + rowsTable(D.prefix + 'maintenanceticketstatus', r.status) + rowsTable(D.prefix + 'partsusage', r.parts)
+    : '<p>This breakdown is detected after the preview window ends.</p>';
+}
+
+function tables() {
+  const bar = document.getElementById('tablebar'), box = document.getElementById('tablebox');
+  const names = Object.keys(D.tables);
+  const order = ['maintenancetickets', 'downtimeevents', 'productionorders', 'salesorders', 'productionruns'].map(p => D.prefix + p);
+  names.sort((a, b) => ((order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99)) || a.localeCompare(b));
+  const select = name => {
+    for (const b of bar.children) b.setAttribute('aria-pressed', b.dataset.name === name);
+    const rows = D.tables[name];
+    box.innerHTML = rowsTable(`${name} · ${rows.length} rows${rows.length > 200 ? ' (first 200 shown)' : ''}`, rows.slice(0, 200)).replace('<div class="scroll">', '<div>');
+  };
+  bar.innerHTML = names.map(n => `<button class="tab" type="button" id="tab-${n}" data-name="${n}" aria-pressed="false">${n.replace(D.prefix, '')} <span style="opacity:.7">${D.tables[n].length}</span></button>`).join('');
+  for (const b of bar.children) b.addEventListener('click', () => select(b.dataset.name));
+  select(names[0]);
+}
+
+fetch('page-data.json').then(r => r.json()).then(data => {
+  D = data; START = new Date(D.start);
+  document.getElementById('page-title').textContent = D.title || D.simulation;
+  document.title = (D.title || D.simulation) + ' preview';
+  if (D.notes && D.notes.length) {
+    document.getElementById('notes-section').hidden = false;
+    document.getElementById('notes').innerHTML = D.notes.map(n => `<li>${n.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</li>`).join('');
+  }
+  facts(); gantt(); tables();
+  const first = D.incidents.find(i => i.planted) || D.incidents[0];
+  if (first) show(first); else document.getElementById('inc-title').textContent = 'No breakdowns in this window.';
+}).catch(() => { document.getElementById('inc-title').textContent = 'Preview data did not load. Reload the page.'; });
+</script>

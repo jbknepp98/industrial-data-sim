@@ -3,88 +3,437 @@
   "kind": "plant",
   "simulation": "BluebirdBev",
   "seed": 20261121,
-  "timeline": { "backfill": "14d" },
+  "timeline": {
+    "backfill": "14d"
+  },
   "sampleIntervalMs": 10000,
   "shifts": [
-    { "name": "CrewA", "startHour": 12, "hours": 12 },
-    { "name": "CrewB", "startHour": 0, "hours": 12 }
+    {
+      "name": "CrewA",
+      "startHour": 12,
+      "hours": 12
+    },
+    {
+      "name": "CrewB",
+      "startHour": 0,
+      "hours": 12
+    }
   ],
   "skus": [
-    { "code": "BB-LL-20", "description": "Bluebird Lemon-Lime 20 oz, 24 pk", "casesPerMinute": 4.58, "rejectPercent": 0.8, "fillTarget": 20.0, "fillUnit": "oz" },
-    { "code": "BB-OR-20", "description": "Bluebird Orange 20 oz, 24 pk", "casesPerMinute": 4.58, "rejectPercent": 0.8, "fillTarget": 20.0, "fillUnit": "oz" },
-    { "code": "BB-BR-20", "description": "Bluebird Berry 20 oz, 24 pk", "casesPerMinute": 4.58, "rejectPercent": 1.2, "fillTarget": 20.0, "fillUnit": "oz" }
+    {
+      "code": "BB-LL-20",
+      "description": "Bluebird Lemon-Lime 20 oz, 24 pk",
+      "casesPerMinute": 4.58,
+      "rejectPercent": 0.8,
+      "fillTarget": 20.0,
+      "fillUnit": "oz"
+    },
+    {
+      "code": "BB-OR-20",
+      "description": "Bluebird Orange 20 oz, 24 pk",
+      "casesPerMinute": 4.58,
+      "rejectPercent": 0.8,
+      "fillTarget": 20.0,
+      "fillUnit": "oz"
+    },
+    {
+      "code": "BB-BR-20",
+      "description": "Bluebird Berry 20 oz, 24 pk",
+      "casesPerMinute": 4.58,
+      "rejectPercent": 1.2,
+      "fillTarget": 20.0,
+      "fillUnit": "oz"
+    }
   ],
   "lines": [
     {
-      "id": "L1", "name": "Line 1 Mixing and Packaging", "changeoverMinutes": 140,
-      "skus": ["BB-LL-20", "BB-OR-20", "BB-BR-20"],
+      "id": "L1",
+      "name": "Line 1 Mixing and Packaging",
+      "changeoverMinutes": 140,
+      "skus": [
+        "BB-LL-20",
+        "BB-OR-20",
+        "BB-BR-20"
+      ],
       "equipment": [
-        { "id": "MX-101", "name": "Mix Tank 101", "class": "mixer" },
-        { "id": "FL-201", "name": "Filler and Capper 201", "class": "filler" },
-        { "id": "LB-202", "name": "Labeler 202", "class": "labeler" },
-        { "id": "CS-203", "name": "Case Packer 203", "class": "packer" },
-        { "id": "CIP-301", "name": "CIP Skid 301", "class": "other" }
+        {
+          "id": "MX-101",
+          "name": "Mix Tank 101",
+          "class": "mixer"
+        },
+        {
+          "id": "FL-201",
+          "name": "Filler and Capper 201",
+          "class": "filler"
+        },
+        {
+          "id": "LB-202",
+          "name": "Labeler 202",
+          "class": "labeler"
+        },
+        {
+          "id": "CS-203",
+          "name": "Case Packer 203",
+          "class": "packer"
+        },
+        {
+          "id": "CIP-301",
+          "name": "CIP Skid 301",
+          "class": "other"
+        }
       ]
     },
     {
-      "id": "L2", "name": "Line 2 Mixing and Packaging", "changeoverMinutes": 140,
-      "skus": ["BB-LL-20", "BB-OR-20", "BB-BR-20"],
+      "id": "L2",
+      "name": "Line 2 Mixing and Packaging",
+      "changeoverMinutes": 140,
+      "skus": [
+        "BB-LL-20",
+        "BB-OR-20",
+        "BB-BR-20"
+      ],
       "equipment": [
-        { "id": "MX-102", "name": "Mix Tank 102", "class": "mixer" },
-        { "id": "FL-211", "name": "Filler and Capper 211", "class": "filler" },
-        { "id": "LB-212", "name": "Labeler 212", "class": "labeler" },
-        { "id": "CS-213", "name": "Case Packer 213", "class": "packer" },
-        { "id": "CIP-302", "name": "CIP Skid 302", "class": "other" }
+        {
+          "id": "MX-102",
+          "name": "Mix Tank 102",
+          "class": "mixer"
+        },
+        {
+          "id": "FL-211",
+          "name": "Filler and Capper 211",
+          "class": "filler"
+        },
+        {
+          "id": "LB-212",
+          "name": "Labeler 212",
+          "class": "labeler"
+        },
+        {
+          "id": "CS-213",
+          "name": "Case Packer 213",
+          "class": "packer"
+        },
+        {
+          "id": "CIP-302",
+          "name": "CIP Skid 302",
+          "class": "other"
+        }
       ]
     }
   ],
   "people": {
     "operators": [
-      { "id": "E1001", "name": "Maria Lopez", "shift": "CrewA", "line": "L1" },
-      { "id": "E1002", "name": "Dwayne Carter", "shift": "CrewB", "line": "L1" },
-      { "id": "E1009", "name": "Kenji Tanaka", "shift": "CrewA", "line": "L2" },
-      { "id": "E1010", "name": "Rosa Delgado", "shift": "CrewB", "line": "L2" }
+      {
+        "id": "E1001",
+        "name": "Maria Lopez",
+        "shift": "CrewA",
+        "line": "L1"
+      },
+      {
+        "id": "E1002",
+        "name": "Dwayne Carter",
+        "shift": "CrewB",
+        "line": "L1"
+      },
+      {
+        "id": "E1009",
+        "name": "Kenji Tanaka",
+        "shift": "CrewA",
+        "line": "L2"
+      },
+      {
+        "id": "E1010",
+        "name": "Rosa Delgado",
+        "shift": "CrewB",
+        "line": "L2"
+      }
     ],
     "technicians": [
-      { "id": "E1007", "name": "Jake Morrison", "shift": "CrewA", "skills": ["mechanical"] },
-      { "id": "E1008", "name": "Lena Fischer", "shift": "CrewB", "skills": ["electrical", "mechanical"] }
+      {
+        "id": "E1007",
+        "name": "Jake Morrison",
+        "shift": "CrewA",
+        "skills": [
+          "mechanical"
+        ]
+      },
+      {
+        "id": "E1008",
+        "name": "Lena Fischer",
+        "shift": "CrewB",
+        "skills": [
+          "electrical",
+          "mechanical"
+        ]
+      }
     ]
   },
   "customers": [
-    { "id": "CUST-01", "name": "Ozark Grocers" },
-    { "id": "CUST-02", "name": "Midwest Fuel and Food" },
-    { "id": "CUST-03", "name": "Springfield Distributing" }
+    {
+      "id": "CUST-01",
+      "name": "Ozark Grocers"
+    },
+    {
+      "id": "CUST-02",
+      "name": "Midwest Fuel and Food"
+    },
+    {
+      "id": "CUST-03",
+      "name": "Springfield Distributing"
+    }
   ],
   "parts": [
-    { "id": "PRT-LB-GRIP", "description": "Labeler gripper pad set", "unitCost": 48.00 },
-    { "id": "PRT-FL-SEAL", "description": "Filler valve seal kit", "unitCost": 122.50 },
-    { "id": "PRT-CS-BELT", "description": "Case packer drive belt", "unitCost": 210.00 },
-    { "id": "PRT-MX-BRG", "description": "Agitator bearing", "unitCost": 365.00 }
+    {
+      "id": "PRT-LB-GRIP",
+      "description": "Labeler gripper pad set",
+      "unitCost": 48.0
+    },
+    {
+      "id": "PRT-FL-SEAL",
+      "description": "Filler valve seal kit",
+      "unitCost": 122.5
+    },
+    {
+      "id": "PRT-CS-BELT",
+      "description": "Case packer drive belt",
+      "unitCost": 210.0
+    },
+    {
+      "id": "PRT-MX-BRG",
+      "description": "Agitator bearing",
+      "unitCost": 365.0
+    }
   ],
   "demand": {
     "ordersPerDay": 5.6,
-    "casesPerOrder": { "minimum": 1200, "maximum": 1500 },
-    "dueDays": { "minimum": 1, "maximum": 2.5 }
+    "casesPerOrder": {
+      "minimum": 1200,
+      "maximum": 1500
+    },
+    "dueDays": {
+      "minimum": 2,
+      "maximum": 3.5
+    }
   },
   "maintenance": {
     "detectionMinutes": 5,
-    "responseMinutes": { "minimum": 10, "maximum": 35 },
+    "responseMinutes": {
+      "minimum": 10,
+      "maximum": 35
+    },
     "failureModes": [
-      { "code": "LB202-JAM", "line": "L1", "equipment": "LB-202", "description": "Labeler 202 label jam (worn gripper pads)", "mtbfRunHours": 30, "repairMinutes": { "minimum": 30, "maximum": 75 }, "skill": "mechanical", "priority": "High", "warningHours": 8, "parts": [ { "part": "PRT-LB-GRIP", "quantity": 1 } ] },
-      { "code": "FL201-VALVE", "line": "L1", "equipment": "FL-201", "description": "Filler 201 valve leak, low fills", "mtbfRunHours": 160, "repairMinutes": { "minimum": 60, "maximum": 120 }, "skill": "mechanical", "priority": "Medium", "warningHours": 12, "parts": [ { "part": "PRT-FL-SEAL", "quantity": 2 } ] },
-      { "code": "CS203-BELT", "line": "L1", "equipment": "CS-203", "description": "Case packer 203 belt slip", "mtbfRunHours": 220, "repairMinutes": { "minimum": 40, "maximum": 90 }, "skill": "mechanical", "priority": "Medium", "warningHours": 6, "parts": [ { "part": "PRT-CS-BELT", "quantity": 1 } ] },
-      { "code": "MX101-MOTOR", "line": "L1", "equipment": "MX-101", "description": "Mix tank 101 agitator motor trip", "mtbfRunHours": 300, "repairMinutes": { "minimum": 45, "maximum": 150 }, "skill": "electrical", "priority": "High", "warningHours": 10, "parts": [ { "part": "PRT-MX-BRG", "quantity": 1 } ] },
-      { "code": "FL211-VALVE", "line": "L2", "equipment": "FL-211", "description": "Filler 211 valve leak, low fills", "mtbfRunHours": 180, "repairMinutes": { "minimum": 60, "maximum": 120 }, "skill": "mechanical", "priority": "Medium", "warningHours": 12, "parts": [ { "part": "PRT-FL-SEAL", "quantity": 2 } ] },
-      { "code": "CS213-BELT", "line": "L2", "equipment": "CS-213", "description": "Case packer 213 belt slip", "mtbfRunHours": 240, "repairMinutes": { "minimum": 40, "maximum": 90 }, "skill": "mechanical", "priority": "Medium", "warningHours": 6, "parts": [ { "part": "PRT-CS-BELT", "quantity": 1 } ] }
+      {
+        "code": "LB202-JAM",
+        "line": "L1",
+        "equipment": "LB-202",
+        "description": "Labeler 202 label jam (worn gripper pads)",
+        "mtbfRunHours": 30,
+        "repairMinutes": {
+          "minimum": 30,
+          "maximum": 75
+        },
+        "skill": "mechanical",
+        "priority": "High",
+        "warningHours": 8,
+        "parts": [
+          {
+            "part": "PRT-LB-GRIP",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "code": "FL201-VALVE",
+        "line": "L1",
+        "equipment": "FL-201",
+        "description": "Filler 201 valve leak, low fills",
+        "mtbfRunHours": 160,
+        "repairMinutes": {
+          "minimum": 60,
+          "maximum": 120
+        },
+        "skill": "mechanical",
+        "priority": "Medium",
+        "warningHours": 12,
+        "parts": [
+          {
+            "part": "PRT-FL-SEAL",
+            "quantity": 2
+          }
+        ]
+      },
+      {
+        "code": "CS203-BELT",
+        "line": "L1",
+        "equipment": "CS-203",
+        "description": "Case packer 203 belt slip",
+        "mtbfRunHours": 220,
+        "repairMinutes": {
+          "minimum": 40,
+          "maximum": 90
+        },
+        "skill": "mechanical",
+        "priority": "Medium",
+        "warningHours": 6,
+        "parts": [
+          {
+            "part": "PRT-CS-BELT",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "code": "MX101-MOTOR",
+        "line": "L1",
+        "equipment": "MX-101",
+        "description": "Mix tank 101 agitator motor trip",
+        "mtbfRunHours": 300,
+        "repairMinutes": {
+          "minimum": 45,
+          "maximum": 150
+        },
+        "skill": "electrical",
+        "priority": "High",
+        "warningHours": 10,
+        "parts": [
+          {
+            "part": "PRT-MX-BRG",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "code": "FL211-VALVE",
+        "line": "L2",
+        "equipment": "FL-211",
+        "description": "Filler 211 valve leak, low fills",
+        "mtbfRunHours": 180,
+        "repairMinutes": {
+          "minimum": 60,
+          "maximum": 120
+        },
+        "skill": "mechanical",
+        "priority": "Medium",
+        "warningHours": 12,
+        "parts": [
+          {
+            "part": "PRT-FL-SEAL",
+            "quantity": 2
+          }
+        ]
+      },
+      {
+        "code": "CS213-BELT",
+        "line": "L2",
+        "equipment": "CS-213",
+        "description": "Case packer 213 belt slip",
+        "mtbfRunHours": 240,
+        "repairMinutes": {
+          "minimum": 40,
+          "maximum": 90
+        },
+        "skill": "mechanical",
+        "priority": "Medium",
+        "warningHours": 6,
+        "parts": [
+          {
+            "part": "PRT-CS-BELT",
+            "quantity": 1
+          }
+        ]
+      }
     ],
     "preventive": [
-      { "code": "PM-L1-WEEKLY", "line": "L1", "equipment": "FL-201", "description": "Line 1 weekly filler and labeler PM", "everyDays": 7, "startHour": 14, "durationMinutes": 120, "skill": "mechanical" },
-      { "code": "PM-L2-WEEKLY", "line": "L2", "equipment": "FL-211", "description": "Line 2 weekly filler and labeler PM", "everyDays": 7, "startHour": 16, "durationMinutes": 120, "skill": "mechanical" }
+      {
+        "code": "PM-L1-WEEKLY",
+        "line": "L1",
+        "equipment": "FL-201",
+        "description": "Line 1 weekly filler and labeler PM",
+        "everyDays": 7,
+        "startHour": 14,
+        "durationMinutes": 120,
+        "skill": "mechanical"
+      },
+      {
+        "code": "PM-L2-WEEKLY",
+        "line": "L2",
+        "equipment": "FL-211",
+        "description": "Line 2 weekly filler and labeler PM",
+        "everyDays": 7,
+        "startHour": 16,
+        "durationMinutes": 120,
+        "skill": "mechanical"
+      }
     ],
-    "minorStops": { "perRunHour": 0.4, "minutes": { "minimum": 1, "maximum": 4 } }
+    "minorStops": {
+      "perRunHour": 0.4,
+      "minutes": {
+        "minimum": 1,
+        "maximum": 4
+      }
+    }
   },
   "incidents": [
-    { "failureMode": "LB202-JAM", "at": "-30h", "note": "The labeler jam the demo walks through: vibration climbs for 8 hours first." },
-    { "failureMode": "FL201-VALVE", "at": "-4d", "note": "Low fills on Line 1 before the valve seal was replaced." }
-  ]
+    {
+      "failureMode": "LB202-JAM",
+      "at": "-30h",
+      "note": "The labeler jam the demo walks through: vibration climbs for 8 hours first."
+    },
+    {
+      "failureMode": "FL201-VALVE",
+      "at": "-4d",
+      "note": "Low fills on Line 1 before the valve seal was replaced."
+    }
+  ],
+  "quality": {
+    "parameters": [
+      {
+        "name": "Brix",
+        "unit": "degBx",
+        "target": 10.5,
+        "lower": 10.0,
+        "upper": 11.0,
+        "sigma": 0.12,
+        "skuOffsets": {
+          "BB-BR-20": 0.45
+        }
+      },
+      {
+        "name": "pH",
+        "unit": "pH",
+        "target": 3.08,
+        "lower": 2.9,
+        "upper": 3.3,
+        "sigma": 0.04,
+        "skuOffsets": {}
+      }
+    ],
+    "labMinutes": {
+      "minimum": 30,
+      "maximum": 90
+    },
+    "holdMinutes": {
+      "minimum": 720,
+      "maximum": 2880
+    },
+    "excursions": [
+      {
+        "parameter": "pH",
+        "from": "-10d",
+        "until": "-6d",
+        "shift": 0.27,
+        "note": "Citric acid supplier switched to SUP-03 (conditionally approved)"
+      }
+    ]
+  },
+  "shipping": {
+    "delayHours": {
+      "minimum": 2,
+      "maximum": 10
+    },
+    "carriers": [
+      "Ozark Freight",
+      "Midwest Carriers"
+    ]
+  }
 }

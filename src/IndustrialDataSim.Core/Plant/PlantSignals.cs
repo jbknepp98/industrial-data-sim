@@ -20,6 +20,7 @@ public sealed class PlantSignals
     private readonly PlantRun run;
     private readonly Dictionary<string, List<PlantLineSegment>> segmentsByLine;
     private readonly Dictionary<string, double[]> goodBefore, rejectBefore;
+    private readonly List<(DateTimeOffset Utc, double Level)> stock = [];
 
     public PlantSignals(PlantRun run)
     {
@@ -40,6 +41,13 @@ public sealed class PlantSignals
             }
             goodBefore[line] = good;
             rejectBefore[line] = reject;
+        }
+        // Warehouse stock steps with each inventory transaction, in change order.
+        double level = 0;
+        foreach (var change in run.Changes.Where(c => c.Table == "inventorytransactions" && c.Operation == "insert"))
+        {
+            level += System.Convert.ToDouble(change.Columns["quantity_cases"]);
+            stock.Add((change.Utc, level));
         }
         Tags = BuildTags(run.Model);
     }
@@ -64,7 +72,12 @@ public sealed class PlantSignals
                 tags.Add(new($"{prefix}.{unit.Id}.Vibration", "number", "Vibration", line.Id, unit.Id));
                 if (unit.Class == "filler") tags.Add(new($"{prefix}.{unit.Id}.FillVolume", "number", "FillVolume", line.Id, unit.Id));
             }
+            // In-line analyzers: one per quality parameter, reading while the line runs.
+            foreach (var parameter in model.Quality?.Parameters ?? [])
+                tags.Add(new($"{prefix}.Quality.{parameter.Name}", "number", "Quality:" + parameter.Name, line.Id, null));
         }
+        if (model.Shipping is not null)
+            tags.Add(new($"{model.TagRoot}.Warehouse.CasesOnHand", "number", "CasesOnHand", "", null));
         return tags;
     }
 
@@ -74,6 +87,18 @@ public sealed class PlantSignals
     /// </summary>
     public object? ValueAt(PlantTag tag, DateTimeOffset utc)
     {
+        if (tag.Measure == "CasesOnHand")
+        {
+            if (utc < run.StartUtc) return null;
+            int low = 0, high = stock.Count - 1, found = -1;
+            while (low <= high)
+            {
+                int middle = (low + high) / 2;
+                if (stock[middle].Utc <= utc) { found = middle; low = middle + 1; }
+                else high = middle - 1;
+            }
+            return found < 0 ? 0.0 : stock[found].Level;
+        }
         var list = segmentsByLine[tag.Line];
         int index = SegmentIndex(list, utc);
         if (index < 0) return null;
@@ -102,6 +127,12 @@ public sealed class PlantSignals
                 var sku = run.Model.Skus.First(s => s.Code == segment.Sku);
                 double warning = WarningProgress(tag.Line, tag.Equipment!, utc);
                 return Math.Round(sku.FillTarget * (1 - 0.015 * warning + 0.002 * noise), 2);
+            }
+            case var measure when measure.StartsWith("Quality:", StringComparison.Ordinal):
+            {
+                if (!running || segment.Sku is null) return null;
+                var parameter = run.Model.Quality!.Parameters.First(p => p.Name == measure["Quality:".Length..]);
+                return PlantQualityValues.Value(run.Model, parameter, tag.Line, segment.Sku, utc);
             }
             default: throw new InvalidOperationException("Unknown plant measure.");
         }

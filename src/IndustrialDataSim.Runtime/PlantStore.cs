@@ -71,7 +71,7 @@ public sealed class PlantStore : IDisposable
             if ((long)stray.ExecuteScalar()! > 0)
                 throw new RuntimeFailure("plant.prefix_in_use", "Tables with this prefix already exist but no simulation registered them. They were left untouched; choose a different simulation name.");
         }
-        foreach (var table in PlantSchema.Tables)
+        foreach (var table in PlantSchema.TablesFor(model))
         {
             string name = Quote(PlantSchema.PhysicalName(model, table.Purpose));
             var columns = table.Columns.Concat(PlantSchema.StandardColumns)
@@ -247,9 +247,14 @@ public sealed class PlantStore : IDisposable
         var registration = Read(connection, transaction, simulation)
             ?? throw new RuntimeFailure("plant.not_admitted", "No simulation with this name is registered. Nothing was removed.");
         int dropped = 0;
-        foreach (var table in PlantSchema.Tables)
+        foreach (var table in PlantSchema.AllTables)
         {
-            Execute(connection, transaction, $"DROP TABLE IF EXISTS {Quote(registration.TablePrefix + table.Purpose)}");
+            using (var exists = new NpgsqlCommand("SELECT to_regclass(@t) IS NOT NULL", connection, transaction))
+            {
+                exists.Parameters.AddWithValue("t", "public." + Quote(registration.TablePrefix + table.Purpose));
+                if (exists.ExecuteScalar() is not true) continue;
+            }
+            Execute(connection, transaction, $"DROP TABLE {Quote(registration.TablePrefix + table.Purpose)}");
             dropped++;
         }
         using (var delete = new NpgsqlCommand("DELETE FROM flowsim_simulations WHERE simulation = @s", connection, transaction))

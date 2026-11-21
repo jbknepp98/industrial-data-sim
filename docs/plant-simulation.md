@@ -4,10 +4,19 @@ Design and owner decisions: [design-plant-simulation.md](design-plant-simulation
 Example: [examples/plants/bluebird-bev.json](../examples/plants/bluebird-bev.json),
 a rebuild of the Bluebird Bev demo.
 
-It simulates the **Production → Maintenance loop**. Milestone 1 is the offline
-engine and preview; milestone 2 writes the records to Postgres
-(`flow_data_sim`); milestone 3 runs a plant live in Docker, writing rows to
-Postgres and tags to Historian.
+It simulates a small plant on one clock:
+
+- **Production → Maintenance loop:** always on.
+- **Quality and Shipping areas:** optional.
+
+The milestones so far:
+
+1. Offline engine and preview.
+2. Records written to Postgres (`flow_data_sim`).
+3. Live run in Docker: rows to Postgres and tags to Historian.
+4. The interview skill.
+5. The Quality and Shipping areas.
+6. The Connect mapping spec and the Atlas starter.
 
 ## Commands
 
@@ -69,6 +78,91 @@ plant remove <simulation> --confirm   drop that simulation's tables and registra
 Integration tests run against a real database when `FLOWSIM_TEST_PG` holds a
 writer connection string. They create and remove their own uniquely named
 simulations.
+
+## Live run in Docker (milestone 3)
+
+```
+plant run <simulation>
+```
+
+The admitted plant is delivered until the container stops (`docker stop` sends
+SIGINT; exit code 130). Each cycle replays the engine from the plant start
+through now, plus a look-ahead of the longest `warningHours` + 1 hour. The
+look-ahead means vibration already rises before a failure the engine will
+produce. Only rows and tag samples at or before now are delivered.
+
+- **Rows:** Postgres, exactly once (see above).
+- **Tags:** Historian, in batches of at most 1000 points, written to the Dataset
+  in `TIMEBASE_DATASET`. The publish intent (`sending_until_utc`) is recorded
+  before each batch and cleared after it. A graceful stop always finishes the
+  batch in flight. If the process is killed mid-batch, the next start skips that
+  batch and counts it in `uncertain_batches`; it never resends it.
+- **One host per simulation:** a Postgres advisory lock refuses a second host
+  (`plant.host_running`).
+- **Log:** the host prints one JSON line per change of condition:
+  `plant.started`, `plant.backfilling` (every 10 minutes), `plant.live` and
+  `plant.stopped`.
+
+The env file passed with `--env-file` needs the `TIMEBASE_*` settings (Historian,
+Pulse, client credentials, CA bundle and Dataset) and `FLOWSIM_PG_CONNECTION`
+(host `flow-data-sim-pg`).
+
+## Quality and Shipping areas (milestone 5)
+
+Both are optional model sections; see the Bluebird example. When either is
+present, each completed order becomes a **lot** (`lots`).
+
+- **`quality`:**
+  - each lot is sampled at completion (`qualitysamples`);
+  - after `labMinutes`, one result per parameter is written (`qualityresults`).
+    The value is the same function the line's in-line analyzer tag
+    (`<Line>.Quality.<Parameter>`) reads, so a lab result equals the analyzer
+    reading when the lot was made;
+  - each parameter has a target, limits, a noise sigma, per-SKU offsets
+    (`skuOffsets`) and planted `excursions` (a shift over a time window);
+  - any out-of-spec result opens a hold (`qualityholds`) for `holdMinutes`,
+    after which the lot is released.
+- **`shipping`:**
+  - a released lot is received into stock (`inventorytransactions`);
+  - it ships after `delayHours` with one of the `carriers` (`shipments`);
+  - the sales order becomes Shipped, and `on_time` compares the ship time with
+    the due date, so holds can make orders late;
+  - the tag `<Root>.Warehouse.CasesOnHand` follows the inventory transactions.
+- **Without shipping,** a sales order is Completed when produced.
+
+Specification limits per parameter and SKU are in `qualityspecs`.
+
+## Connect mapping spec and Atlas starter (milestone 6)
+
+```
+plant connect-spec <model> <output-folder> [anchorUtc]
+```
+
+This writes two files:
+
+- **`connect-spec.md`:** connection settings (where the read-only password is
+  kept, never the password itself), the polling rules, and for every table its
+  columns, key, references and incremental query.
+- **`connect-spec.json`:** the same information as JSON, plus an **Atlas
+  starter**:
+  - the asset hierarchy as instances: site, lines, equipment, products and
+    people;
+  - every tag as a separate **Sensor** node bound to its Historian tag;
+  - transactional data as **query-backed properties**: open tickets,
+    maintenance history and downtime per equipment; the current order and runs
+    per line; quality holds; open shipments.
+
+The starter is input for Atlas modeling, not a compiled payload. Work orders
+are referenced through queries, not created as instances (owner preference).
+Example: `examples/plants/bluebird-bev-connect/`.
+
+## The interview (milestone 4)
+
+The Claude skill `skills/flow-data-simulator/SKILL.md` interviews the user about
+the story, the plant, the people, demand, maintenance and areas, writes the
+model, validates it, and renders a preview page with
+`scripts/render_plant_preview.py` (template `tools/plant-preview/index.html`).
+It asks for approval before any build or run.
 
 ## How the loop works
 
@@ -144,8 +238,11 @@ Further rules:
 
 ## Not yet modeled
 
-- **Mixing and CIP:** these phases are part of the changeover block.
-- **Other areas:** quality, warehouse, shipping, suppliers and lots come with
-  later milestones.
-- **Outputs and interview:** the Postgres output, the live run and the interview
-  skill are milestones 2–4.
+- **Mixing and CIP:** these phases are part of the changeover block, and there
+  are no mix-tank process tags.
+- **Suppliers, purchase orders and raw-material lots:** quality excursions
+  stand in for supplier effects.
+- **Utilities correlated with the process,** and multiple sites.
+- **Replay cost:** each live cycle replays the engine from the plant start, so
+  it grows with run length. That is fine for weeks to months of a small plant;
+  checkpointing is future work.

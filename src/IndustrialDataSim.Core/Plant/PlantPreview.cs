@@ -67,7 +67,8 @@ public static class PlantPreview
     {
         List<Dictionary<string, object?>> Rows(string name) => tables.TryGetValue(name, out var rows) ? rows : [];
         var sales = Rows("salesorders");
-        var completed = sales.Where(r => (string?)r["status"] == "Completed").ToList();
+        // Done means produced (no Shipping area) or shipped (with one).
+        var completed = sales.Where(r => (string?)r["status"] is "Completed" or "Shipped").ToList();
         var tickets = Rows("maintenancetickets");
         var corrective = tickets.Where(t => (string?)t["ticket_type"] == "Corrective").ToList();
         double Minutes(Dictionary<string, object?> row, string from, string to) =>
@@ -102,6 +103,9 @@ public static class PlantPreview
             openTicketsAtEnd = tickets.Count(t => (string?)t["status"] != "Complete"),
             meanMinutesToAssign = Mean(corrective.Select(t => Minutes(t, "created_utc", "assigned_utc"))),
             meanMinutesToRepair = Mean(corrective.Select(t => Minutes(t, "started_utc", "completed_utc"))),
+            qualitySamples = Rows("qualitysamples").Count,
+            qualityHolds = Rows("qualityholds").Count,
+            shipments = Rows("shipments").Count(r => (string?)r["status"] == "Shipped"),
             unplannedDowntimeMinutes = Math.Round(downtime.Where(d => (string?)d["category"] == "Unplanned").Sum(d => d["duration_minutes"] is double m ? m : 0), 1),
             lines
         };

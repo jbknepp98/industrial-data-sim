@@ -10,7 +10,7 @@ public static partial class CliApplication
 {
     private const string PlantUsage =
         "Usage: plant validate <model> [anchorUtc]; plant preview <model> <output.json> [hoursAfterAnchor 1-720, default 24] [anchorUtc]; " +
-        "plant build <model> [anchorUtc]; plant sync <simulation> [throughUtc]; plant status [simulation]; plant remove <simulation> --confirm; plant run <simulation>. " +
+        "plant connect-spec <model> <output-folder> [anchorUtc]; plant build <model> [anchorUtc]; plant sync <simulation> [throughUtc]; plant status [simulation]; plant remove <simulation> --confirm; plant run <simulation>. " +
         "build, sync, status, remove and run use FLOWSIM_PG_CONNECTION; run also uses the TIMEBASE_* settings. " +
         "The anchor is \"now\" unless given (UTC ending in Z): backfill and incident times are relative to it. Preview runs offline and writes nothing else.";
 
@@ -23,6 +23,7 @@ public static partial class CliApplication
     {
         string action = args.Length > 1 ? args[1] : "";
         if (action is "build" or "sync" or "status" or "remove" or "run") return RunPlantDatabaseCommand(args, output, stop);
+        if (action == "connect-spec") return RunConnectSpec(args, output);
         bool validate = action == "validate" && args.Length is 3 or 4;
         bool preview = action == "preview" && args.Length is >= 4 and <= 6;
         if (!validate && !preview)
@@ -126,7 +127,7 @@ public static partial class CliApplication
                     var loaded = PlantModelLoader.Load(input.Json!, anchor.Value);
                     if (!loaded.IsValid) { WriteResult(output, loaded.Errors); return 1; }
                     var registration = store.Admit(loaded.Model!, input.Json!);
-                    result = new { registration.Simulation, registration.TablePrefix, registration.AnchorUtc, registration.StartUtc, tables = PlantSchema.Tables.Count,
+                    result = new { registration.Simulation, registration.TablePrefix, registration.AnchorUtc, registration.StartUtc, tables = PlantSchema.TablesFor(loaded.Model!).Count,
                         message = "Plant admitted and its tables created. No rows or tags were written; run plant sync or plant run." };
                     break;
                 }
@@ -225,6 +226,32 @@ public static partial class CliApplication
         if (text is null) return new DateTimeOffset(DateTimeOffset.UtcNow.UtcTicks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, TimeSpan.Zero);
         return text.EndsWith('Z') && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var value)
             ? value.ToUniversalTime() : null;
+    }
+
+    /// <summary>Writes connect-spec.md and connect-spec.json (with the Atlas starter) for a plant model. Offline.</summary>
+    private static int RunConnectSpec(string[] args, TextWriter output)
+    {
+        if (args.Length is not (4 or 5)) { WriteResult(output, [new("cli.usage", "$", PlantUsage)]); return 2; }
+        var anchor = ParseAnchor(args.Length == 5 ? args[4] : null);
+        if (anchor is null) { WriteResult(output, [new("cli.usage", "$", "anchorUtc must be an ISO 8601 UTC time ending in Z. " + PlantUsage)]); return 2; }
+        var input = ReadPlainFile(args[2]);
+        if (input.Error is not null) { WriteResult(output, [input.Error]); return input.ExitCode; }
+        var loaded = PlantModelLoader.Load(input.Json!, anchor.Value);
+        if (!loaded.IsValid) { WriteResult(output, loaded.Errors); return 1; }
+        try
+        {
+            Directory.CreateDirectory(args[3]);
+            File.WriteAllText(Path.Combine(args[3], "connect-spec.md"), PlantConnectSpec.Markdown(loaded.Model!));
+            File.WriteAllText(Path.Combine(args[3], "connect-spec.json"), JsonSerializer.Serialize(PlantConnectSpec.Json(loaded.Model!), new JsonSerializerOptions(JsonOptions) { WriteIndented = true }));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            WriteResult(output, [new("plant.spec_unwritable", "$", "Could not write the spec files. Check that the folder can be created and that you have write permission.")]);
+            return 3;
+        }
+        return WriteResponse(output, new { schemaVersion = 1, valid = true, errors = Array.Empty<ValidationError>(), simulation = loaded.Model!.Simulation,
+            files = new[] { "connect-spec.md", "connect-spec.json" }, tables = PlantSchema.TablesFor(loaded.Model!).Count },
+            new("cli.output_limit", "$", "Response too large.")) ? 0 : 1;
     }
 
     /// <summary>Reads a plant model with the shared bounded reader, without backfill rewriting (plants resolve their own timeline).</summary>

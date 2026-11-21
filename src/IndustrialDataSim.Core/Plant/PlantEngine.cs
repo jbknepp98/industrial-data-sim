@@ -178,6 +178,12 @@ public static class PlantEngine
             }
             foreach (var part in model.Parts)
                 Record("parts", part.Id, "insert", new() { ["part_id"] = part.Id, ["description"] = part.Description, ["unit_cost"] = part.UnitCost });
+            foreach (var parameter in model.Quality?.Parameters ?? [])
+                foreach (var sku in model.Skus)
+                {
+                    string spec = parameter.Name + "." + sku.Code;
+                    Record("qualityspecs", spec, "insert", new() { ["spec_id"] = spec, ["parameter"] = parameter.Name, ["sku"] = sku.Code, ["unit"] = parameter.Unit, ["target"] = parameter.Target, ["lower_limit"] = parameter.Lower, ["upper_limit"] = parameter.Upper });
+                }
             foreach (var mode in model.Maintenance.FailureModes)
                 Record("failurecodes", mode.Code, "insert", new() { ["failure_code"] = mode.Code, ["equipment_id"] = mode.Line + "." + mode.Equipment, ["description"] = mode.Description, ["skill"] = mode.Skill, ["priority"] = mode.Priority });
         }
@@ -353,7 +359,12 @@ public static class PlantEngine
             long good = (long)Math.Round(order.Good), rejects = (long)Math.Round(order.Rejected);
             Record("productionruns", order.Run!, "update", new() { ["end_utc"] = now, ["good_cases"] = good, ["reject_cases"] = rejects });
             Record("productionorders", order.Id, "update", new() { ["status"] = "Completed", ["completed_utc"] = now, ["good_cases"] = good, ["reject_cases"] = rejects });
-            Record("salesorders", order.SalesOrder, "update", new() { ["status"] = "Completed", ["completed_utc"] = now, ["on_time"] = now <= order.Due });
+            // Without a Shipping area an order is done when produced; with one, when shipped.
+            if (model.Shipping is null)
+                Record("salesorders", order.SalesOrder, "update", new() { ["status"] = "Completed", ["completed_utc"] = now, ["on_time"] = now <= order.Due });
+            else
+                Record("salesorders", order.SalesOrder, "update", new() { ["status"] = "Produced" });
+            if (model.Quality is not null || model.Shipping is not null) CreateLot(line, order, good);
             line.Current = null;
             SetState(line, "Idle");
             Dispatch(line);
@@ -372,6 +383,83 @@ public static class PlantEngine
 
         private double NextMinorStopHours() => model.Maintenance.MinorStops.PerRunHour > 0
             ? minorDraws.Exponential(1 / model.Maintenance.MinorStops.PerRunHour) : double.PositiveInfinity;
+
+        // ---------------- quality and shipping ----------------
+
+        /// <summary>
+        /// A finished order becomes a lot. With a Quality area it waits in
+        /// quarantine for its lab results; otherwise it is released at once.
+        /// </summary>
+        private void CreateLot(LineRuntime line, ProductionOrder order, long cases)
+        {
+            string lot = NextId("LOT");
+            var produced = now;
+            Record("lots", lot, "insert", new()
+            {
+                ["lot_id"] = lot, ["production_order"] = order.Id, ["sales_order"] = order.SalesOrder, ["sku"] = order.Sku,
+                ["line_id"] = line.Line.Id, ["cases"] = cases, ["produced_utc"] = now,
+                ["status"] = model.Quality is null ? "Released" : "Quarantine", ["released_utc"] = model.Quality is null ? now : null, ["shipped_utc"] = null
+            });
+            if (model.Quality is not { } quality)
+            {
+                Release(lot, order, cases);
+                return;
+            }
+            string sample = NextId("QS");
+            Record("qualitysamples", sample, "insert", new() { ["sample_id"] = sample, ["lot_id"] = lot, ["line_id"] = line.Line.Id, ["sku"] = order.Sku, ["sampled_utc"] = now, ["result_utc"] = null, ["status"] = "Pending", ["passed"] = null });
+            var random = new PlantRandom(model.Seed, "lab:" + sample);
+            string lineId = line.Line.Id;
+            At(now.AddMinutes(random.Uniform(quality.LabMinutes)), StatePriority, () =>
+            {
+                var failed = new List<string>();
+                foreach (var parameter in quality.Parameters)
+                {
+                    // The lab measures the product as it was made: the analyzer value at the sample time.
+                    double value = PlantQualityValues.Value(model, parameter, lineId, order.Sku, produced);
+                    bool ok = PlantQualityValues.InSpec(parameter, value);
+                    if (!ok) failed.Add(FormattableString.Invariant($"{parameter.Name} {value} {(value > parameter.Upper ? "above" : "below")} {(value > parameter.Upper ? parameter.Upper : parameter.Lower)}"));
+                    string result = NextId("QR");
+                    Record("qualityresults", result, "insert", new() { ["result_id"] = result, ["sample_id"] = sample, ["parameter"] = parameter.Name, ["value"] = value, ["unit"] = parameter.Unit, ["lower_limit"] = parameter.Lower, ["upper_limit"] = parameter.Upper, ["in_spec"] = ok, ["result_utc"] = now });
+                }
+                Record("qualitysamples", sample, "update", new() { ["result_utc"] = now, ["status"] = "Complete", ["passed"] = failed.Count == 0 });
+                if (failed.Count == 0)
+                {
+                    Record("lots", lot, "update", new() { ["status"] = "Released", ["released_utc"] = now });
+                    Release(lot, order, cases);
+                    return;
+                }
+                string hold = NextId("QH");
+                Record("qualityholds", hold, "insert", new() { ["hold_id"] = hold, ["lot_id"] = lot, ["sample_id"] = sample, ["reason"] = string.Join("; ", failed), ["created_utc"] = now, ["released_utc"] = null, ["disposition"] = null });
+                Record("lots", lot, "update", new() { ["status"] = "On Hold" });
+                At(now.AddMinutes(random.Uniform(quality.HoldMinutes)), StatePriority, () =>
+                {
+                    Record("qualityholds", hold, "update", new() { ["released_utc"] = now, ["disposition"] = "Released after investigation and retest" });
+                    Record("lots", lot, "update", new() { ["status"] = "Released", ["released_utc"] = now });
+                    Release(lot, order, cases);
+                });
+            });
+        }
+
+        /// <summary>A released lot goes into stock and ships on the next truck for its sales order.</summary>
+        private void Release(string lot, ProductionOrder order, long cases)
+        {
+            if (model.Shipping is not { } shipping) return;
+            string receipt = NextId("INV");
+            Record("inventorytransactions", receipt, "insert", new() { ["transaction_id"] = receipt, ["lot_id"] = lot, ["sku"] = order.Sku, ["transaction_type"] = "Receipt", ["quantity_cases"] = cases, ["transaction_utc"] = now });
+            var random = new PlantRandom(model.Seed, "shipment:" + lot);
+            string shipment = NextId("SH");
+            var planned = now.AddHours(random.Uniform(shipping.DelayHours));
+            string carrier = shipping.Carriers[random.Integer(0, shipping.Carriers.Count - 1)];
+            Record("shipments", shipment, "insert", new() { ["shipment_id"] = shipment, ["sales_order"] = order.SalesOrder, ["lot_id"] = lot, ["carrier"] = carrier, ["quantity_cases"] = cases, ["planned_utc"] = planned, ["shipped_utc"] = null, ["status"] = "Scheduled" });
+            At(planned, StatePriority, () =>
+            {
+                Record("shipments", shipment, "update", new() { ["shipped_utc"] = now, ["status"] = "Shipped" });
+                string issue = NextId("INV");
+                Record("inventorytransactions", issue, "insert", new() { ["transaction_id"] = issue, ["lot_id"] = lot, ["sku"] = order.Sku, ["transaction_type"] = "Shipment", ["quantity_cases"] = -cases, ["transaction_utc"] = now });
+                Record("lots", lot, "update", new() { ["status"] = "Shipped", ["shipped_utc"] = now });
+                Record("salesorders", order.SalesOrder, "update", new() { ["status"] = "Shipped", ["completed_utc"] = now, ["on_time"] = now <= order.Due });
+            });
+        }
 
         // ---------------- breakdowns: signals → records ----------------
 

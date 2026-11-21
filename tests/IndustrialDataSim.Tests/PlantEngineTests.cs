@@ -155,9 +155,13 @@ public class PlantEngineTests
         {
             Assert.Equal((long)Math.Round((double)order["quantity_cases"]!), order["good_cases"]);
             var sale = tables["salesorders"].Single(s => (string?)s["sales_order"] == (string?)order["sales_order"]);
-            Assert.Equal("Completed", sale["status"]);
-            Assert.Equal(order["completed_utc"], sale["completed_utc"]);
-            Assert.Equal((DateTimeOffset)sale["completed_utc"]! <= (DateTimeOffset)sale["due_utc"]!, sale["on_time"]);
+            // With a Shipping area the sales order is done when shipped, after production.
+            Assert.Contains((string?)sale["status"], new[] { "Produced", "Shipped" });
+            if ((string?)sale["status"] == "Shipped")
+            {
+                Assert.True((DateTimeOffset)sale["completed_utc"]! >= (DateTimeOffset)order["completed_utc"]!);
+                Assert.Equal((DateTimeOffset)sale["completed_utc"]! <= (DateTimeOffset)sale["due_utc"]!, sale["on_time"]);
+            }
         }
         var signals = new PlantSignals(run);
         foreach (var line in run.Model.Lines)

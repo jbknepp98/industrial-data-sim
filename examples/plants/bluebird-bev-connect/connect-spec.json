@@ -1,0 +1,2104 @@
+{
+  "simulation": "BluebirdBev",
+  "database": {
+    "host": "flow-data-sim-pg",
+    "port": 5432,
+    "database": "flow_data_sim",
+    "user": "flowsim_reader",
+    "password": "See ~/flow-data-simulator/config/postgres.env (FLOWSIM_READER_PASSWORD). Never copy it into specs or tickets."
+  },
+  "watermark": "row_version (bigint, strictly increasing across inserts and updates of every simulation table)",
+  "tables": [
+    {
+      "name": "bluebirdbev_lines",
+      "purpose": "lines",
+      "description": "Production lines",
+      "key": "line_id",
+      "columns": [
+        {
+          "name": "line_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "line_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "changeover_minutes",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [],
+      "incrementalQuery": "SELECT line_id, line_name, changeover_minutes, row_version, modified_utc, is_deleted FROM bluebirdbev_lines WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_equipment",
+      "purpose": "equipment",
+      "description": "Units on each line",
+      "key": "equipment_id",
+      "columns": [
+        {
+          "name": "equipment_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "line_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "equipment_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "equipment_class",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "line_id",
+          "table": "bluebirdbev_lines"
+        }
+      ],
+      "incrementalQuery": "SELECT equipment_id, line_id, equipment_name, equipment_class, row_version, modified_utc, is_deleted FROM bluebirdbev_equipment WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_skus",
+      "purpose": "skus",
+      "description": "Products",
+      "key": "sku",
+      "columns": [
+        {
+          "name": "sku",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "cases_per_minute",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "reject_percent",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "fill_target",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "fill_unit",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [],
+      "incrementalQuery": "SELECT sku, description, cases_per_minute, reject_percent, fill_target, fill_unit, row_version, modified_utc, is_deleted FROM bluebirdbev_skus WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_shifts",
+      "purpose": "shifts",
+      "description": "Shift pattern (UTC hours)",
+      "key": "shift_name",
+      "columns": [
+        {
+          "name": "shift_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "start_hour_utc",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "hours",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [],
+      "incrementalQuery": "SELECT shift_name, start_hour_utc, hours, row_version, modified_utc, is_deleted FROM bluebirdbev_shifts WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_customers",
+      "purpose": "customers",
+      "description": "Customers",
+      "key": "customer_id",
+      "columns": [
+        {
+          "name": "customer_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "customer_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [],
+      "incrementalQuery": "SELECT customer_id, customer_name, row_version, modified_utc, is_deleted FROM bluebirdbev_customers WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_employees",
+      "purpose": "employees",
+      "description": "Operators and technicians",
+      "key": "employee_id",
+      "columns": [
+        {
+          "name": "employee_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "employee_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "role",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "shift_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "line_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "line_id",
+          "table": "bluebirdbev_lines"
+        },
+        {
+          "column": "shift_name",
+          "table": "bluebirdbev_shifts"
+        }
+      ],
+      "incrementalQuery": "SELECT employee_id, employee_name, role, shift_name, line_id, row_version, modified_utc, is_deleted FROM bluebirdbev_employees WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_certifications",
+      "purpose": "certifications",
+      "description": "Technician skills",
+      "key": "certification_id",
+      "columns": [
+        {
+          "name": "certification_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "employee_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "skill",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "employee_id",
+          "table": "bluebirdbev_employees"
+        }
+      ],
+      "incrementalQuery": "SELECT certification_id, employee_id, skill, row_version, modified_utc, is_deleted FROM bluebirdbev_certifications WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_parts",
+      "purpose": "parts",
+      "description": "Spare parts",
+      "key": "part_id",
+      "columns": [
+        {
+          "name": "part_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "unit_cost",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [],
+      "incrementalQuery": "SELECT part_id, description, unit_cost, row_version, modified_utc, is_deleted FROM bluebirdbev_parts WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_failurecodes",
+      "purpose": "failurecodes",
+      "description": "Failure modes",
+      "key": "failure_code",
+      "columns": [
+        {
+          "name": "failure_code",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "equipment_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "skill",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "priority",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "equipment_id",
+          "table": "bluebirdbev_equipment"
+        }
+      ],
+      "incrementalQuery": "SELECT failure_code, equipment_id, description, skill, priority, row_version, modified_utc, is_deleted FROM bluebirdbev_failurecodes WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_salesorders",
+      "purpose": "salesorders",
+      "description": "Customer orders",
+      "key": "sales_order",
+      "columns": [
+        {
+          "name": "sales_order",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "customer_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "quantity_cases",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "created_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "due_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "completed_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "on_time",
+          "type": "boolean",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "customer_id",
+          "table": "bluebirdbev_customers"
+        },
+        {
+          "column": "sku",
+          "table": "bluebirdbev_skus"
+        }
+      ],
+      "incrementalQuery": "SELECT sales_order, customer_id, sku, quantity_cases, created_utc, due_utc, status, completed_utc, on_time, row_version, modified_utc, is_deleted FROM bluebirdbev_salesorders WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_productionorders",
+      "purpose": "productionorders",
+      "description": "Work released to a line",
+      "key": "production_order",
+      "columns": [
+        {
+          "name": "production_order",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "sales_order",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "line_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "quantity_cases",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "released_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "due_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "started_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "completed_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "good_cases",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "reject_cases",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "sales_order",
+          "table": "bluebirdbev_salesorders"
+        },
+        {
+          "column": "line_id",
+          "table": "bluebirdbev_lines"
+        },
+        {
+          "column": "sku",
+          "table": "bluebirdbev_skus"
+        }
+      ],
+      "incrementalQuery": "SELECT production_order, sales_order, sku, line_id, quantity_cases, released_utc, due_utc, status, started_utc, completed_utc, good_cases, reject_cases, row_version, modified_utc, is_deleted FROM bluebirdbev_productionorders WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_productionruns",
+      "purpose": "productionruns",
+      "description": "Execution of an order on a line",
+      "key": "run_id",
+      "columns": [
+        {
+          "name": "run_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "production_order",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "line_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "operator_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "start_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "end_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "good_cases",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "reject_cases",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "production_order",
+          "table": "bluebirdbev_productionorders"
+        },
+        {
+          "column": "operator_id",
+          "table": "bluebirdbev_employees"
+        }
+      ],
+      "incrementalQuery": "SELECT run_id, production_order, line_id, sku, operator_id, start_utc, end_utc, good_cases, reject_cases, row_version, modified_utc, is_deleted FROM bluebirdbev_productionruns WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_downtimeevents",
+      "purpose": "downtimeevents",
+      "description": "Planned and unplanned downtime",
+      "key": "downtime_id",
+      "columns": [
+        {
+          "name": "downtime_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "line_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "equipment_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "category",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "failure_code",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "start_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "detected_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "end_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "duration_minutes",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "line_id",
+          "table": "bluebirdbev_lines"
+        },
+        {
+          "column": "equipment_id",
+          "table": "bluebirdbev_equipment"
+        },
+        {
+          "column": "failure_code",
+          "table": "bluebirdbev_failurecodes"
+        }
+      ],
+      "incrementalQuery": "SELECT downtime_id, line_id, equipment_id, category, reason, failure_code, start_utc, detected_utc, end_utc, duration_minutes, row_version, modified_utc, is_deleted FROM bluebirdbev_downtimeevents WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_maintenancetickets",
+      "purpose": "maintenancetickets",
+      "description": "Corrective and preventive work orders",
+      "key": "ticket_id",
+      "columns": [
+        {
+          "name": "ticket_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "ticket_type",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "equipment_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "failure_code",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "priority",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "downtime_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "technician_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "assigned_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "started_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "completed_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "equipment_id",
+          "table": "bluebirdbev_equipment"
+        },
+        {
+          "column": "downtime_id",
+          "table": "bluebirdbev_downtimeevents"
+        },
+        {
+          "column": "technician_id",
+          "table": "bluebirdbev_employees"
+        }
+      ],
+      "incrementalQuery": "SELECT ticket_id, ticket_type, equipment_id, failure_code, priority, status, created_utc, downtime_id, technician_id, assigned_utc, started_utc, completed_utc, row_version, modified_utc, is_deleted FROM bluebirdbev_maintenancetickets WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_maintenanceticketstatus",
+      "purpose": "maintenanceticketstatus",
+      "description": "Ticket status history",
+      "key": "status_id",
+      "columns": [
+        {
+          "name": "status_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "ticket_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "status_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "technician_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "note",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "ticket_id",
+          "table": "bluebirdbev_maintenancetickets"
+        }
+      ],
+      "incrementalQuery": "SELECT status_id, ticket_id, status, status_utc, technician_id, note, row_version, modified_utc, is_deleted FROM bluebirdbev_maintenanceticketstatus WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_partsusage",
+      "purpose": "partsusage",
+      "description": "Parts used by tickets",
+      "key": "usage_id",
+      "columns": [
+        {
+          "name": "usage_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "ticket_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "part_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "quantity",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "used_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "ticket_id",
+          "table": "bluebirdbev_maintenancetickets"
+        },
+        {
+          "column": "part_id",
+          "table": "bluebirdbev_parts"
+        }
+      ],
+      "incrementalQuery": "SELECT usage_id, ticket_id, part_id, quantity, used_utc, row_version, modified_utc, is_deleted FROM bluebirdbev_partsusage WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_lots",
+      "purpose": "lots",
+      "description": "Finished-goods lots, one per completed order",
+      "key": "lot_id",
+      "columns": [
+        {
+          "name": "lot_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "production_order",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sales_order",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "line_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "cases",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "produced_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "released_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "shipped_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "production_order",
+          "table": "bluebirdbev_productionorders"
+        },
+        {
+          "column": "sales_order",
+          "table": "bluebirdbev_salesorders"
+        }
+      ],
+      "incrementalQuery": "SELECT lot_id, production_order, sales_order, sku, line_id, cases, produced_utc, status, released_utc, shipped_utc, row_version, modified_utc, is_deleted FROM bluebirdbev_lots WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_qualityspecs",
+      "purpose": "qualityspecs",
+      "description": "Specification limits per parameter and SKU",
+      "key": "spec_id",
+      "columns": [
+        {
+          "name": "spec_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "parameter",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "unit",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "target",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "lower_limit",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "upper_limit",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [],
+      "incrementalQuery": "SELECT spec_id, parameter, sku, unit, target, lower_limit, upper_limit, row_version, modified_utc, is_deleted FROM bluebirdbev_qualityspecs WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_qualitysamples",
+      "purpose": "qualitysamples",
+      "description": "Lot samples taken at production completion",
+      "key": "sample_id",
+      "columns": [
+        {
+          "name": "sample_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "lot_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "line_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sampled_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "result_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "passed",
+          "type": "boolean",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "lot_id",
+          "table": "bluebirdbev_lots"
+        }
+      ],
+      "incrementalQuery": "SELECT sample_id, lot_id, line_id, sku, sampled_utc, result_utc, status, passed, row_version, modified_utc, is_deleted FROM bluebirdbev_qualitysamples WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_qualityresults",
+      "purpose": "qualityresults",
+      "description": "Lab results per parameter",
+      "key": "result_id",
+      "columns": [
+        {
+          "name": "result_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "sample_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "parameter",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "value",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "unit",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "lower_limit",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "upper_limit",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "in_spec",
+          "type": "boolean",
+          "nullable": true
+        },
+        {
+          "name": "result_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "sample_id",
+          "table": "bluebirdbev_qualitysamples"
+        }
+      ],
+      "incrementalQuery": "SELECT result_id, sample_id, parameter, value, unit, lower_limit, upper_limit, in_spec, result_utc, row_version, modified_utc, is_deleted FROM bluebirdbev_qualityresults WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_qualityholds",
+      "purpose": "qualityholds",
+      "description": "Lots held for out-of-spec results",
+      "key": "hold_id",
+      "columns": [
+        {
+          "name": "hold_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "lot_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sample_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "released_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "disposition",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "lot_id",
+          "table": "bluebirdbev_lots"
+        }
+      ],
+      "incrementalQuery": "SELECT hold_id, lot_id, sample_id, reason, created_utc, released_utc, disposition, row_version, modified_utc, is_deleted FROM bluebirdbev_qualityholds WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_inventorytransactions",
+      "purpose": "inventorytransactions",
+      "description": "Finished-goods receipts and shipments",
+      "key": "transaction_id",
+      "columns": [
+        {
+          "name": "transaction_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "lot_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "transaction_type",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "quantity_cases",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "transaction_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "lot_id",
+          "table": "bluebirdbev_lots"
+        }
+      ],
+      "incrementalQuery": "SELECT transaction_id, lot_id, sku, transaction_type, quantity_cases, transaction_utc, row_version, modified_utc, is_deleted FROM bluebirdbev_inventorytransactions WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    },
+    {
+      "name": "bluebirdbev_shipments",
+      "purpose": "shipments",
+      "description": "Shipments against sales orders",
+      "key": "shipment_id",
+      "columns": [
+        {
+          "name": "shipment_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "sales_order",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "lot_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "carrier",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "quantity_cases",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "planned_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "shipped_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "row_version",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "modified_utc",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "deleted_utc",
+          "type": "timestamptz",
+          "nullable": true
+        }
+      ],
+      "references": [
+        {
+          "column": "sales_order",
+          "table": "bluebirdbev_salesorders"
+        },
+        {
+          "column": "lot_id",
+          "table": "bluebirdbev_lots"
+        }
+      ],
+      "incrementalQuery": "SELECT shipment_id, sales_order, lot_id, carrier, quantity_cases, planned_utc, shipped_utc, status, row_version, modified_utc, is_deleted FROM bluebirdbev_shipments WHERE row_version \u003E @watermark ORDER BY row_version LIMIT 1000"
+    }
+  ],
+  "atlas": {
+    "note": "Starter for Atlas modeling: instances for the asset hierarchy and sensors; transactional records as query-backed properties. Not a compiled Atlas payload.",
+    "instances": [
+      {
+        "type": "Site",
+        "id": "BluebirdBev",
+        "name": "BluebirdBev"
+      },
+      {
+        "type": "Line",
+        "id": "L1",
+        "name": "Line 1 Mixing and Packaging",
+        "parent": "BluebirdBev"
+      },
+      {
+        "type": "Line",
+        "id": "L2",
+        "name": "Line 2 Mixing and Packaging",
+        "parent": "BluebirdBev"
+      },
+      {
+        "type": "Equipment",
+        "id": "L1.MX-101",
+        "name": "Mix Tank 101",
+        "equipmentClass": "mixer",
+        "parent": "L1"
+      },
+      {
+        "type": "Equipment",
+        "id": "L1.FL-201",
+        "name": "Filler and Capper 201",
+        "equipmentClass": "filler",
+        "parent": "L1"
+      },
+      {
+        "type": "Equipment",
+        "id": "L1.LB-202",
+        "name": "Labeler 202",
+        "equipmentClass": "labeler",
+        "parent": "L1"
+      },
+      {
+        "type": "Equipment",
+        "id": "L1.CS-203",
+        "name": "Case Packer 203",
+        "equipmentClass": "packer",
+        "parent": "L1"
+      },
+      {
+        "type": "Equipment",
+        "id": "L1.CIP-301",
+        "name": "CIP Skid 301",
+        "equipmentClass": "other",
+        "parent": "L1"
+      },
+      {
+        "type": "Equipment",
+        "id": "L2.MX-102",
+        "name": "Mix Tank 102",
+        "equipmentClass": "mixer",
+        "parent": "L2"
+      },
+      {
+        "type": "Equipment",
+        "id": "L2.FL-211",
+        "name": "Filler and Capper 211",
+        "equipmentClass": "filler",
+        "parent": "L2"
+      },
+      {
+        "type": "Equipment",
+        "id": "L2.LB-212",
+        "name": "Labeler 212",
+        "equipmentClass": "labeler",
+        "parent": "L2"
+      },
+      {
+        "type": "Equipment",
+        "id": "L2.CS-213",
+        "name": "Case Packer 213",
+        "equipmentClass": "packer",
+        "parent": "L2"
+      },
+      {
+        "type": "Equipment",
+        "id": "L2.CIP-302",
+        "name": "CIP Skid 302",
+        "equipmentClass": "other",
+        "parent": "L2"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.State",
+        "measure": "LineState",
+        "valueType": "string",
+        "parent": "L1",
+        "historianTag": "BluebirdBev.L1.State"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.SKU",
+        "measure": "Sku",
+        "valueType": "string",
+        "parent": "L1",
+        "historianTag": "BluebirdBev.L1.SKU"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.OrderNumber",
+        "measure": "Order",
+        "valueType": "string",
+        "parent": "L1",
+        "historianTag": "BluebirdBev.L1.OrderNumber"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.Speed",
+        "measure": "Speed",
+        "valueType": "number",
+        "parent": "L1",
+        "historianTag": "BluebirdBev.L1.Speed"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.GoodCount",
+        "measure": "GoodCount",
+        "valueType": "number",
+        "parent": "L1",
+        "historianTag": "BluebirdBev.L1.GoodCount"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.RejectCount",
+        "measure": "RejectCount",
+        "valueType": "number",
+        "parent": "L1",
+        "historianTag": "BluebirdBev.L1.RejectCount"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.MX-101.Status",
+        "measure": "UnitStatus",
+        "valueType": "string",
+        "parent": "L1.MX-101",
+        "historianTag": "BluebirdBev.L1.MX-101.Status"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.MX-101.Vibration",
+        "measure": "Vibration",
+        "valueType": "number",
+        "parent": "L1.MX-101",
+        "historianTag": "BluebirdBev.L1.MX-101.Vibration"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.FL-201.Status",
+        "measure": "UnitStatus",
+        "valueType": "string",
+        "parent": "L1.FL-201",
+        "historianTag": "BluebirdBev.L1.FL-201.Status"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.FL-201.Vibration",
+        "measure": "Vibration",
+        "valueType": "number",
+        "parent": "L1.FL-201",
+        "historianTag": "BluebirdBev.L1.FL-201.Vibration"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.FL-201.FillVolume",
+        "measure": "FillVolume",
+        "valueType": "number",
+        "parent": "L1.FL-201",
+        "historianTag": "BluebirdBev.L1.FL-201.FillVolume"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.LB-202.Status",
+        "measure": "UnitStatus",
+        "valueType": "string",
+        "parent": "L1.LB-202",
+        "historianTag": "BluebirdBev.L1.LB-202.Status"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.LB-202.Vibration",
+        "measure": "Vibration",
+        "valueType": "number",
+        "parent": "L1.LB-202",
+        "historianTag": "BluebirdBev.L1.LB-202.Vibration"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.CS-203.Status",
+        "measure": "UnitStatus",
+        "valueType": "string",
+        "parent": "L1.CS-203",
+        "historianTag": "BluebirdBev.L1.CS-203.Status"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.CS-203.Vibration",
+        "measure": "Vibration",
+        "valueType": "number",
+        "parent": "L1.CS-203",
+        "historianTag": "BluebirdBev.L1.CS-203.Vibration"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.CIP-301.Status",
+        "measure": "UnitStatus",
+        "valueType": "string",
+        "parent": "L1.CIP-301",
+        "historianTag": "BluebirdBev.L1.CIP-301.Status"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.CIP-301.Vibration",
+        "measure": "Vibration",
+        "valueType": "number",
+        "parent": "L1.CIP-301",
+        "historianTag": "BluebirdBev.L1.CIP-301.Vibration"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.Quality.Brix",
+        "measure": "Quality:Brix",
+        "valueType": "number",
+        "parent": "L1",
+        "historianTag": "BluebirdBev.L1.Quality.Brix"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L1.Quality.pH",
+        "measure": "Quality:pH",
+        "valueType": "number",
+        "parent": "L1",
+        "historianTag": "BluebirdBev.L1.Quality.pH"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.State",
+        "measure": "LineState",
+        "valueType": "string",
+        "parent": "L2",
+        "historianTag": "BluebirdBev.L2.State"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.SKU",
+        "measure": "Sku",
+        "valueType": "string",
+        "parent": "L2",
+        "historianTag": "BluebirdBev.L2.SKU"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.OrderNumber",
+        "measure": "Order",
+        "valueType": "string",
+        "parent": "L2",
+        "historianTag": "BluebirdBev.L2.OrderNumber"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.Speed",
+        "measure": "Speed",
+        "valueType": "number",
+        "parent": "L2",
+        "historianTag": "BluebirdBev.L2.Speed"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.GoodCount",
+        "measure": "GoodCount",
+        "valueType": "number",
+        "parent": "L2",
+        "historianTag": "BluebirdBev.L2.GoodCount"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.RejectCount",
+        "measure": "RejectCount",
+        "valueType": "number",
+        "parent": "L2",
+        "historianTag": "BluebirdBev.L2.RejectCount"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.MX-102.Status",
+        "measure": "UnitStatus",
+        "valueType": "string",
+        "parent": "L2.MX-102",
+        "historianTag": "BluebirdBev.L2.MX-102.Status"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.MX-102.Vibration",
+        "measure": "Vibration",
+        "valueType": "number",
+        "parent": "L2.MX-102",
+        "historianTag": "BluebirdBev.L2.MX-102.Vibration"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.FL-211.Status",
+        "measure": "UnitStatus",
+        "valueType": "string",
+        "parent": "L2.FL-211",
+        "historianTag": "BluebirdBev.L2.FL-211.Status"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.FL-211.Vibration",
+        "measure": "Vibration",
+        "valueType": "number",
+        "parent": "L2.FL-211",
+        "historianTag": "BluebirdBev.L2.FL-211.Vibration"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.FL-211.FillVolume",
+        "measure": "FillVolume",
+        "valueType": "number",
+        "parent": "L2.FL-211",
+        "historianTag": "BluebirdBev.L2.FL-211.FillVolume"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.LB-212.Status",
+        "measure": "UnitStatus",
+        "valueType": "string",
+        "parent": "L2.LB-212",
+        "historianTag": "BluebirdBev.L2.LB-212.Status"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.LB-212.Vibration",
+        "measure": "Vibration",
+        "valueType": "number",
+        "parent": "L2.LB-212",
+        "historianTag": "BluebirdBev.L2.LB-212.Vibration"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.CS-213.Status",
+        "measure": "UnitStatus",
+        "valueType": "string",
+        "parent": "L2.CS-213",
+        "historianTag": "BluebirdBev.L2.CS-213.Status"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.CS-213.Vibration",
+        "measure": "Vibration",
+        "valueType": "number",
+        "parent": "L2.CS-213",
+        "historianTag": "BluebirdBev.L2.CS-213.Vibration"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.CIP-302.Status",
+        "measure": "UnitStatus",
+        "valueType": "string",
+        "parent": "L2.CIP-302",
+        "historianTag": "BluebirdBev.L2.CIP-302.Status"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.CIP-302.Vibration",
+        "measure": "Vibration",
+        "valueType": "number",
+        "parent": "L2.CIP-302",
+        "historianTag": "BluebirdBev.L2.CIP-302.Vibration"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.Quality.Brix",
+        "measure": "Quality:Brix",
+        "valueType": "number",
+        "parent": "L2",
+        "historianTag": "BluebirdBev.L2.Quality.Brix"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.L2.Quality.pH",
+        "measure": "Quality:pH",
+        "valueType": "number",
+        "parent": "L2",
+        "historianTag": "BluebirdBev.L2.Quality.pH"
+      },
+      {
+        "type": "Sensor",
+        "id": "BluebirdBev.Warehouse.CasesOnHand",
+        "measure": "CasesOnHand",
+        "valueType": "number",
+        "parent": "BluebirdBev",
+        "historianTag": "BluebirdBev.Warehouse.CasesOnHand"
+      },
+      {
+        "type": "Product",
+        "id": "BB-LL-20",
+        "name": "Bluebird Lemon-Lime 20 oz, 24 pk"
+      },
+      {
+        "type": "Product",
+        "id": "BB-OR-20",
+        "name": "Bluebird Orange 20 oz, 24 pk"
+      },
+      {
+        "type": "Product",
+        "id": "BB-BR-20",
+        "name": "Bluebird Berry 20 oz, 24 pk"
+      },
+      {
+        "type": "Person",
+        "id": "E1001",
+        "name": "Maria Lopez",
+        "shift": "CrewA",
+        "skills": []
+      },
+      {
+        "type": "Person",
+        "id": "E1002",
+        "name": "Dwayne Carter",
+        "shift": "CrewB",
+        "skills": []
+      },
+      {
+        "type": "Person",
+        "id": "E1009",
+        "name": "Kenji Tanaka",
+        "shift": "CrewA",
+        "skills": []
+      },
+      {
+        "type": "Person",
+        "id": "E1010",
+        "name": "Rosa Delgado",
+        "shift": "CrewB",
+        "skills": []
+      },
+      {
+        "type": "Person",
+        "id": "E1007",
+        "name": "Jake Morrison",
+        "shift": "CrewA",
+        "skills": [
+          "mechanical"
+        ]
+      },
+      {
+        "type": "Person",
+        "id": "E1008",
+        "name": "Lena Fischer",
+        "shift": "CrewB",
+        "skills": [
+          "electrical",
+          "mechanical"
+        ]
+      }
+    ],
+    "queryProperties": [
+      {
+        "on": "Equipment",
+        "name": "OpenMaintenanceTickets",
+        "query": "SELECT ticket_id, ticket_type, priority, status, created_utc, technician_id FROM bluebirdbev_maintenancetickets WHERE equipment_id = [EquipmentId] AND status \u003C\u003E \u0027Complete\u0027 AND NOT is_deleted ORDER BY created_utc"
+      },
+      {
+        "on": "Equipment",
+        "name": "MaintenanceHistory",
+        "query": "SELECT ticket_id, failure_code, priority, created_utc, completed_utc FROM bluebirdbev_maintenancetickets WHERE equipment_id = [EquipmentId] AND NOT is_deleted ORDER BY created_utc DESC LIMIT 50"
+      },
+      {
+        "on": "Equipment",
+        "name": "DowntimeEvents",
+        "query": "SELECT downtime_id, category, reason, start_utc, end_utc, duration_minutes FROM bluebirdbev_downtimeevents WHERE equipment_id = [EquipmentId] AND NOT is_deleted ORDER BY start_utc DESC LIMIT 50"
+      },
+      {
+        "on": "Line",
+        "name": "CurrentProductionOrder",
+        "query": "SELECT production_order, sku, quantity_cases, started_utc, due_utc FROM bluebirdbev_productionorders WHERE line_id = [LineId] AND status = \u0027Running\u0027 AND NOT is_deleted"
+      },
+      {
+        "on": "Line",
+        "name": "ProductionRuns",
+        "query": "SELECT run_id, production_order, sku, operator_id, start_utc, end_utc, good_cases, reject_cases FROM bluebirdbev_productionruns WHERE line_id = [LineId] AND NOT is_deleted ORDER BY start_utc DESC LIMIT 50"
+      },
+      {
+        "on": "Person",
+        "name": "AssignedTickets",
+        "query": "SELECT ticket_id, equipment_id, status, assigned_utc FROM bluebirdbev_maintenancetickets WHERE technician_id = [PersonId] AND status \u003C\u003E \u0027Complete\u0027 AND NOT is_deleted"
+      },
+      {
+        "on": "Line",
+        "name": "QualityHolds",
+        "query": "SELECT h.hold_id, h.lot_id, h.reason, h.created_utc, h.released_utc FROM bluebirdbev_qualityholds h JOIN bluebirdbev_lots l ON l.lot_id = h.lot_id WHERE l.line_id = [LineId] AND NOT h.is_deleted ORDER BY h.created_utc DESC LIMIT 50"
+      },
+      {
+        "on": "Product",
+        "name": "OpenShipments",
+        "query": "SELECT s.shipment_id, s.sales_order, s.carrier, s.quantity_cases, s.planned_utc FROM bluebirdbev_shipments s JOIN bluebirdbev_salesorders o ON o.sales_order = s.sales_order WHERE o.sku = [ProductId] AND s.status = \u0027Scheduled\u0027 AND NOT s.is_deleted"
+      }
+    ]
+  }
+}
