@@ -133,6 +133,8 @@ function facts() {
     [D.changeCount.toLocaleString(), 'Row inserts and updates'],
     [D.tagCount, 'Tags']
   ];
+  if (s.qualitySamples) items.splice(6, 0, [s.qualityHolds + ' of ' + s.qualitySamples, 'Lots held by Quality']);
+  if (s.shipments) items.splice(7, 0, [s.shipments, 'Shipments']);
   document.getElementById('facts').innerHTML = items.map(([b, t]) => `<div class="fact"><b>${b}</b><span>${t}</span></div>`).join('');
   document.getElementById('legend').innerHTML = Object.entries(STATE).map(([k, v]) => `<span><i class="sw" style="background:var(${v})"></i>${k === 'MinorStop' ? 'Minor stop' : k}</span>`).join('');
 }
