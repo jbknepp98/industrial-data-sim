@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Industrial Data Simulator session header v1",
-  "description": "Offline header contract, not an executable simulation. Runtime validation also checks chronological ordering and case-insensitive output-tag uniqueness. Credentials belong in separate local profiles.",
+  "description": "Offline header contract, not an executable simulation. Runtime validation also checks chronological ordering and case-insensitive output-tag uniqueness. Credentials belong in separate local profiles. schemaVersion 2 (1.1.0) adds backfill as an alternative to startUtc and makes endUtc optional: without it the session is open-ended and runs until stopped.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -9,14 +9,15 @@
     "sessionId",
     "connectionProfile",
     "dataset",
-    "startUtc",
-    "endUtc",
     "outputTags"
   ],
   "properties": {
     "schemaVersion": {
       "type": "integer",
-      "const": 1
+      "enum": [
+        1,
+        2
+      ]
     },
     "sessionId": {
       "$ref": "#/$defs/identifier"
@@ -33,6 +34,11 @@
     },
     "startUtc": {
       "$ref": "#/$defs/utc"
+    },
+    "backfill": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,7}(s|m|h|d)$",
+      "description": "schemaVersion 2 only: relative backfill (for example 72h) resolved to startUtc by the CLI before admission; at most 3650 days."
     },
     "endUtc": {
       "$ref": "#/$defs/utc"
@@ -83,5 +89,60 @@
         "pattern": "[^0-9TZ:.\\-]"
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "startUtc",
+          "endUtc"
+        ],
+        "not": {
+          "required": [
+            "backfill"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "schemaVersion": {
+            "const": 2
+          }
+        }
+      },
+      "then": {
+        "oneOf": [
+          {
+            "required": [
+              "startUtc"
+            ],
+            "not": {
+              "required": [
+                "backfill"
+              ]
+            }
+          },
+          {
+            "required": [
+              "backfill"
+            ],
+            "not": {
+              "required": [
+                "startUtc"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
 }
