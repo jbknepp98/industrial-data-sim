@@ -15,10 +15,11 @@ import sys
 import zipfile
 
 RIDS = ('linux-x64', 'osx-arm64', 'win-x64')
-DEFAULT_VERSION = '1.0.0-rc.2'
-# Candidates only: Phase 4 prereleases and numbered 1.0.0 release candidates.
-# A bare 1.0.0 is refused on purpose; release approval is a separate Phase 6 step.
-CANDIDATE_VERSION = re.compile(r'0\.\d+\.\d+-phase4\.\d+|1\.0\.0-rc\.[1-9]\d*')
+DEFAULT_VERSION = '1.0.0'
+# Phase 4 prereleases, numbered 1.0.0 release candidates, and 1.0.0 itself
+# (owner-approved November 21, 2026, as a version-only rebuild of rc.2). Any
+# later version needs its own explicit approval and an edit here.
+CANDIDATE_VERSION = re.compile(r'0\.\d+\.\d+-phase4\.\d+|1\.0\.0-rc\.[1-9]\d*|1\.0\.0')
 
 
 def is_candidate_version(version):
@@ -36,7 +37,7 @@ def digest(path):
 def build(dotnet, rid, version, destination):
     root = Path(__file__).resolve().parents[1]
     if rid not in RIDS or not is_candidate_version(version):
-        raise ValueError('Use a declared RID and a candidate version such as 1.0.0-rc.1 or 0.4.0-phase4.1; this tool does not approve v1.0.0.')
+        raise ValueError('Use a declared RID and an approved version (1.0.0, 1.0.0-rc.N or 0.x.y-phase4.N); later versions need explicit approval.')
     # Never overwrite an existing candidate or blend it with prior outputs.
     destination.mkdir(parents=True, exist_ok=False)
     package = destination / ('industrial-data-sim-' + version + '-' + rid)
@@ -112,5 +113,5 @@ if __name__ == '__main__':
         build(args.dotnet, args.rid, args.version, args.output.resolve())
     except (OSError, ValueError, KeyError, subprocess.SubprocessError):
         print(json.dumps({'outcome': 'Failed', 'code': 'package.build', 'location': '$',
-                          'message': 'Candidate build failed. Use a new output directory, supported RID and candidate version (1.0.0-rc.N or 0.x.y-phase4.N). Check SDK/network access and the local build log. No existing candidate is overwritten.'}))
+                          'message': 'Candidate build failed. Use a new output directory, supported RID and approved version (1.0.0, 1.0.0-rc.N or 0.x.y-phase4.N). Check SDK/network access and the local build log. No existing candidate is overwritten.'}))
         sys.exit(1)
