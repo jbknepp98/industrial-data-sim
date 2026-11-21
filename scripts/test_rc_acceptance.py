@@ -115,3 +115,14 @@ class RunHelperTests(unittest.TestCase):
             path.write_text('TIMEBASE_DATASET=PencilFactory\n')
             with self.assertRaisesRegex(ValueError, 'rc.dataset_guard'):
                 load_environment(path)
+
+    def test_horizon_and_extension_replies_are_read_from_their_envelopes(self):
+        from run_rc_acceptance import horizon_of, extension_revision
+        reply = {'session': {}, 'horizon': {'revision': 1, 'effectiveEndUtc': '2026-11-20T19:52:57.0000001+00:00'}, 'progress': []}
+        revision, end = horizon_of(reply)
+        self.assertEqual(1, revision)
+        self.assertEqual(datetime(2026, 11, 20, 19, 52, 57, tzinfo=timezone.utc), end)
+        with self.assertRaisesRegex(ValueError, 'rc.horizon_shape'):
+            horizon_of({'revision': 1, 'effectiveEndUtc': '2026-11-20T19:52:57Z'})
+        self.assertEqual(2, extension_revision({'receipt': {'revision': 2}, 'horizon': {}}))
+        self.assertIsNone(extension_revision({}))

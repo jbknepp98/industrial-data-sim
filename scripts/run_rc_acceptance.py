@@ -56,6 +56,19 @@ def live_lag_seconds(progress, now):
     return max(0.0, (now - min(stamps)).total_seconds())
 
 
+def horizon_of(result):
+    """`horizon` and `status` replies nest the horizon detail under 'horizon'."""
+    horizon = result.get('horizon')
+    if not isinstance(horizon, dict) or 'revision' not in horizon or 'effectiveEndUtc' not in horizon:
+        raise ValueError('rc.horizon_shape: The horizon reply lacks revision/effectiveEndUtc; inspect the saved response. Nothing was extended.')
+    return horizon['revision'], parse(horizon['effectiveEndUtc'])
+
+
+def extension_revision(result):
+    """`extend` replies carry the committed revision in 'receipt'."""
+    return (result.get('receipt') or {}).get('revision')
+
+
 def minute_ceiling(moment):
     rounded = moment.replace(second=0, microsecond=0)
     return rounded if rounded == moment else rounded + timedelta(minutes=1)
@@ -187,13 +200,14 @@ def drive(args):
                 for sid in continuing:
                     if states[sid] == 'Complete':
                         continue
-                    horizon, _ = run.invoke(['production-live', 'horizon', run.database, sid])
-                    if parse(horizon['effectiveEndUtc']) >= wanted_end:
+                    reply, _ = run.invoke(['production-live', 'horizon', run.database, sid])
+                    revision, effective_end = horizon_of(reply)
+                    if effective_end >= wanted_end:
                         continue
                     receipt, duration = run.invoke(['production-live', 'extend', run.database, sid, utc_text(wanted_end),
-                                                    str(horizon['revision']), str(uuid.uuid4())])
-                    run.event('extended', session=sid, fromUtc=horizon['effectiveEndUtc'], toUtc=utc_text(wanted_end),
-                              revision=receipt.get('revision'), ms=round(duration))
+                                                    str(revision), str(uuid.uuid4())])
+                    run.event('extended', session=sid, fromUtc=utc_text(effective_end), toUtc=utc_text(wanted_end),
+                              revision=extension_revision(receipt), ms=round(duration))
                 extensions += 1
 
             # Restart drill: graceful stop, exit awaited, restart on the same
@@ -240,7 +254,13 @@ def drive(args):
             time.sleep(POLL_SECONDS)
         run.stop_host('complete')
     except BaseException as error:
-        run.event('run_stopped', reason=str(error) if str(error).startswith('rc.') else type(error).__name__)
+        # Name the failing line for script bugs so they are not mistaken for
+        # product failures; no exception text or values are recorded.
+        where = error.__traceback__
+        while where and where.tb_next:
+            where = where.tb_next
+        run.event('run_stopped', reason=str(error) if str(error).startswith('rc.') else type(error).__name__,
+                  scriptLine=where.tb_lineno if where else None)
         run.stop_host('failure')
         raise
     finally:
