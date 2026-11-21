@@ -96,7 +96,7 @@ It subscribes to events from other areas. Areas can be switched on per demo.
 
 Shared reference data (site, areas, lines, equipment, SKUs, BOM, shifts, people)
 lives in the simulation's own reference tables, for example
-`BluebirdBev_Equipment` (see owner decisions, round 2).
+`bluebirdbev_equipment` (see owner decisions, round 2).
 
 ### First slice: Production → Maintenance
 
@@ -229,8 +229,8 @@ Each milestone ends with an owner-reviewed preview or live check, as in 1.x.
 
 1. **One shared Postgres database.** It is a container on the Timebase Docker
    network, and every simulation reuses the database `flow_data_sim`.
-2. **Table names are `SimulationName_TablePurpose`,** for example
-   `AcmeNuggs_MaintenanceTickets` or `BluebirdBev_ProductionOrders`. This
+2. **Table names are `simulationname_tablepurpose` in lowercase,** for example
+   `acmenuggs_maintenancetickets` or `bluebirdbev_productionorders`. This
    replaces the per-area schemas (`prod`, `maint`, …) described above: the area
    is expressed in the table purpose instead. It overrides the
    `atlas-demo-database` "schemas rather than prefixes" rule for this tool.
@@ -253,9 +253,10 @@ Consequences for the design:
   after confirmation.
 - **The row-version sequence and the read-only Connect role** are shared across
   the database. Each simulation's tables get their own trigger.
-- **Identifier case.** Postgres folds unquoted names to lower case, so the
-  exact name `AcmeNuggs_MaintenanceTickets` must be double-quoted in every query,
-  including Connect's. The generated mapping spec always quotes them.
+- **Identifier case (owner decision):** table names are **lowercase**,
+  `simulationname_tablepurpose`, for example `acmenuggs_maintenancetickets`.
+  Postgres needs no quoting, and Connect queries stay simple. Column names are
+  lowercase snake_case too.
 
 ## Open questions for the owner (answered above)
 
