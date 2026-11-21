@@ -1,12 +1,11 @@
-# Candidate installation and operation
+# Installation and operation
 
-The Phase 5 acceptance candidate is **1.0.0-rc.2** (rc.1 failed the 2.0.0 write
-response check; Phase 4 produced 0.4.0-phase4.1);
-neither is v1.0.0. Packages are self-contained:
+Release **1.0.0** (source `cdf0681`, a version-only rebuild of the accepted
+`1.0.0-rc.2`). Packages are self-contained:
 .NET is bundled, and neither a .NET SDK nor Python is needed for direct CLI use.
 The optional startup supervisor requires Python 3.12 or later (standard library
-only). See compatibility.md for the tested OS/CPU matrix and outstanding live RC
-qualification. Do not treat an image tag alone as a compatibility guarantee.
+only). See compatibility.md for the tested OS/CPU matrix. Do not treat an image
+tag alone as a compatibility guarantee.
 
 ## Install without touching existing state
 
@@ -102,3 +101,73 @@ archives/backups and larger models. An intentional maintenance stop is outside
 healthy live-latency measurements. A finite horizon still needs explicit extension.
 
 Native template references: [Task Scheduler XML and principal settings](https://learn.microsoft.com/en-us/windows/win32/taskschd/logon-trigger-example--xml-). The template uses a dedicated non-elevated account selected by the operator; it does not adopt the administrator account in the documentation example.
+
+## Docker (the owner's chosen deployment)
+
+Smoke-tested on November 21, 2026: the `linux-x64` package ran in a
+`python:3.12-slim` (Debian) container on the Mac's Docker, under x64 emulation,
+on the Timebase stack's Docker network. Admission, backfill to live, extension,
+restart, pause and resume, and completion all passed. A long live run has
+not been done in a container; the three-hour acceptance ran on the macOS package.
+No image is shipped. Build one locally:
+
+```dockerfile
+FROM --platform=linux/amd64 debian:trixie-slim
+RUN apt-get update && apt-get install -y --no-install-recommends libicu76 \
+    && rm -rf /var/lib/apt/lists/* && useradd --create-home --uid 10001 datasim
+COPY industrial-data-sim-1.0.0-linux-x64/ /opt/datasim/
+USER datasim
+STOPSIGNAL SIGINT
+ENTRYPOINT ["/opt/datasim/app/IndustrialDataSim.Cli"]
+```
+
+Rules for running it:
+
+- **ICU is required.** Slim images do not include it, and without it the CLI
+  aborts at startup with "Couldn't find a valid ICU package". The library name
+  follows the Debian release (`libicu76` on trixie, `libicu72` on bookworm).
+- **Stop with SIGINT, never SIGTERM.** The host treats Ctrl+C (SIGINT) as a
+  graceful stop, finishing the in-flight publish and exiting with code 130. It
+  does not handle SIGTERM, Docker's default. A forced stop can leave a Sending
+  batch Uncertain, and Uncertain batches are never replayed. Keep `STOPSIGNAL
+  SIGINT` (or `--stop-signal SIGINT`), and set `--stop-timeout 120` so Docker does
+  not kill the host mid-round. Alternatively, run
+  `docker exec <container> /opt/datasim/app/IndustrialDataSim.Cli production-host stop <database>`
+  first. This was verified with `docker stop` while backfill was publishing:
+  exit 130, the session stayed Ready, and the restart continued forward.
+- **Connect to Timebase by service name.** Attach the container to the stack's
+  network (here `timebase-2-0-beta_default`) and use
+  `TIMEBASE_BASE_URL=https://historian:4512` and
+  `TIMEBASE_PULSE_URL=https://pulse:4542`. The stack certificates include those
+  names, so TLS verifies against the mounted Pulse root CA
+  (`TIMEBASE_CA_BUNDLE`, mounted read-only). Do not disable verification.
+- **Credentials come from an env file** (`--env-file`, mode 0600, outside any
+  repository). Never bake the client secret into the image.
+- **State lives in a named volume on local disk.** Mount it at a fixed path
+  (for example `/data`) and always use the same absolute database path, both
+  for the host and for `docker exec` controls; the control pipe name derives
+  from that exact path. One container owns one database: never run two hosts
+  against the same volume, and do not use network or synced storage.
+- **Restart owner:** use Docker's restart policy (`--restart unless-stopped`) as
+  the single restart owner. Do not also run the Python supervisor inside the
+  container.
+- **Run controls inside the same container.** Use `docker exec` for
+  `production-live status|pause|resume|extend` and similar commands, because the
+  control pipe is same-user and same-container only.
+- **Admit sessions with a one-off container** that mounts the same volume
+  (`production start /data/state.db /models/<model>.json`), and do it before
+  starting the host, or while it runs via `docker exec`.
+- **Use native ARM64 when available.** On ARM64 hosts, such as Apple Silicon or
+  Graviton, the x64 package runs only under emulation. It passed, but status
+  latency was higher (p95 966 ms in the container versus 414 ms native). A
+  `linux-arm64` package is a possible later addition and is not part of 1.0.0.
+
+Example:
+
+```bash
+docker volume create datasim-state
+docker run -d --name datasim --restart unless-stopped --stop-signal SIGINT --stop-timeout 120 \
+  --network timebase-2-0-beta_default --env-file /path/to/private/datasim.env \
+  -v datasim-state:/data -v /path/to/pulse-root-ca.pem:/certs/pulse-root-ca.pem:ro \
+  datasim:1.0.0 production-host run /data/state.db
+```

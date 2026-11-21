@@ -5,8 +5,9 @@ logging, test and documentation rules apply to this project. Then read
 `docs/claude-code-handoff.md`, followed by the release specification and acceptance
 matrix linked there.
 
-The validated implementation is through release Phase 4; v1.0.0 is NOT released.
-Next is Phase 5 exact-candidate live acceptance, not another rewrite of the engine.
+v1.0.0 is released (tag `v1.0.0`, November 21, 2026; see
+`docs/release-1.0.0-notes.md`). It is deployed in Docker for internal use. Any
+change needs a new version number and the affected acceptance repeated.
 Never open historical demo databases with the current runtime merely to inspect
 them: opening can migrate state. Never automatically replay Uncertain work or
 resume older backup Pending work on original tags. Do not print or commit secrets.

@@ -1,8 +1,18 @@
-# industrial-data-sim 1.0.0: release notes (DRAFT)
+# industrial-data-sim 1.0.0: release notes
 
-Draft prepared November 21, 2026, after the Phase 5 run. This is not release
-approval. The owner pattern review (V19) and the Phase 6 checks below must pass
-first, and the owner approves the tag.
+Released November 21, 2026, with the owner's approval. Tag `v1.0.0` is on commit
+`cdf0681`, the commit that built the artifacts below. It is a version-only
+rebuild of the accepted candidate `1.0.0-rc.2` (`e866609`): `src`, `tools` and
+`tests` are unchanged. Built by [CI run 44908019551](https://github.com/jbknepp98/industrial-data-sim/actions/runs/44908019551).
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `industrial-data-sim-1.0.0-osx-arm64.zip` | `775612dcf62c2479568abe564d1156b7b8f1a3c9eec0b58bd92780cf126c2b73` |
+| `industrial-data-sim-1.0.0-linux-x64.zip` | `704e80ec081640d9828714021627ce34a0bd12a201cca6a84cecbdd7977aaa8b` |
+| `industrial-data-sim-1.0.0-win-x64.zip` | `18fdaac30eb2932bde8d53a04406d69c9b54e7955ecffe50ba42377c4e431988` |
+
+Intended use: the owner and their team only, locally, deployed in Docker. No
+distribution license is granted (owner decision, November 21, 2026).
 
 ## What it is
 
@@ -58,12 +68,12 @@ Details are in `phase-5-acceptance-plan.md` and the acceptance matrix.
 
 ## Compatibility
 
-- **Qualified live:** Historian/Pulse 2.0.0 (digests in `compatibility.md`), on macOS
-  26.2 ARM64.
-- **Package lifecycle checks only:** linux-x64 and win-x64 passed on CI runners,
-  but have no live Historian run.
-- **Not compatible:** `1.0.0-rc.1` and earlier builds, against Historian 2.0.0,
-  because they treat the write receipt as an unexpected response.
+- **Historian/Pulse 2.0.0** (digests in `compatibility.md`): qualified live.
+  - The three-hour acceptance ran with rc.2 on macOS 26.2 ARM64.
+  - The 1.0.0 smoke runs passed on both the macOS package and the `linux-x64`
+    package in a Docker container (x64 emulation on Apple Silicon).
+- **win-x64**: package lifecycle checks on CI only.
+- **Not compatible:** `1.0.0-rc.1` and earlier builds, against Historian 2.0.0.
 
 ## Known limitations
 
@@ -80,8 +90,13 @@ Details are in `phase-5-acceptance-plan.md` and the acceptance matrix.
   original latest database.
 - Private-CA trust checks hostname, chain, validity, and server-auth usage, but
   not revocation.
-- Startup templates were parsed and lifecycles tested; no OS service was registered
-  or boot-tested on a deployment machine.
+- Docker is the supported deployment, using a locally built image (see
+  installation.md). The host must be stopped with SIGINT, because it does not
+  handle SIGTERM gracefully. The image needs ICU. There is no `linux-arm64`
+  package; ARM64 hosts run x64 under emulation.
+- OS service templates (launchd, systemd, Task Scheduler) ship, but none was
+  registered or boot-tested. Not needed for the Docker deployment.
+- Unsigned and not notarized (internal use).
 - Safety ceilings, not capacity guarantees:
   - 32 production tags per session;
   - 100 unarchived sessions;
@@ -90,26 +105,28 @@ Details are in `phase-5-acceptance-plan.md` and the acceptance matrix.
 - Not included: graphical editing, cross-session live inputs, arbitrary
   executable model code, and archive replay as a recovery feature.
 
-## Phase 6 checklist (before tagging)
+## Phase 6 record
 
-1. **Owner pattern review (V19)** of the run's trend page. Record accepted
-   observations separately from delivery progress.
-2. **Final code, docs, and error audit (V20).** Handoff, installation steps, and
-   examples match the commands that actually ship. Historical claims are dated.
-3. **Release build decision.** `package_release.py` currently refuses a bare
-   `1.0.0`. Building `1.0.0` from `e866609` changes only the version string.
-   The owner decides whether that is acceptable as-is, or whether the
-   package-lifecycle and smoke checks must be repeated on the final artifact.
-   The smoke run is recommended either way.
-4. **Exact-artifact verification (V21):**
-   - clean three-platform CI;
-   - `verify_package.py --require-clean`;
-   - dependency audit;
-   - checksums;
-   - installed-artifact smoke.
-5. **Owner decisions:**
-   - distribution license (none selected yet);
-   - signing and notarization expectations;
-   - whether an OS service registration test is required for 1.0.
-6. **Approval and immutable tag (V22):** `v1.0.0` tag, matching artifacts, these
-   notes finalized, and an evidence index.
+1. **Owner pattern review (V19):** the owner reviewed the trend page and
+   approved the release on November 21, 2026.
+2. **Docs and diagnostics (V20):**
+   - installation steps now cover 1.0.0 and Docker;
+   - handoff and compatibility are updated;
+   - historical claims stay dated.
+3. **Release build:** the owner approved a version-only rebuild, so
+   `package_release.py` now accepts exactly `1.0.0`.
+4. **Exact-artifact checks (V21):**
+   - CI passed on all six jobs;
+   - `verify_package.py --require-clean` passed on osx-arm64;
+   - the dependency audit was clean.
+5. **1.0.0 smoke runs:**
+   - **macOS:** catch-up 22 s, status p95 414 ms, lag p95 1.42 s.
+   - **Docker linux-x64:** catch-up 28 s, status p95 966 ms, lag p95 1.30 s.
+   - Both passed the extension, restart, pause/resume and completion drills,
+     with no Failed or Uncertain sessions, drops or resends.
+   - The Docker SIGINT stop and restart was verified separately.
+6. **Owner decisions:**
+   - no license; internal use only;
+   - signing not required;
+   - Docker deployment, so no OS service test.
+7. **Approval and tag (V22):** `v1.0.0` on `cdf0681`.

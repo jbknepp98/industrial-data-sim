@@ -28,10 +28,10 @@ production certification merely because unit tests pass.
 | V16 | Exact Historian/Pulse build and platform combinations qualified | Record nonsecret versions/settings and test protocol behavior on deployment candidates; publish compatibility table | 4–5 | rc.2 live-qualified on Historian/Pulse 2.0.0 (local Mac); rc.1 incompatible |
 | V17 | Backfill becomes live without re-admission or resetting pattern clocks | Fresh synthetic tags, 72-hour backfill, three-hour live run (owner scope decision October 26, 2026); exclusive routing, speeds, quality, gates and both totalizer modes | 5 | rc.2 run passed November 21, 2026 |
 | V18 | Release candidate survives planned stop/restart and horizon extension | Record cursors/hash identity before/after, forward timestamps and arrival indicators; include host controls under workload | 5 | rc.2 restart and two extensions passed |
-| V19 | Intended data pattern accepted by user | Review trigger/secondary tags, SKU routing, speeds, faults and totals; record accepted observations separately from HTTP progress | 5 | Read-back matches preview; owner review pending |
-| V20 | Documentation describes shipped behavior and every release failure has a useful diagnosis | Final code/error/docs audit; current handoff and examples agree with executable commands; historical claims clearly dated | 6 | Open |
-| V21 | Exact release source and packaged artifacts pass final checks | Windows/Linux/macOS matrix for declared support; clean-source build, installed artifact smoke, checksums and version output | 6 | Baseline CI; RC open |
-| V22 | Release approved and reproducible | No unresolved blockers; final notes/limits, evidence index, immutable tag and matching artifacts | 6 | Open |
+| V19 | Intended data pattern accepted by user | Review trigger/secondary tags, SKU routing, speeds, faults and totals; record accepted observations separately from HTTP progress | 5 | Owner approved November 21, 2026 |
+| V20 | Documentation describes shipped behavior and every release failure has a useful diagnosis | Final code/error/docs audit; current handoff and examples agree with executable commands; historical claims clearly dated | 6 | Done: installation (1.0.0, Docker), compatibility, handoff and release notes updated |
+| V21 | Exact release source and packaged artifacts pass final checks | Windows/Linux/macOS matrix for declared support; clean-source build, installed artifact smoke, checksums and version output | 6 | Passed: 1.0.0 CI (all six jobs), package verification, macOS and Docker smoke runs |
+| V22 | Release approved and reproducible | No unresolved blockers; final notes/limits, evidence index, immutable tag and matching artifacts | 6 | Released: `v1.0.0` on `cdf0681` ([release notes](release-1.0.0-notes.md)) |
 
 ## Evidence record requirements
 

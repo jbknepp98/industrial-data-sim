@@ -1,5 +1,18 @@
 # Compatibility record
 
+## Release 1.0.0 (November 21, 2026)
+
+| Artifact RID | Evidence |
+| --- | --- |
+| osx-arm64 | CI package checks passed. Locally verified on macOS 26.2 ARM64 against Historian/Pulse 2.0.0: the rc.2 three-hour acceptance and the 1.0.0 smoke run both passed. |
+| linux-x64 | CI package checks passed. 1.0.0 smoke passed in a Docker container (`python:3.12-slim` with ICU) under x64 emulation on Apple Silicon, on the Timebase stack network, against 2.0.0. The SIGINT stop and restart were also verified. |
+| win-x64 | CI package checks only. |
+
+Container prerequisites, stop signal and network naming are in installation.md.
+A container image is not shipped, and long container runs are unqualified.
+
+## Phase 4 baseline
+
 Phase 4 candidate: 0.4.0-phase4.1. No general OS or Timebase version range is
 claimed. ZIP artifacts bundle .NET and SQLite native components for their RID.
 
@@ -9,8 +22,8 @@ claimed. ZIP artifacts bundle .NET and SQLite native components for their RID.
 | osx-arm64 | GitHub macos-15 ARM64; local macOS 26.2 ARM64 | Extracted-package CI and downloaded CI artifact on local Mac passed (`afb669d`) |
 | win-x64 | GitHub windows-2022 x64 | Extracted-package CI passed (`afb669d`) |
 
-Other architectures, musl/Alpine, Windows ARM64, macOS Intel, containers for the
-simulator, unattended reboot and service-manager registration are unqualified.
+Other architectures, musl/Alpine, Windows ARM64, macOS Intel, simulator containers
+other than the Debian-based smoke run recorded above, unattended reboot and service-manager registration are unqualified.
 Hosted runners include native OS prerequisites; this is a clean extraction
 without an SDK/runtime dependency, not proof on every bare OS installation.
 
