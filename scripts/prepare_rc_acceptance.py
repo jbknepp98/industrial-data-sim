@@ -43,7 +43,7 @@ def single_step_sequence(pattern):
     return {'kind': 'sequence', 'afterSequence': 'holdLast', 'steps': [{'pattern': pattern}]}
 
 
-def header(namespace, part, anchor, initial_live, profile, backfill=BACKFILL):
+def header(namespace, part, anchor, initial_live, profile, backfill):
     return {
         'schemaVersion': 1,
         'sessionId': f'{namespace}-{part}'.lower(),
@@ -60,11 +60,11 @@ def output(model, name, value_type):
     return name
 
 
-def utilities_model(namespace, anchor, initial_live, profile, seed):
+def utilities_model(namespace, anchor, initial_live, profile, seed, backfill):
     """Simple signals: holds, a bounded ramp, staircases and constants."""
     prefix = f'{namespace}.Utilities.'
     model = {'schemaVersion': 1, 'generatorVersion': 1,
-             'session': header(namespace, 'utilities', anchor, initial_live, profile),
+             'session': header(namespace, 'utilities', anchor, initial_live, profile, backfill),
              'samplingIntervalMs': 1000, 'generators': []}
     add = model['generators'].append
 
@@ -81,7 +81,7 @@ def utilities_model(namespace, anchor, initial_live, profile, seed):
     add({'tag': output(model, prefix + 'Tank.LevelPct', 'number'), 'kind': 'ramp',
          'startValue': 20, 'ratePerSecond': 0.0003, 'minimum': 0, 'maximum': 95})
     # Day/night setpoint keyed to UTC hour so trends line up with wall time.
-    start = anchor - BACKFILL
+    start = anchor - backfill
     steps = []
     for hour in range(PATTERN_SPAN_MS // HOUR_MS):
         local_hour = (start + timedelta(hours=hour)).hour
@@ -99,11 +99,11 @@ def utilities_model(namespace, anchor, initial_live, profile, seed):
     return model
 
 
-def packaging_model(namespace, anchor, initial_live, profile, seed):
+def packaging_model(namespace, anchor, initial_live, profile, seed, backfill):
     """Gated sequences driven by an eight-hour shift with a changeover window."""
     prefix = f'{namespace}.PackagingLine.'
     model = {'schemaVersion': 1, 'generatorVersion': 1,
-             'session': header(namespace, 'packaging', anchor, initial_live, profile),
+             'session': header(namespace, 'packaging', anchor, initial_live, profile, backfill),
              'samplingIntervalMs': 1000, 'generators': []}
     add = model['generators'].append
     ready = output(model, prefix + 'LineReady', 'boolean')
@@ -145,11 +145,11 @@ def packaging_model(namespace, anchor, initial_live, profile, seed):
     return model
 
 
-def process_cell_model(namespace, anchor, initial_live, profile, seed):
+def process_cell_model(namespace, anchor, initial_live, profile, seed, backfill):
     """Windowed manufacturing: two downstream cells chosen exclusively by SKU."""
     prefix = f'{namespace}.ProcessCell.'
     model = {'schemaVersion': 1, 'generatorVersion': 1,
-             'session': header(namespace, 'processcell', anchor, initial_live, profile),
+             'session': header(namespace, 'processcell', anchor, initial_live, profile, backfill),
              'samplingIntervalMs': 1000, 'manufacturing': {'tickMs': 1000, 'execution': 'windowed', 'nodes': []}}
     node = model['manufacturing']['nodes'].append
     tag = lambda name: {'tag': prefix + name}
@@ -190,7 +190,7 @@ def process_cell_model(namespace, anchor, initial_live, profile, seed):
     return model
 
 
-def batch_reactor_model(namespace, anchor, initial_live, profile, seed, target):
+def batch_reactor_model(namespace, anchor, initial_live, profile, seed, backfill, target):
     """Production-target model: stops the session when the batch total is reached.
 
     stopOnTarget requires the precompiled execution mode, because windowed
@@ -234,17 +234,17 @@ def batch_reactor_model(namespace, anchor, initial_live, profile, seed, target):
     return model
 
 
-def prepare(anchor, initial_live, profile, seed, target, destination, namespace):
+def prepare(anchor, initial_live, profile, seed, target, destination, namespace, backfill=BACKFILL):
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', profile):
         raise ValueError('rc.profile: Use the deployment profile label (letters, digits, hyphen, underscore; 1–64).')
     destination.mkdir(parents=True, exist_ok=False)
     builders = (('utilities', utilities_model, 100), ('packaging', packaging_model, 200),
                 ('processcell', process_cell_model, 300), ('batchreactor', batch_reactor_model, 400))
     manifest = {'format': 1, 'namespace': namespace, 'dataset': 'Test', 'anchorUtc': utc_text(anchor),
-                'backfillHours': 72, 'initialLiveMinutes': int(initial_live.total_seconds() // 60),
+                'backfillHours': backfill.total_seconds() / 3600, 'initialLiveMinutes': int(initial_live.total_seconds() // 60),
                 'seed': seed, 'batchReactorTarget': target, 'historianWrites': 0, 'sessions': []}
     for part, builder, offset in builders:
-        arguments = (namespace, anchor, initial_live, profile, seed + offset)
+        arguments = (namespace, anchor, initial_live, profile, seed + offset, backfill)
         model = builder(*arguments, target) if part == 'batchreactor' else builder(*arguments)
         text = json.dumps(model, indent=2) + '\n'
         path = destination / f'{part}.json'
@@ -267,16 +267,20 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=20261120)
     parser.add_argument('--target-kg', type=int, required=True, help='BatchReactor production target; tune from the preview')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--backfill-hours', type=int, default=72, help='Continuing-model backfill; 72 for acceptance, shorter only for a smoke run')
+    parser.add_argument('--namespace-prefix', default='RC1', help='Use RC1 for acceptance; a smoke run uses its own prefix')
     args = parser.parse_args()
     try:
         anchor = datetime.fromisoformat(args.anchor_utc.replace('Z', '+00:00'))
         if anchor.tzinfo is None or anchor.utcoffset() != timedelta(0) or anchor.second or anchor.microsecond:
             raise ValueError('rc.anchor: Use a UTC time on a whole minute ending in Z.')
+        if not 1 <= args.backfill_hours <= 72 or not re.fullmatch(r'[A-Za-z0-9]{1,16}', args.namespace_prefix):
+            raise ValueError('rc.arguments: Backfill must be 1-72 hours and the prefix 1-16 letters or digits.')
         if not 1 <= args.initial_live_minutes <= 180:
             raise ValueError('rc.live: Initial live horizon must be 1–180 minutes; the full run is three hours live.')
-        namespace = 'RC1-' + anchor.strftime('%Y%m%dT%H%M')
+        namespace = args.namespace_prefix + '-' + anchor.strftime('%Y%m%dT%H%M')
         manifest = prepare(anchor, timedelta(minutes=args.initial_live_minutes), args.profile, args.seed,
-                           args.target_kg, args.output, namespace)
+                           args.target_kg, args.output, namespace, timedelta(hours=args.backfill_hours))
         print(json.dumps({'outcome': 'Prepared', 'namespace': manifest['namespace'], 'anchorUtc': manifest['anchorUtc'],
                           'sessions': [s['sessionId'] for s in manifest['sessions']], 'historianWrites': 0}))
     except (ValueError, OSError) as error:

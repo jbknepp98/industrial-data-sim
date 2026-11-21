@@ -183,3 +183,15 @@ verified from value equality alone. See [test details](live-verification-24h.md)
 September 20 production preflight confirmed HTTP 404 for an all-new tag data query.
 The adapter confirms absence using a successful tag inventory read before omitting
 absent tags from a data query; it never treats an unexplained 404 as proof of absence.
+
+## Historian 2.0.0 write response (November 20, 2026)
+
+The 2.0.0 OpenAPI document declares a `MultiTagWriteResult` body for HTTP 200 on
+`POST /api/datasets/{dataset}/data`: `a` (accepted points: stored, stored late with
+quality bit 0x01, or deduplicated), `r` drop tallies (`cs` clock skew within the
+late-data tolerance, `pp` older than the purge point, `lda` older than the
+late-data age) and per-tag `t` results. The earlier empty body no longer applies.
+The 1.0.0-rc.1 smoke run against 2.0.0 classified this body as an unexpected
+response and marked its first batch Uncertain, as designed for ambiguity; the
+values were not resent. The adapter now accepts the receipt shape (see
+production-delivery-v1.md). A receipt is server evidence, not a per-point receipt.

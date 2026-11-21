@@ -88,3 +88,30 @@ class PreviewCheckTests(unittest.TestCase):
         failures, _ = check_all(data, self.manifest)
         self.assertTrue(any(f.startswith('target') for f in failures))
         self.assertTrue(any(f.startswith('order') for f in failures))
+
+
+class RunHelperTests(unittest.TestCase):
+    def test_live_lag_ignores_gated_tags_and_requires_all_published(self):
+        from run_rc_acceptance import live_lag_seconds
+        now = datetime(2026, 11, 21, 15, 0, 30, tzinfo=timezone.utc)
+        progress = [{'tag': 'X.PackagingLine.LineReady', 'publishedUtc': '2026-11-21T15:00:25Z'},
+                    {'tag': 'X.PackagingLine.Filler.RateBpm', 'publishedUtc': '2026-11-21T14:00:00Z'},
+                    {'tag': 'X.PackagingLine.Line.Phase', 'publishedUtc': '2026-11-21T15:00:20Z'}]
+        self.assertEqual(10.0, live_lag_seconds(progress, now))
+        progress.append({'tag': 'X.PackagingLine.Other', 'publishedUtc': None})
+        self.assertIsNone(live_lag_seconds(progress, now))
+
+    def test_minute_ceiling_and_percentile(self):
+        from run_rc_acceptance import minute_ceiling, percentile
+        self.assertEqual(datetime(2026, 1, 1, 0, 2, tzinfo=timezone.utc), minute_ceiling(datetime(2026, 1, 1, 0, 1, 1, tzinfo=timezone.utc)))
+        self.assertEqual(datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc), minute_ceiling(datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc)))
+        self.assertEqual(95, percentile(list(range(1, 101))))
+        self.assertIsNone(percentile([]))
+
+    def test_environment_must_target_test(self):
+        from run_rc_acceptance import load_environment
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'env'
+            path.write_text('TIMEBASE_DATASET=PencilFactory\n')
+            with self.assertRaisesRegex(ValueError, 'rc.dataset_guard'):
+                load_environment(path)

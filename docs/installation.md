@@ -1,6 +1,7 @@
 # Candidate installation and operation
 
-The Phase 5 acceptance candidate is **1.0.0-rc.1** (Phase 4 produced 0.4.0-phase4.1);
+The Phase 5 acceptance candidate is **1.0.0-rc.2** (rc.1 failed the 2.0.0 write
+response check; Phase 4 produced 0.4.0-phase4.1);
 neither is v1.0.0. Packages are self-contained:
 .NET is bundled, and neither a .NET SDK nor Python is needed for direct CLI use.
 The optional startup supervisor requires Python 3.12 or later (standard library

@@ -9,6 +9,17 @@ public sealed partial class DurableRuntime
 {
     private string? deliveryAfter;
 
+    /// <summary>
+    /// Makes a server-reported drop visible for a batch that is already
+    /// Published. The write completed, so this never changes batch state and is
+    /// never a reason to resend: Historian has already decided those points.
+    /// </summary>
+    public void ReportDroppedPoints(BatchSnapshot batch, WriteReceipt receipt) =>
+        Log(LogLevel.Warning, "delivery.points_dropped", "Publish",
+            "Historian completed the write but reported dropped points (clock skew, past purge point or past late-data age). The batch remains Published and is not resent.",
+            "Compare the Dataset purge-age and late-data settings with this batch's time range, and check for another writer on these tags. Do not replay.",
+            batch.SessionId, batch, pointCount: (int)Math.Min(receipt.Dropped, int.MaxValue));
+
     internal IReadOnlyList<string> DeliveryOrder() => Access(() =>
     {
         var ids = Rotate(SessionIds().Where(id => ReadSession(id).Status is SessionStatus.Ready or SessionStatus.Draining or SessionStatus.Cancelling).ToList(), deliveryAfter);

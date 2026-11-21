@@ -19,6 +19,7 @@ public class ProductionDeliveryTests
         public Action? OnTokenRequest, OnPublish;
         public HttpStatusCode ReadStatus = HttpStatusCode.OK, TokenStatus = HttpStatusCode.OK;
         public HttpStatusCode PublishStatus = HttpStatusCode.OK;
+        public string PublishBody = "";
         public bool FailPublish, FailReadAfterPublish, Mismatch, Existing, NullCurrent, FlatInventory, SuppressRepeats, TrimReadRange;
         public readonly Dictionary<string, JsonArray> Stored = new();
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken stop)
@@ -48,7 +49,7 @@ public class ProductionDeliveryTests
                     }
                 }
                 if (FailPublish) throw new HttpRequestException("PRIVATE_TRANSPORT_DETAILS");
-                return new(PublishStatus) { Content = new StringContent("") };
+                return new(PublishStatus) { Content = new StringContent(PublishBody) };
             }
             Reads++;
             if (ReadStatus != HttpStatusCode.OK) return new(ReadStatus) { Content = new StringContent("PRIVATE_READ_DETAILS") };
@@ -348,6 +349,87 @@ public class ProductionDeliveryTests
         Assert.Equal("Accepted", Assert.Single(runtime.Observations("session-a")).UserReview);
         runtime.Archive("session-a", files.Folder);
         runtime.VerifyArchive("session-a", files.Folder);
+    }
+
+    // Historian 2.0.0 answers a successful write with accepted/dropped tallies
+    // instead of an empty body. Both complete the write.
+    [Theory]
+    [InlineData("{\"a\":3,\"r\":{\"cs\":0,\"pp\":0,\"lda\":0},\"t\":{\"Plant.A\":{\"a\":3,\"r\":{\"cs\":0,\"pp\":0,\"lda\":0}}}}")]
+    [InlineData("{\"a\":3,\"t\":null}")]
+    [InlineData("  \n")]
+    public async Task WriteReceiptWithoutDropsPublishesNormally(string body)
+    {
+        using var files = new RuntimeFixture();
+        var logger = new CaptureLogger();
+        using var runtime = new DurableRuntime(files.Database, logger: logger, mode: ExecutionMode.Production);
+        var server = new Server { PublishBody = body };
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+        await delivery.AdmitAsync(RuntimeFixture.Model().ToJsonString());
+        runtime.Generate("session-a");
+        Assert.True(await delivery.DeliverOneAsync("session-a"));
+        Assert.Equal(BatchStatus.Published, Assert.Single(runtime.Batches("session-a")).Status);
+        Assert.DoesNotContain(logger.Entries, e => e.Entry.EventCode == "delivery.points_dropped");
+    }
+
+    [Fact]
+    public async Task ReportedDropsStayPublishedAreLoggedAndAreNeverResent()
+    {
+        using var files = new RuntimeFixture();
+        var logger = new CaptureLogger();
+        using var runtime = new DurableRuntime(files.Database, logger: logger, mode: ExecutionMode.Production);
+        var server = new Server { PublishBody = "{\"a\":1,\"r\":{\"cs\":1,\"pp\":0,\"lda\":1}}" };
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+        await delivery.AdmitAsync(RuntimeFixture.Model().ToJsonString());
+        runtime.Generate("session-a");
+        Assert.True(await delivery.DeliverOneAsync("session-a"));
+        var batch = Assert.Single(runtime.Batches("session-a"));
+        Assert.Equal(BatchStatus.Published, batch.Status);
+        var warning = Assert.Single(logger.Entries, e => e.Entry.EventCode == "delivery.points_dropped");
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, warning.Level);
+        Assert.Equal(2, warning.Entry.PointCount);
+        Assert.Equal(batch.Id, warning.Entry.BatchId);
+        Assert.Contains("Do not replay", warning.Entry.Action);
+        Assert.Equal(1, server.Writes);
+    }
+
+    // Anything that is neither empty nor a well-formed receipt stays ambiguous.
+    [Theory]
+    [InlineData("{\"a\":3,\"unexpected\":1}")]
+    [InlineData("{\"a\":-1}")]
+    [InlineData("{\"r\":{\"cs\":\"1\"}}")]
+    [InlineData("{\"r\":{\"other\":1}}")]
+    [InlineData("{\"t\":{\"Plant.A\":{\"x\":1}}}")]
+    [InlineData("[1]")]
+    [InlineData("PRIVATE_UNEXPECTED_BODY")]
+    public async Task UnexpectedWriteBodyRemainsUncertainWithoutReplay(string body)
+    {
+        using var files = new RuntimeFixture();
+        using var runtime = new DurableRuntime(files.Database, mode: ExecutionMode.Production);
+        var server = new Server { PublishBody = body };
+        using var client = new HistorianClient(Profile(), new HttpClient(server));
+        var delivery = new ProductionDelivery(runtime, client) { ObservationDelay = TimeSpan.Zero };
+        await delivery.AdmitAsync(RuntimeFixture.Model().ToJsonString());
+        runtime.Generate("session-a");
+        Assert.False(await delivery.DeliverOneAsync("session-a"));
+        var session = runtime.GetSession("session-a");
+        Assert.Equal(SessionStatus.Uncertain, session.Status);
+        Assert.DoesNotContain("PRIVATE", session.ErrorMessage ?? "");
+        Assert.NotNull(Assert.Single(runtime.Batches("session-a")).Payload);
+        Assert.False(await delivery.DeliverOneAsync("session-a"));
+        Assert.Equal(1, server.Writes);
+    }
+
+    private sealed class CaptureLogger : Microsoft.Extensions.Logging.ILogger<DurableRuntime>
+    {
+        public List<(Microsoft.Extensions.Logging.LogLevel Level, RuntimeLogEvent Entry)> Entries { get; } = [];
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel level) => true;
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel level, Microsoft.Extensions.Logging.EventId id, TState state, Exception? error, Func<TState, Exception?, string> formatter)
+        {
+            if (state is RuntimeLogEvent entry) Entries.Add((level, entry));
+        }
     }
 
     [Theory]

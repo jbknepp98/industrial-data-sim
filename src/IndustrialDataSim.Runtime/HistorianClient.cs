@@ -6,6 +6,16 @@ using IndustrialDataSim.Core.Configuration;
 
 namespace IndustrialDataSim.Runtime;
 
+/// <summary>
+/// Write tallies returned by Historian 2.0.0 and later. Accepted counts points
+/// stored, stored late or deduplicated; the three drop buckets are the server's
+/// write-policy rejections. This is server evidence, not a per-point receipt.
+/// </summary>
+public sealed record WriteReceipt(int? Accepted, int ClockSkewDrops, int PastPurgeDrops, int PastLateAgeDrops)
+{
+    public long Dropped => (long)ClockSkewDrops + PastPurgeDrops + PastLateAgeDrops;
+}
+
 public sealed record ProductionPreflight(DatasetSettings Settings, IReadOnlyDictionary<string, long?> BaselineTicks);
 public sealed record DatasetSettings(int PurgeAgeDays, int PurgeSizeGb, int? LateToleranceMs, int? LateAgeDays);
 internal sealed record ObservedPoint(DateTimeOffset Timestamp, JsonElement Value, int Quality);
@@ -101,7 +111,8 @@ public sealed class HistorianClient : IDisposable
             throw new RuntimeFailure("historian.tag_limit", "This first production adapter supports at most 32 output tags per session. Split larger models into sessions with disjoint tags.");
     }
 
-    internal async Task Publish(string dataset, string payload, CancellationToken stop)
+    /// <returns>The server's write tallies, or null for an empty success body.</returns>
+    internal async Task<WriteReceipt?> Publish(string dataset, string payload, CancellationToken stop)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(20));
@@ -112,10 +123,79 @@ public sealed class HistorianClient : IDisposable
         request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stop);
         RequireOk(response, "publish");
-        // The documented successful response is empty. Drain a bounded body so
-        // an interrupted response cannot be mistaken for normal completion.
+        // Drain a bounded body so an interrupted response cannot be mistaken
+        // for normal completion.
         byte[] body = await ReadBytes(response, 64 * 1024, stop);
-        if (body.Any(value => value is not (9 or 10 or 13 or 32))) throw ProtocolFailure();
+        return ParseWriteReceipt(body);
+    }
+
+    /// <summary>
+    /// Historian before 2.0.0 answered a successful write with an empty body;
+    /// 2.0.0 returns accepted/dropped tallies. Both mean the write completed.
+    /// Any other body is still an unexpected response, which the caller treats
+    /// as an ambiguous publish (Uncertain), exactly as before.
+    /// </summary>
+    internal static WriteReceipt? ParseWriteReceipt(byte[] body)
+    {
+        if (body.All(value => value is 9 or 10 or 13 or 32)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) throw ProtocolFailure();
+            int? accepted = null;
+            (int ClockSkew, int PastPurge, int PastLateAge) drops = (0, 0, 0);
+            foreach (var member in root.EnumerateObject())
+            {
+                switch (member.Name)
+                {
+                    case "a": accepted = Count(member.Value); break;
+                    case "r": drops = Drops(member.Value); break;
+                    case "t": ValidatePerTagResults(member.Value); break;
+                    default: throw ProtocolFailure();
+                }
+            }
+            return new WriteReceipt(accepted, drops.ClockSkew, drops.PastPurge, drops.PastLateAge);
+        }
+        catch (JsonException) { throw ProtocolFailure(); }
+
+        static int Count(JsonElement element) =>
+            element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out int number) && number >= 0 ? number : throw ProtocolFailure();
+
+        static (int, int, int) Drops(JsonElement element)
+        {
+            if (element.ValueKind != JsonValueKind.Object) throw ProtocolFailure();
+            int clockSkew = 0, pastPurge = 0, pastLateAge = 0;
+            foreach (var member in element.EnumerateObject())
+            {
+                switch (member.Name)
+                {
+                    case "cs": clockSkew = Count(member.Value); break;
+                    case "pp": pastPurge = Count(member.Value); break;
+                    case "lda": pastLateAge = Count(member.Value); break;
+                    default: throw ProtocolFailure();
+                }
+            }
+            return (clockSkew, pastPurge, pastLateAge);
+        }
+
+        // Per-tag results repeat the totals; check their shape so an unrelated
+        // body cannot pass as a receipt, but take counts from the totals.
+        static void ValidatePerTagResults(JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Null) return;
+            if (element.ValueKind != JsonValueKind.Object) throw ProtocolFailure();
+            foreach (var tag in element.EnumerateObject())
+            {
+                if (tag.Value.ValueKind != JsonValueKind.Object) throw ProtocolFailure();
+                foreach (var member in tag.Value.EnumerateObject())
+                {
+                    if (member.Name == "a") Count(member.Value);
+                    else if (member.Name == "r") Drops(member.Value);
+                    else throw ProtocolFailure();
+                }
+            }
+        }
     }
 
     internal async Task<IReadOnlyList<TagRead>> Read(string dataset, IEnumerable<string> tags,

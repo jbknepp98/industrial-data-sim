@@ -62,7 +62,9 @@ public sealed partial class DurableRuntime
             sessionId = null;
         var entry = new RuntimeLogEvent(DateTimeOffset.UtcNow, code, operation, message, action,
             sessionId, batch?.Id, batch?.StartSlot ?? startSlot, batch?.EndSlot ?? endSlot,
-            batch?.PointCount ?? pointCount, batch?.ByteCount ?? byteCount,
+            // An explicit count (such as dropped points) describes the event
+            // more precisely than the batch size, so it takes precedence.
+            pointCount ?? batch?.PointCount, batch?.ByteCount ?? byteCount,
             failure?.OutputTagIndex, failure?.CandidateSlot, failure?.SampleUtc);
         try
         {

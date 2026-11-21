@@ -11,7 +11,7 @@ permissions:
 # Candidate under test. Bump the rc number for any behavior-changing repair;
 # package_release.py refuses a bare 1.0.0 (release approval is Phase 6).
 env:
-  CANDIDATE_VERSION: 1.0.0-rc.1
+  CANDIDATE_VERSION: 1.0.0-rc.2
 
 concurrency:
   group: verify-${{ github.ref }}

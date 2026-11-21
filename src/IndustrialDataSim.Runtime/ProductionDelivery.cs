@@ -77,9 +77,10 @@ public sealed class ProductionDelivery
             runtime.SaveObservation(new(batch.Id, "Pending", 0, 0, 0, null, "NotReviewed"));
             bool published = false;
             RuntimeFailure? publishFailure = null;
+            WriteReceipt? receipt = null;
             try
             {
-                await historian.Publish(work.Dataset, work.Batch.Payload!, stop);
+                receipt = await historian.Publish(work.Dataset, work.Batch.Payload!, stop);
                 published = true;
             }
             catch (Exception error) when (IsTransportFailure(error) || error is RuntimeFailure)
@@ -95,6 +96,8 @@ public sealed class ProductionDelivery
                 runtime.SaveObservation(new(batch.Id, "Unavailable", 0, 0, 0, "delivery.uncertain", "NotReviewed"));
                 return false;
             }
+            // The write completed; a reported drop is surfaced, never resent.
+            if (receipt is { Dropped: > 0 }) runtime.ReportDroppedPoints(work.Batch, receipt);
             // Publishing is already durable. Read failures below cannot turn a
             // Published batch back into Sending or authorize another POST.
             ArrivalObservation observation = new(batch.Id, "NotYetObserved", 0, 0, 0, null, "NotReviewed");

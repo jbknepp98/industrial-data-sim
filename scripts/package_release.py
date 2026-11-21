@@ -15,7 +15,7 @@ import sys
 import zipfile
 
 RIDS = ('linux-x64', 'osx-arm64', 'win-x64')
-DEFAULT_VERSION = '1.0.0-rc.1'
+DEFAULT_VERSION = '1.0.0-rc.2'
 # Candidates only: Phase 4 prereleases and numbered 1.0.0 release candidates.
 # A bare 1.0.0 is refused on purpose; release approval is a separate Phase 6 step.
 CANDIDATE_VERSION = re.compile(r'0\.\d+\.\d+-phase4\.\d+|1\.0\.0-rc\.[1-9]\d*')

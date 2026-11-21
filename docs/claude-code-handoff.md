@@ -31,7 +31,8 @@ generator identity, database schema, or archive format.
 - Implemented/qualified release phases: 1 scope; 2 bounded execution/capacity;
   3 recovery/retention; 4 self-contained packaging and compatibility baseline.
 - Current packaged candidate: `0.4.0-phase4.1`, **not v1.0.0**. Update, November 20,
-  2026: Phase 5 acceptance uses `1.0.0-rc.1`, the default of `package_release.py`.
+  2026: Phase 5 acceptance uses `1.0.0-rc.2` (rc.1 could not parse Historian 2.0.0
+  write receipts), the default of `package_release.py`.
 - SQLite schema: **10**. Archive export format: **3**. Evidence-only snapshot
   schema marker: **1000008**, deliberately not runnable.
 - Last fully qualified implementation: `afb669d`.
@@ -186,8 +187,8 @@ For packaging, use a new ignored output directory each time:
 
 ```sh
 python3 scripts/package_release.py --rid osx-arm64 --output .tools/new-candidate
-python3 scripts/verify_package.py .tools/new-candidate/industrial-data-sim-1.0.0-rc.1-osx-arm64.zip --require-clean
-python3 scripts/verify_deployment_templates.py .tools/new-candidate/industrial-data-sim-1.0.0-rc.1-osx-arm64
+python3 scripts/verify_package.py .tools/new-candidate/industrial-data-sim-1.0.0-rc.2-osx-arm64.zip --require-clean
+python3 scripts/verify_deployment_templates.py .tools/new-candidate/industrial-data-sim-1.0.0-rc.2-osx-arm64
 ```
 
 Other qualified RIDs: linux-x64, win-x64. Packages include .NET; direct execution

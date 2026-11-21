@@ -42,6 +42,12 @@ parsed `lateToleranceMs` 0 and `lateAgeDays` 30. `production run` was not invoke
 so no values were written; the session is left unpublished in ignored local state.
 This is a compatibility smoke check, not exact-candidate evidence.
 
+Smoke run of 1.0.0-rc.1 (November 21, 2026, `SMOKE-20261121T0013.*` tags in
+Test): the first publish returned HTTP 200 with the new 2.0.0 write receipt body,
+which rc.1 treated as an unexpected response, so that session became Uncertain
+and the run stopped with state preserved. Nothing was resent. 1.0.0-rc.2 accepts
+the receipt; see timebase-api-findings.md. rc.1 is not compatible with 2.0.0.
+
 Historian 2.0.0 Dataset settings expose late-data tolerance (`ldt`, ms; server
 default 0) and late-data age (`lda`, days; server default 30) plus read-only size,
 tag-count and age fields. The adapter already reads `ldt`/`lda` as optional and

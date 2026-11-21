@@ -52,6 +52,7 @@ line and inspect SQLite. Do not infer failed delivery from a missing log record.
 | Information | `generation.unblocked` | Queue and disk checks permit another generation attempt; this does not guarantee the next transaction succeeds. |
 | Warning | `generation.queue_full` | Deliver pending work or review queue limits. Inspect Uncertain sessions if their retained work blocks capacity. Cursor is unchanged. |
 | Warning | `generation.disk_low` | Free space on the state volume. Cursor is unchanged. |
+| Warning | `delivery.points_dropped` | Historian 2.0.0 completed a write but reported dropped points; `pointCount` is the number dropped. The batch stays Published. Compare Dataset purge-age/late-data settings with the batch range and look for another writer on the tags. Never resend. |
 | Warning | `delivery.uncertain`, `delivery.interrupted` | Preserve payload and ownership; investigate acceptance evidence. Never resend based on missing samples. Startup reports the interrupted batch count; list Uncertain sessions to locate the batches. |
 | Error | `generation.point_too_large`, `generation.non_finite_value` | Inspect the output-tag index, sample time, and candidate slot. Session is Failed, with the explanation persisted in SQLite. |
 | Error | `delivery.payload_integrity`, `runtime.configuration_integrity` | Stop and restore verified state; do not submit altered payloads or edited configurations. |

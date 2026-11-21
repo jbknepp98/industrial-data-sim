@@ -80,8 +80,14 @@ external conflict. This is a check, not a lock against racing external writers.
 The runtime verifies payload hashes and ordered positions, commits Sending and
 submission intent, then performs HTTP outside the database transaction.
 
-Only HTTP 200 with an empty/whitespace body is normal completion under the observed
-API contract. It becomes **Published**, updates `published_ticks`, and releases
+Normal completion is HTTP 200 with either an empty/whitespace body (Historian
+before 2.0.0) or a well-formed 2.0.0 write receipt: an object with only `a`
+(accepted), `r` (dropped by clock skew `cs`, past purge point `pp`, past late-data
+age `lda`) and `t` (the same tallies per tag), all non-negative integers. Any other
+body remains an ambiguous response and the session becomes Uncertain. A receipt
+that reports drops is still Published: the write completed and Historian has
+decided those points. The runtime logs `delivery.points_dropped` (Warning, with
+the dropped count) and never resends. The batch becomes **Published**, updates `published_ticks`, and releases
 the completed payload. Batch hash, ranges, positions, attempt outcome and
 observations remain. `acknowledged_ticks` stays null in production. Complete means
 publishing finished, not that all points were stored or that the user reviewed it.
@@ -128,7 +134,7 @@ Observation logs report changed conditions; log rotation does not control recove
 
 ## Verification
 
-Offline tests exercise empty publish responses, transport loss after server action,
+Offline tests exercise empty and 2.0.0 receipt publish responses, reported drops, malformed bodies, transport loss after server action,
 crash after publishing before local commit, separate observation failures, renewal,
 unsent restart, concurrent sessions, timeline conflicts and mode isolation.
 They model HTTP behavior; they do not establish server durability guarantees.
