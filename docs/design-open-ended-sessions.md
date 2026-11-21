@@ -1,6 +1,6 @@
 # Design note: open-ended sessions (1.1.0)
 
-Status: **proposal for owner review**, November 21, 2026. No code has changed.
+Status: **approved with owner decisions**, November 21, 2026. See "Owner decisions" below.
 
 ## Requirement (owner, November 21, 2026)
 
@@ -80,9 +80,9 @@ Each finite generator pattern gains `"after…": "repeat"` as an alternative to
 each cycle from a seed derived deterministically from its base seed and the cycle
 number, so the stream stays reproducible and each cycle differs.
 
-On an open-ended session, admission **rejects** any finite pattern that is not
-set to repeat. The error names the pattern path and suggests `repeat`, so the
-data cannot quietly flat-line. Finite sessions keep accepting `holdLast`.
+On an open-ended session, admission **warns** about any finite pattern that is
+not set to repeat. The warning names the pattern path and suggests `repeat`
+(owner decision 3). Finite sessions keep accepting `holdLast`.
 Windowed manufacturing already runs tick by tick from a bounded checkpoint, and
 `schedule` already repeats, so manufacturing models need no pattern change.
 
@@ -118,23 +118,25 @@ target is a separate future change.
 
 ### 6. Compatibility
 
-- Database schema 11 adds a nullable effective end, the resolved start, and a
-  retention cursor. Opening existing state migrates it transactionally; the
+- Database schema 11 adds a nullable effective end and the resolved start. Opening existing state migrates it transactionally; the
   current backup-before-upgrade rule applies.
-- Archive format 4 records the open horizon and the pruning receipts.
+- Archive format 4 records the open horizon.
 - Existing finite models, CLI commands and behavior are unchanged.
 
-## Decisions for the owner
+## Owner decisions (November 21, 2026)
 
-1. **Backfill setting location:** in the model file (`"backfill": "72h"`,
-   recommended, so the model is self-describing), or as an admission option
-   (`production start … --backfill 72h`).
-2. **Automatic history retention**, deleting local audit rows older than 7 days
-   (recommended), or keep everything and require manual archiving.
-3. **Strict repeat rule:** reject non-repeating finite patterns on open-ended
-   sessions (recommended), or allow them with a warning.
-4. **Version:** ship as **1.1.0**, with a new rc smoke in Docker on linux-arm64.
-   You run the long soak yourself, as agreed.
+1. **Backfill is set in the model file:** `"backfill": "72h"`.
+2. **No automatic deletion.** Section 4 is withdrawn: all audit history is kept.
+   The local database grows with run time, roughly 15 MB/day at the acceptance
+   workload (about 45 MB per 75 hours). This scales with points published, so
+   documentation will give the estimate and the manual trim path: pause, run
+   `archive-history`, then resume. Disk-pressure guards still stop generation
+   safely before the disk fills.
+3. **Non-repeating finite patterns are allowed** on open-ended sessions.
+   Admission succeeds with a warning that names each pattern path that will hold
+   its last value, and suggests `repeat`.
+4. **Ship as 1.1.0**, with an rc smoke test in Docker on linux-arm64. The owner
+   runs the long soak, then the tag.
 
 ## Out of scope for 1.1.0
 
@@ -156,12 +158,12 @@ target is a separate future change.
 3. **Open horizon in the runtime:** schema 11 migration, nullable total,
    status fields, cancel-only ending, and the extension refusal. Equivalence
    test: an open session matches a long finite session slot for slot.
-4. **History retention:** host timer, bounded transactions, crash tests at each
-   commit boundary, and proof that Pending and Uncertain work is never touched.
+4. **Storage guidance:** document growth per point and the manual
+   `archive-history` trim path. There is no automatic deletion (owner decision 2).
 5. **Long-run fast test (fake transport):** weeks of simulated time compressed
-   into minutes, checking flat memory, database size bounded by retention, and
+   into minutes, checking flat memory, predictable database growth, and
    unchanged per-tag streams.
 6. **Docs, rc build and smoke:** CI on all four platforms, then a native
    linux-arm64 Docker smoke covering admission from backfill, live, restart,
-   pause/resume, cancel and retention pruning.
+   pause/resume, and cancel.
 7. **Owner soak, then tag `v1.1.0`.**
