@@ -1,8 +1,8 @@
 # industrial-data-sim 1.0.1: release notes
 
-Prepared November 21, 2026; tagged once the owner approves. This is the 1.0.0 program (no runtime code change)
+Released November 21, 2026, with the owner's approval. This is the 1.0.0 program (no runtime code change)
 plus a native **linux-arm64** package, so Docker on ARM64 hosts runs without x64
-emulation. Docker is the only supported deployment. The tag goes on `192aaab`,
+emulation. Docker is the only supported deployment. Tag `v1.0.1` is on `192aaab`,
 built by [CI run 44912679076](https://github.com/jbknepp98/industrial-data-sim/actions/runs/44912679076)
 (all seven jobs passed).
 

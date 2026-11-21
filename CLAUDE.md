@@ -5,7 +5,7 @@ logging, test and documentation rules apply to this project. Then read
 `docs/claude-code-handoff.md`, followed by the release specification and acceptance
 matrix linked there.
 
-v1.0.0 is released (tag `v1.0.0`, November 21, 2026; see
+v1.0.1 is released (tag `v1.0.1`, November 21, 2026; native linux-arm64 Docker; see
 `docs/release-notes.md`). It is deployed in Docker for internal use. Any
 change needs a new version number and the affected acceptance repeated.
 Never open historical demo databases with the current runtime merely to inspect

@@ -30,9 +30,10 @@ generator identity, database schema, or archive format.
 
 - Implemented/qualified release phases: 1 scope; 2 bounded execution/capacity;
   3 recovery/retention; 4 self-contained packaging and compatibility baseline.
-- Released version: **1.0.0** (tag `v1.0.0` on `cdf0681`, a version-only rebuild of
-  the accepted `1.0.0-rc.2`). Earlier candidates: `0.4.0-phase4.1` and rc.1, which
-  is incompatible with Historian 2.0.0.
+- Released version: **1.0.1** (tag `v1.0.1` on `192aaab`): the 1.0.0 program plus a
+  native `linux-arm64` package. The owner deploys only in Docker. `v1.0.0` (`cdf0681`)
+  was a version-only rebuild of the accepted `1.0.0-rc.2`; rc.1 is incompatible
+  with Historian 2.0.0.
 - SQLite schema: **10**. Archive export format: **3**. Evidence-only snapshot
   schema marker: **1000008**, deliberately not runnable.
 - Last fully qualified implementation: `afb669d`.
@@ -251,8 +252,8 @@ with databases. Do not merge transferred state with another copy that has advanc
 
 ## Next work: Phase 5, then Phase 6
 
-Status, November 21, 2026: all steps are done. **v1.0.0 is released** (tag on
-`cdf0681`; see release-notes.md). It is deployed in Docker for the owner's
+Status, November 21, 2026: all steps are done. **v1.0.1 is released** (tag on
+`192aaab`; v1.0.0 on `cdf0681`; see release-notes.md). It is deployed in Docker for the owner's
 team; see the Docker section of installation.md.
 
 1. Confirm current stack identity, credentials/TLS trust, Dataset retention,

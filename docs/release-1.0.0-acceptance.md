@@ -31,7 +31,7 @@ production certification merely because unit tests pass.
 | V19 | Intended data pattern accepted by user | Review trigger/secondary tags, SKU routing, speeds, faults and totals; record accepted observations separately from HTTP progress | 5 | Owner approved November 21, 2026 |
 | V20 | Documentation describes shipped behavior and every release failure has a useful diagnosis | Final code/error/docs audit; current handoff and examples agree with executable commands; historical claims clearly dated | 6 | Done: installation (1.0.0, Docker), compatibility, handoff and release notes updated |
 | V21 | Exact release source and packaged artifacts pass final checks | Windows/Linux/macOS matrix for declared support; clean-source build, installed artifact smoke, checksums and version output | 6 | Passed: 1.0.0 CI (all six jobs), package verification, macOS and Docker smoke runs |
-| V22 | Release approved and reproducible | No unresolved blockers; final notes/limits, evidence index, immutable tag and matching artifacts | 6 | Released: `v1.0.0` on `cdf0681` ([release notes](release-notes.md)) |
+| V22 | Release approved and reproducible | No unresolved blockers; final notes/limits, evidence index, immutable tag and matching artifacts | 6 | Released: `v1.0.0` on `cdf0681`, then `v1.0.1` on `192aaab` (adds linux-arm64) ([release notes](release-notes.md)) |
 
 ## Evidence record requirements
 
