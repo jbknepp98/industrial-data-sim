@@ -15,12 +15,13 @@ import sys
 import zipfile
 
 RIDS = ('linux-arm64', 'linux-x64', 'osx-arm64', 'win-x64')
-DEFAULT_VERSION = '1.0.1'
+DEFAULT_VERSION = '1.1.0-rc.1'
 # Phase 4 prereleases, numbered 1.0.0 release candidates, 1.0.0 (owner-approved
 # November 21, 2026, as a version-only rebuild of rc.2) and 1.0.1 (owner-approved
 # the same day: 1.0.0 source plus a native linux-arm64 package). Any later
-# version needs its own explicit approval and an edit here.
-CANDIDATE_VERSION = re.compile(r'0\.\d+\.\d+-phase4\.\d+|1\.0\.0-rc\.[1-9]\d*|1\.0\.[01]')
+# version needs its own explicit approval and an edit here. 1.1.0 release
+# candidates (open-ended sessions) are allowed; a bare 1.1.0 needs approval.
+CANDIDATE_VERSION = re.compile(r'0\.\d+\.\d+-phase4\.\d+|1\.0\.0-rc\.[1-9]\d*|1\.0\.[01]|1\.1\.0-rc\.[1-9]\d*')
 
 
 def is_candidate_version(version):
@@ -38,7 +39,7 @@ def digest(path):
 def build(dotnet, rid, version, destination):
     root = Path(__file__).resolve().parents[1]
     if rid not in RIDS or not is_candidate_version(version):
-        raise ValueError('Use a declared RID and an approved version (1.0.1, 1.0.0, 1.0.0-rc.N or 0.x.y-phase4.N); later versions need explicit approval.')
+        raise ValueError('Use a declared RID and an approved version (1.1.0-rc.N, 1.0.1, 1.0.0, 1.0.0-rc.N or 0.x.y-phase4.N); later versions need explicit approval.')
     # Never overwrite an existing candidate or blend it with prior outputs.
     destination.mkdir(parents=True, exist_ok=False)
     package = destination / ('industrial-data-sim-' + version + '-' + rid)
@@ -114,5 +115,5 @@ if __name__ == '__main__':
         build(args.dotnet, args.rid, args.version, args.output.resolve())
     except (OSError, ValueError, KeyError, subprocess.SubprocessError):
         print(json.dumps({'outcome': 'Failed', 'code': 'package.build', 'location': '$',
-                          'message': 'Candidate build failed. Use a new output directory, supported RID and approved version (1.0.1, 1.0.0, 1.0.0-rc.N or 0.x.y-phase4.N). Check SDK/network access and the local build log. No existing candidate is overwritten.'}))
+                          'message': 'Candidate build failed. Use a new output directory, supported RID and approved version (1.1.0-rc.N, 1.0.1, 1.0.0, 1.0.0-rc.N or 0.x.y-phase4.N). Check SDK/network access and the local build log. No existing candidate is overwritten.'}))
         sys.exit(1)

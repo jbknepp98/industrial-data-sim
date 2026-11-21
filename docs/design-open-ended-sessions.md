@@ -1,7 +1,7 @@
 # Design note: open-ended sessions (1.1.0)
 
 Status: **approved with owner decisions**, November 21, 2026. See "Owner decisions" below.
-Implementation: steps 1–3 done. User guide: [open-ended-sessions.md](open-ended-sessions.md).
+Implementation: steps 1–3 and 5 done. User guide: [open-ended-sessions.md](open-ended-sessions.md).
 No database schema change was needed: backfill resolves to a concrete `startUtc`
 before admission, and an open end is stored as a header without `endUtc`.
 
@@ -157,3 +157,20 @@ target is a separate future change.
    linux-arm64 Docker smoke covering admission from backfill, live, restart,
    pause/resume, and cancel.
 7. **Owner soak, then tag `v1.1.0`.**
+
+## Step 5 result (November 21, 2026)
+
+This used the Release build of `bf70063` and simulated delivery
+(`session run-simulated`). The example open-ended model ran with a 2-day and a
+14-day backfill:
+
+| Backfill | Slots generated and delivered | Wall time | Peak memory | Ended |
+| --- | --- | --- | --- | --- |
+| 2 days | 691,264 | 3 s | 95 MB | Blocked at the wall clock, still Ready |
+| 14 days | 4,838,496 | 9 s | 97 MB | Blocked at the wall clock, still Ready |
+
+Peak memory does not grow with run length. Generation stopped exactly at the
+current time with empty queues, which confirms the wall-clock guard without a
+fence. Simulated delivery prunes payloads, so this does not measure
+production-mode audit growth. That is covered by the 1.0 acceptance figure
+(about 45 MB for 1.09 million points).

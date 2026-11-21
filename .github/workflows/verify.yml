@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 # Candidate under test. Bump the rc number for any behavior-changing repair;
-# 1.0.1 approved by the owner November 21, 2026 (1.0.0 source plus linux-arm64).
+# 1.1.0-rc.1: open-ended sessions candidate (owner-approved design, November 21, 2026).
 env:
-  CANDIDATE_VERSION: 1.0.1
+  CANDIDATE_VERSION: 1.1.0-rc.1
 
 concurrency:
   group: verify-${{ github.ref }}
