@@ -78,6 +78,9 @@ public static partial class BackfillResolver
         return model.ToJsonString();
     }
 
+    /// <summary>Parses "72h"-style durations (s, m, h, d), 1 second to 3650 days.</summary>
+    internal static TimeSpan? ParseDuration(string? value) => Parse(value);
+
     private static TimeSpan? Parse(string? value)
     {
         if (value is null) return null;
