@@ -1,7 +1,9 @@
 # Installation and operation
 
-Release **1.0.0** (source `cdf0681`, a version-only rebuild of the accepted
-`1.0.0-rc.2`). Packages are self-contained:
+Release **1.0.1** (source `192aaab`): the 1.0.0 program plus a native
+`linux-arm64` package. 1.0.0 (`cdf0681`) was a version-only rebuild of the
+accepted `1.0.0-rc.2`. The supported deployment is Docker, using `linux-arm64` on
+ARM64 hosts such as Apple Silicon, or `linux-x64` on x64 hosts. Packages are self-contained:
 .NET is bundled, and neither a .NET SDK nor Python is needed for direct CLI use.
 The optional startup supervisor requires Python 3.12 or later (standard library
 only). See compatibility.md for the tested OS/CPU matrix. Do not treat an image
@@ -102,24 +104,34 @@ healthy live-latency measurements. A finite horizon still needs explicit extensi
 
 Native template references: [Task Scheduler XML and principal settings](https://learn.microsoft.com/en-us/windows/win32/taskschd/logon-trigger-example--xml-). The template uses a dedicated non-elevated account selected by the operator; it does not adopt the administrator account in the documentation example.
 
-## Docker (the owner's chosen deployment)
+## Docker (the supported deployment)
 
-Smoke-tested on November 21, 2026: the `linux-x64` package ran in a
-`python:3.12-slim` (Debian) container on the Mac's Docker, under x64 emulation,
-on the Timebase stack's Docker network. Admission, backfill to live, extension,
-restart, pause and resume, and completion all passed. A long live run has
-not been done in a container; the three-hour acceptance ran on the macOS package.
-No image is shipped. Build one locally:
+The owner runs the simulator only in Docker, never natively on macOS.
+
+Smoke-tested November 21, 2026, on the Mac's Docker, on the Timebase stack network,
+against Historian/Pulse 2.0.0:
+
+- **1.0.1 `linux-arm64`, native:** passed. Catch-up 21 s, status p95 416 ms,
+  live lag p95 1.27 s. The SIGINT stop and restart were verified.
+- **1.0.0 `linux-x64` under x64 emulation:** passed. Status p95 966 ms.
+
+Admission, backfill to live, extension, restart, pause and resume, and completion
+all passed. The three-hour live acceptance ran on the rc.2 macOS package; the
+owner will run a long Docker soak themselves. No image is shipped. Build one
+locally from the package matching the host CPU:
 
 ```dockerfile
-FROM --platform=linux/amd64 debian:trixie-slim
+FROM debian:trixie-slim
+ARG PACKAGE=industrial-data-sim-1.0.1-linux-arm64
 RUN apt-get update && apt-get install -y --no-install-recommends libicu76 \
     && rm -rf /var/lib/apt/lists/* && useradd --create-home --uid 10001 datasim
-COPY industrial-data-sim-1.0.0-linux-x64/ /opt/datasim/
+COPY ${PACKAGE}/ /opt/datasim/
 USER datasim
 STOPSIGNAL SIGINT
 ENTRYPOINT ["/opt/datasim/app/IndustrialDataSim.Cli"]
 ```
+
+On an x64 host, build with `--build-arg PACKAGE=industrial-data-sim-1.0.1-linux-x64`.
 
 Rules for running it:
 
@@ -157,10 +169,8 @@ Rules for running it:
 - **Admit sessions with a one-off container** that mounts the same volume
   (`production start /data/state.db /models/<model>.json`), and do it before
   starting the host, or while it runs via `docker exec`.
-- **Use native ARM64 when available.** On ARM64 hosts, such as Apple Silicon or
-  Graviton, the x64 package runs only under emulation. It passed, but status
-  latency was higher (p95 966 ms in the container versus 414 ms native). A
-  `linux-arm64` package is a possible later addition and is not part of 1.0.0.
+- **Match the package to the host CPU.** On ARM64, the x64 package works
+  only under emulation, and its status latency is roughly double.
 
 Example:
 
@@ -169,5 +179,5 @@ docker volume create datasim-state
 docker run -d --name datasim --restart unless-stopped --stop-signal SIGINT --stop-timeout 120 \
   --network timebase-2-0-beta_default --env-file /path/to/private/datasim.env \
   -v datasim-state:/data -v /path/to/pulse-root-ca.pem:/certs/pulse-root-ca.pem:ro \
-  datasim:1.0.0 production-host run /data/state.db
+  datasim:1.0.1 production-host run /data/state.db
 ```

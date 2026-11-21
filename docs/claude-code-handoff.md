@@ -252,7 +252,7 @@ with databases. Do not merge transferred state with another copy that has advanc
 ## Next work: Phase 5, then Phase 6
 
 Status, November 21, 2026: all steps are done. **v1.0.0 is released** (tag on
-`cdf0681`; see release-1.0.0-notes.md). It is deployed in Docker for the owner's
+`cdf0681`; see release-notes.md). It is deployed in Docker for the owner's
 team; see the Docker section of installation.md.
 
 1. Confirm current stack identity, credentials/TLS trust, Dataset retention,

@@ -1,3 +1,31 @@
+# industrial-data-sim 1.0.1: release notes
+
+Prepared November 21, 2026; tagged once the owner approves. This is the 1.0.0 program (no runtime code change)
+plus a native **linux-arm64** package, so Docker on ARM64 hosts runs without x64
+emulation. Docker is the only supported deployment. The tag goes on `192aaab`,
+built by [CI run 44912679076](https://github.com/jbknepp98/industrial-data-sim/actions/runs/44912679076)
+(all seven jobs passed).
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `industrial-data-sim-1.0.1-linux-arm64.zip` | `0874eeb15bfe8136d57e5b5c15148a8eca945ed16e7bb397ba677a7bbbac313e` |
+| `industrial-data-sim-1.0.1-linux-x64.zip` | `ff50ccc4cc0dd6b67f1963ae41c28853c321bb1bacf6a71e30ac151cb212c69e` |
+| `industrial-data-sim-1.0.1-osx-arm64.zip` | `c35787a0cca93fe6e40b8fdd466486e2a337b6ec7ebcbd7c3955e95a975d2d6c` |
+| `industrial-data-sim-1.0.1-win-x64.zip` | `623882e7fef7c008eec1565f2f36e14e13c466040eb5c42ae9fb2d02eb5a1e2b` |
+
+Checks run on the linux-arm64 package:
+
+- package verification in a native ARM64 container;
+- dependency audit: clean;
+- full Docker smoke run, natively: catch-up 21 s, status p95 416 ms, lag p95
+  1.27 s. The extension, restart, pause/resume and completion drills passed,
+  with no Failed or Uncertain sessions, drops or resends;
+- `docker stop` with SIGINT during backfill: exit 130, and the restart
+  continued forward.
+
+The long Docker soak will be run by the owner. Everything below applies
+unchanged from 1.0.0.
+
 # industrial-data-sim 1.0.0: release notes
 
 Released November 21, 2026, with the owner's approval. Tag `v1.0.0` is on commit
@@ -92,8 +120,8 @@ Details are in `phase-5-acceptance-plan.md` and the acceptance matrix.
   not revocation.
 - Docker is the supported deployment, using a locally built image (see
   installation.md). The host must be stopped with SIGINT, because it does not
-  handle SIGTERM gracefully. The image needs ICU. There is no `linux-arm64`
-  package; ARM64 hosts run x64 under emulation.
+  handle SIGTERM gracefully. The image needs ICU. 1.0.1 adds the native
+  `linux-arm64` package.
 - OS service templates (launchd, systemd, Task Scheduler) ship, but none was
   registered or boot-tested. Not needed for the Docker deployment.
 - Unsigned and not notarized (internal use).

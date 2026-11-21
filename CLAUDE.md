@@ -6,7 +6,7 @@ logging, test and documentation rules apply to this project. Then read
 matrix linked there.
 
 v1.0.0 is released (tag `v1.0.0`, November 21, 2026; see
-`docs/release-1.0.0-notes.md`). It is deployed in Docker for internal use. Any
+`docs/release-notes.md`). It is deployed in Docker for internal use. Any
 change needs a new version number and the affected acceptance repeated.
 Never open historical demo databases with the current runtime merely to inspect
 them: opening can migrate state. Never automatically replay Uncertain work or

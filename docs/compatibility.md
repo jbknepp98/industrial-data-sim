@@ -1,5 +1,14 @@
 # Compatibility record
 
+## Release 1.0.1 (November 21, 2026)
+
+The supported deployment is Docker; the owner never runs it natively on macOS.
+
+| Artifact RID | Evidence |
+| --- | --- |
+| linux-arm64 | Built and checked on the CI `ubuntu-24.04-arm` runner. `verify_package.py --require-clean` passed in a native ARM64 Debian container. Full smoke passed natively in Docker on Apple Silicon against 2.0.0, and the SIGINT stop and restart were verified. **Primary target.** |
+| linux-x64, osx-arm64, win-x64 | Same source as 1.0.0, rebuilt; CI package checks passed. See 1.0.0 below for live evidence. |
+
 ## Release 1.0.0 (November 21, 2026)
 
 | Artifact RID | Evidence |
