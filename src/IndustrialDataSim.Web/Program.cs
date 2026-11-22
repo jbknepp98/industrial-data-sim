@@ -6,7 +6,7 @@
 //                              the Pulse client: Gage for the interview, Historian for plant tags
 //   TIMEBASE_BASE_URL, TIMEBASE_AUDIENCE, TIMEBASE_PROFILE
 //                              Historian for plant tags (see HistorianConnection)
-//   TIMEBASE_DATASET           the Dataset approved plants write their tags to
+//   TIMEBASE_DATASET           optional: only for plants approved before each plant got its own Dataset
 //   FLOWSIM_GAGE_MODEL         Gage handle, default anthropic/claude
 //   FLOWSIM_STORYLINES         storyline folder, default ./storylines next to the program
 //   FLOWSIM_WEB_URLS           listen address, default http://127.0.0.1:8480
@@ -67,6 +67,7 @@ var services = new WebServices
     Model = () => new GageInterviewModel(Gage()),
     Gage = new GageHealth(stop => Gage().Check(stop), Setting("FLOWSIM_GAGE_MODEL") ?? GageSettings.DefaultModel),
     Historian = _ => new HistorianClient(HistorianConnection.FromEnvironment()),
+    Datasets = new HistorianPlantDatasets(() => new HistorianClient(HistorianConnection.FromEnvironment())),
     Dataset = Setting("TIMEBASE_DATASET"),
     Log = log,
     DemoGuideTemplate = template

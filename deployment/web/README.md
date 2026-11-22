@@ -4,7 +4,7 @@
 interviews you about what a demo should show and to whom, previews a matching
 simulated plant, and runs the plant only after you click **Approve and run**.
 Rows go to the Postgres database `flow_data_sim` and tags go to a Historian
-Dataset, from one clock. Approved plants run inside this container and resume
+Dataset created for that plant, from one clock. Approved plants run inside this container and resume
 after a restart.
 
 The interview reaches Claude through Pulse's Gage proxy, so you enter no model
@@ -64,20 +64,21 @@ The interview uses only portable features (tool use with strict schemas, no
 forced tool choice, no prefill). Use a current Claude model: smaller or older
 models compose weaker plants.
 
-## 4. Check the Dataset's purge age
+## 4. Datasets: nothing to prepare
 
-Plants backfill history before they go live: 6 days for the library's base
-plants, and longer for some storylines (golden batch: 10 days for syrup, 14
-days for the reactor, so the drift has golden batches before it and a recovery
-after it). Historian drops points older than the Dataset's **purge age**, so
-it should be longer than the backfill. Pick a Dataset just for simulated data,
-for example `Test`, then in **Historian → Datasets → Test** check the purge
-age (15 days covers every storyline; 0 keeps everything). The interview tells
-the user when a plant's history is longer than the purge age.
+Each plant approved on the page gets its own Historian Dataset, created at
+approval, named exactly like the plant (for example `PlantDemoBev`) and with a
+**purge age of 365 days**, so its whole history (up to 14 days of backfill in
+the library) is kept. Plants never share a Dataset, and the page never writes
+to a Dataset it did not create: if a Dataset with the plant's name already
+exists, approval is refused (`approve.dataset_exists`) and you choose another
+name.
 
-If the backfill starts before the purge age, the plant still runs and logs
-`plant.retention_warning`. Historian drops the oldest points, while Postgres
-keeps every row, so trends and tables no longer agree for those days.
+The Pulse client from step 1 creates and deletes these Datasets with its
+`Historian` audience. No other Historian setting is needed.
+
+When you remove a plant, the dialog asks whether to delete its Dataset too
+(off by default). Deleting it removes every tag in it and cannot be undone.
 
 ## 5. Write the env files
 
@@ -94,7 +95,6 @@ Edit `web.env`:
 - `TIMEBASE_PULSE_URL` and `TIMEBASE_BASE_URL`, the Pulse and Historian
   addresses on the stack network (`https://pulse:4542`,
   `https://historian:4512` for the default compose service names);
-- the Dataset from step 4;
 - `FLOWSIM_PG_CONNECTION`, the `flowsim_writer` connection string.
 
 **No `flow_data_sim` database yet?** Also create `postgres.env` from
@@ -161,8 +161,9 @@ name to `FLOWSIM_WEB_ALLOWED_HOSTS` in `web.env`.
   started with the CLI) shows **running elsewhere** and is never written from
   here.
 - **Remove a plant:** use **Remove** on the page. It stops the plant and drops
-  only that simulation's tables and registration. Historian keeps its tags
-  until the purge age.
+  only that simulation's tables and registration. Its Dataset and tags stay
+  unless you tick **Also delete its Dataset** in the dialog; then the Dataset is
+  deleted too, and the plant's name can be used again.
 - **Logs:** `docker logs flow-data-simulator-web`, one JSON line per event.
 - **Downloads per plant:** the Connect mapping spec, the Atlas starter and the
   demo guide.
@@ -178,6 +179,8 @@ name to `FLOWSIM_WEB_ALLOWED_HOSTS` in `web.env`.
 | `gage.pulse_unreachable` | `TIMEBASE_PULSE_URL`, the network name or the CA file is wrong |
 | `web.database_unconfigured`, database not `ok` in `/api/health` | `FLOWSIM_PG_CONNECTION` is missing or wrong, or `flow-data-sim-pg` is not on the same network |
 | Page answers 421 | Open it as `http://localhost:8480`, or add the host name to `FLOWSIM_WEB_ALLOWED_HOSTS` |
-| `plant.retention_warning` | The Dataset's purge age is shorter than the backfill (step 4) |
+| `approve.dataset_exists` | Historian already has a Dataset with the plant's name: ask the interviewer for another name, or delete that Dataset in Historian if it is no longer needed |
+| `remove.dataset_failed` | The plant was removed but its Dataset could not be deleted: delete it in Historian → Datasets |
+| `plant.retention_warning` | The plant writes to a Dataset whose purge age is shorter than its backfill (only plants approved with 2.0.0-rc.1, which use `TIMEBASE_DATASET`) |
 
 More detail: [docs/plant-simulation.md](../../docs/plant-simulation.md).

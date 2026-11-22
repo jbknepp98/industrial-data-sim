@@ -248,7 +248,9 @@ function renderApproval() {
   $('approve-facts').innerHTML = [
     ['Simulation', `<code>${esc(approval.simulation)}</code>`],
     ['Backfill', esc(approval.backfill || 'base default') + ` (history from ${esc(fmtTime(approval.historyStartsUtc))})`],
-    ['Dataset', approval.dataset ? `<code>${esc(approval.dataset)}</code>` : '<span class="error">TIMEBASE_DATASET is not set</span>'],
+    ['Dataset', approval.newDataset
+      ? `<code>${esc(approval.dataset)}</code> <span class="muted">new, created on approval, purge age ${esc(approval.datasetPurgeAgeDays)} days</span>`
+      : approval.dataset ? `<code>${esc(approval.dataset)}</code>` : '<span class="muted">none: rows only, no Historian configured</span>'],
     ['Tag root', `<code>${esc(approval.tagRoot)}</code>`],
     ['Tables', `${approval.tables.length} tables named <code>${esc(approval.tablePrefix)}…</code> in flow_data_sim`]
   ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
@@ -309,7 +311,7 @@ function renderLive() {
         ['Rows · tag points', `${num(h.rowsApplied)} · ${num(h.pointsPublished)} this run`],
         ['Tag root', `<code>${esc(name)}</code>`],
         ['Tables', `<code>${esc(plant.tablePrefix)}…</code>`],
-        ['Dataset', `<code>${esc(data.dataset || '—')}</code>`]
+        ['Dataset', `<code>${esc(plant.dataset || '—')}</code>`]
       ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
     } catch { /* keep the last status */ }
   };
@@ -379,12 +381,13 @@ $('input').addEventListener('keydown', e => {
 // ---------------- Plants tab ----------------
 
 let pendingRemove = null;
+let pendingRemoveDataset = false; // the Remove dialog's checkbox; the list redraws every 5 s
 
 async function loadPlants() {
   try {
     const data = await api('GET', '/api/plants');
     $('plants-error').hidden = true;
-    $('plants-dataset').textContent = data.dataset ? `Approved plants write tags to the ${data.dataset} Dataset.` : '';
+    $('plants-dataset').textContent = data.datasetPurgeAgeDays ? `Each plant approved here writes its tags to its own Historian Dataset, named after the plant, with a ${data.datasetPurgeAgeDays}-day purge age.` : '';
     $('plants').innerHTML = data.plants.length ? data.plants.map(plantRow).join('') : '<tr><td colspan="7" class="muted">No plants yet. Approve a preview on the Interview tab.</td></tr>';
   } catch (e) {
     $('plants-error').hidden = false;
@@ -399,25 +402,37 @@ function plantRow(p) {
     ? (running ? `<button type="button" data-act="stop" data-name="${name}">Stop</button>` : h.state === 'running_elsewhere' ? '' : `<button type="button" data-act="start" data-name="${name}">Start</button>`) +
       `<button type="button" class="danger" data-act="remove" data-name="${name}">Remove…</button>`
     : '<span class="muted">read-only</span>';
-  const confirm = pendingRemove === p.simulation
-    ? `<div class="remove-confirm"><b>Remove ${name}?</b><span>This stops the plant and drops its tables (<code>${esc(p.tablePrefix)}…</code>) and registration. Other plants are not touched; tags already in Historian stay.</span><div class="row"><button type="button" class="danger solid" data-act="remove-yes" data-name="${name}">Remove ${name}</button><button type="button" data-act="remove-no" data-name="${name}">Cancel</button></div></div>`
+  const datasetChoice = p.datasetCreated
+    ? `<label class="remove-dataset"><input type="checkbox" data-remove-dataset="${name}"${pendingRemoveDataset ? ' checked' : ''}> Also delete its Dataset <code>${esc(p.dataset)}</code> and every tag in it. This cannot be undone.</label>`
     : '';
-  return `<tr><td><b>${name}</b><div class="detail"><code>${esc(p.tablePrefix)}…</code></div></td>
+  const keeps = p.datasetCreated ? 'Its Dataset and tags stay unless you tick the box below.' : 'Tags already in Historian stay.';
+  const confirm = pendingRemove === p.simulation
+    ? `<div class="remove-confirm"><b>Remove ${name}?</b><span>This stops the plant and drops its tables (<code>${esc(p.tablePrefix)}…</code>) and registration. Other plants are not touched. ${keeps}</span>${datasetChoice}<div class="row"><button type="button" class="danger solid" data-act="remove-yes" data-name="${name}">Remove ${name}</button><button type="button" data-act="remove-no" data-name="${name}">Cancel</button></div></div>`
+    : '';
+  return `<tr><td><b>${name}</b><div class="detail"><code>${esc(p.tablePrefix)}…</code>${p.dataset ? ` · Dataset <code>${esc(p.dataset)}</code>` : ''}</div></td>
     <td><span class="badge ${esc(h.state)}">${esc(h.state.replace('_', ' '))}</span>${h.message || h.code ? `<div class="detail">${h.code ? `<code>${esc(h.code)}</code> ` : ''}${esc(h.message || '')}</div>` : ''}</td>
     <td class="num">${esc(fmtTime(h.throughUtc || p.tagCursorUtc))}</td><td class="num">${num(h.rowsApplied || null)}</td><td class="num">${num(h.pointsPublished || null)}</td><td class="num">${esc(fmtTime(p.snapshotUtc))}</td>
     <td><div class="actions">${actions}</div>${p.managed ? `<div class="downloads" style="margin-top:6px"><a href="${base}/demo-guide?format=html" target="_blank" rel="noopener">Demo guide</a><a href="${base}/connect-spec" target="_blank" rel="noopener">Connect spec</a><a href="${base}/atlas-starter" target="_blank" rel="noopener">Atlas starter</a></div>` : ''}${confirm}</td></tr>`;
 }
 
+$('plants').addEventListener('change', e => {
+  if (e.target.matches('input[data-remove-dataset]')) pendingRemoveDataset = e.target.checked;
+});
+
 $('plants').addEventListener('click', async e => {
   const button = e.target.closest('button[data-act]');
   if (!button) return;
   const name = button.dataset.name, act = button.dataset.act;
-  if (act === 'remove') { pendingRemove = name; return loadPlants(); }
-  if (act === 'remove-no') { pendingRemove = null; return loadPlants(); }
+  if (act === 'remove') { pendingRemove = name; pendingRemoveDataset = false; return loadPlants(); }
+  if (act === 'remove-no') { pendingRemove = null; pendingRemoveDataset = false; return loadPlants(); }
   button.disabled = true;
   try {
     if (act === 'stop' || act === 'start') await api('POST', `/api/plants/${encodeURIComponent(name)}/${act}`);
-    if (act === 'remove-yes') { await api('DELETE', `/api/plants/${encodeURIComponent(name)}?confirm=true`); pendingRemove = null; }
+    if (act === 'remove-yes') {
+      await api('DELETE', `/api/plants/${encodeURIComponent(name)}?confirm=true${pendingRemoveDataset ? '&deleteDataset=true' : ''}`);
+      pendingRemove = null;
+      pendingRemoveDataset = false;
+    }
   } catch (err) {
     $('plants-error').hidden = false;
     $('plants-error').textContent = err.message + (err.code ? ` (${err.code})` : '');

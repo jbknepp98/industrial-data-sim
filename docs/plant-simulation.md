@@ -628,8 +628,9 @@ site is also refused. Bodies must be JSON and at most 64 KiB.
 
 Environment: the simulator container's settings (`TIMEBASE_PULSE_URL`,
 `TIMEBASE_CLIENT_ID`, `TIMEBASE_CLIENT_SECRET`, `TIMEBASE_CA_BUNDLE`,
-`TIMEBASE_BASE_URL`, `TIMEBASE_DATASET`, `FLOWSIM_PG_CONNECTION`), plus
-optional `FLOWSIM_GAGE_MODEL`, `FLOWSIM_STORYLINES` (default: the
+`TIMEBASE_BASE_URL`, `FLOWSIM_PG_CONNECTION`), plus optional
+`TIMEBASE_DATASET` (only plants approved with 2.0.0-rc.1 still write there),
+`FLOWSIM_GAGE_MODEL`, `FLOWSIM_STORYLINES` (default: the
 `storylines` folder shipped next to the program), `FLOWSIM_WEB_URLS` and
 `FLOWSIM_WEB_ALLOWED_HOSTS`. Run it with `--stop-signal SIGINT
 --stop-timeout 180` (the compose snippet does), so a stop lets each plant
@@ -641,15 +642,32 @@ finish its in-flight batch (the host waits up to 150 s).
 | `POST /api/interviews` | Start an interview |
 | `GET /api/interviews/{id}` | Chat history, storyline cards, needs, approval summary, preview |
 | `POST /api/interviews/{id}/messages` | `{"text": …}`; the turn's events stream back as server-sent events (`assistant_text`, `tool_activity`, `preview_ready`, `stopped`, `refusal`, `error`, `done`). One message at a time per interview: a second send meanwhile gets 409 `interview.busy`. The turn completes and is stored even if the browser leaves |
-| `POST /api/interviews/{id}/approve` | Needs `{"confirm": true}` (else 400). Admits the draft with the anchor fixed now, records `flowsim_interviews.approved_simulation`, starts hosting; returns the table prefix, tag root and tables |
+| `POST /api/interviews/{id}/approve` | Needs `{"confirm": true}` (else 400). Creates the plant's own Dataset (below), admits the draft with the anchor fixed now, records `flowsim_interviews.approved_simulation`, starts hosting; returns the table prefix, tag root, Dataset and tables |
 | `GET /api/plants` | `plant status` fields plus `managed` and `hosting` (`starting`, `backfilling`, `live`, `stopped`, `error` with code and message, `running_elsewhere`, `not_hosted`) |
 | `POST /api/plants/{name}/stop`, `/start` | Only plants approved on the page (else 403 `plant.not_owned`) |
-| `DELETE /api/plants/{name}?confirm=true` | Stops the plant, then `PlantStore.Remove`. Only plants approved on the page |
+| `DELETE /api/plants/{name}?confirm=true[&deleteDataset=true]` | Stops the plant, then `PlantStore.Remove`. With `deleteDataset=true`, also deletes the plant's Dataset, only if the page created it (else 409 `remove.dataset_not_owned`, nothing removed). Only plants approved on the page |
 | `GET /api/plants/{name}/connect-spec[?format=json]`, `/atlas-starter`, `/demo-guide[?format=html]` | Downloads |
 | `GET /api/health[?refresh=true]` | Database and Gage status. The Gage check (one short metered message) runs at startup and on refresh, at most every 30 s; interview turns update it in between |
 
+**Each plant's own Dataset** (owner decision, November 22, 2026; 2.0.0-rc.2).
+Approve creates a Historian Dataset named exactly like the simulation, with a
+365-day purge age (`POST /api/datasets` with `{"n", "pa": 365}`), before it
+admits the plant, and the plant's tags go only there. Historian refuses a name
+any Dataset already has, ignoring case; approval then answers 409
+`approve.dataset_exists` and admits nothing, so the page never writes to a
+Dataset it did not create. If admission fails after the Dataset was created,
+the Dataset is deleted again (`plant.dataset_cleanup_failed` is logged if that
+fails). `flowsim_web_plants` records the Dataset and `dataset_created`; only a
+Dataset with `dataset_created` true can be deleted from the page, when the user
+ticks **Also delete its Dataset** in the Remove dialog (`DELETE
+/api/datasets/{name}`). If that delete fails after the tables were dropped, the
+answer is 502 `remove.dataset_failed`, naming the Dataset to delete by hand.
+Plants approved with rc.1 have no recorded Dataset and keep writing to
+`TIMEBASE_DATASET`. The CLI (`plant run`, BluebirdBev's container) is
+unchanged: it writes to `TIMEBASE_DATASET`.
+
 **Hosting** (`PlantHostingService`): `flowsim_web_plants` records each plant
-approved on the page and its Stop/Start switch, so a restart starts the same
+approved on the page, its Dataset and its Stop/Start switch, so a restart starts the same
 plants. Each plant has its own task. It takes the simulation's advisory host
 lock first; a plant whose lock another process holds (for example the
 `bluebirdbev-plant` container) shows `running_elsewhere`, is checked again

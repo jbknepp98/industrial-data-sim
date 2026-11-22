@@ -16,7 +16,16 @@ public sealed class WebServices
     public required GageHealth Gage { get; init; }
     /// <summary>The Historian client for one hosted plant; null delivers rows only (tests).</summary>
     public required Func<string, HistorianClient?> Historian { get; init; }
-    /// <summary>TIMEBASE_DATASET: the Dataset approved plants write their tags to.</summary>
+    /// <summary>
+    /// Creates and deletes each approved plant's own Dataset (named like the
+    /// simulation, 365-day purge). Null: no Historian (tests that deliver rows
+    /// only), and approved plants get no Dataset.
+    /// </summary>
+    public IPlantDatasets? Datasets { get; init; }
+    /// <summary>
+    /// TIMEBASE_DATASET, optional: only plants approved before each plant had
+    /// its own Dataset (2.0.0-rc.1) still write to it.
+    /// </summary>
     public string? Dataset { get; init; }
     public required JsonLog Log { get; init; }
     /// <summary>The demo guide template (examples/storylines/demo-guide.md).</summary>

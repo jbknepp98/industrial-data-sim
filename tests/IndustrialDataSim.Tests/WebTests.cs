@@ -104,7 +104,8 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     private static async Task<Harness> Start(Func<IInterviewModel> model, string connection = NoDatabase, bool hostPlants = false,
-        IInterviewStore? interviews = null, IWebPlantRegistry? registry = null, Func<CancellationToken, Task<GageCheckResult>>? gageCheck = null)
+        IInterviewStore? interviews = null, IWebPlantRegistry? registry = null, Func<CancellationToken, Task<GageCheckResult>>? gageCheck = null,
+        IPlantDatasets? datasets = null)
     {
         var log = new StringWriter();
         var services = new WebServices
@@ -116,6 +117,7 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
             Model = model,
             Gage = new GageHealth(gageCheck ?? (_ => Task.FromResult(new GageCheckResult("anthropic/claude", "test", "ok", 1, 1, ["anthropic/claude"]))), "anthropic/claude"),
             Historian = _ => null,
+            Datasets = datasets,
             Dataset = "Test",
             Log = new JsonLog(TextWriter.Synchronized(log)),
             DemoGuideTemplate = File.ReadAllText(Path.Combine(StorylineFolder, "demo-guide.md")),
@@ -390,6 +392,129 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.Equal(HttpStatusCode.OK, removed.StatusCode);
             Assert.Null(web.Services.Plants.Registration(name));
             Assert.Equal(0L, CountTables(name));
+        }
+        finally { Cleanup(name); }
+    }
+
+    // ---------------- each plant's own Dataset ----------------
+
+    [Fact]
+    public async Task ApproveIsRefusedWhenADatasetWithThePlantsNameExistsAndNothingIsTouched()
+    {
+        // The refusal comes before admission, so no database is needed.
+        string name = "PlanTestTaken" + Guid.NewGuid().ToString("N")[..6];
+        var datasets = new InMemoryPlantDatasets();
+        datasets.AddForeign(name, purgeAgeDays: 7);
+        await using var web = await Start(() => new ScriptedModel(InterviewToPreview(name)), datasets: datasets);
+        var id = await NewInterview(web.Http);
+        await Send(web.Http, id, "A bottler; late orders after labeler jams.");
+
+        var approval = (await Get(web.Http, $"/api/interviews/{id}"))["approval"]!;
+        Assert.Equal(name, approval["dataset"]!.GetValue<string>());
+        Assert.True(approval["newDataset"]!.GetValue<bool>());
+        Assert.Equal(365, approval["datasetPurgeAgeDays"]!.GetValue<int>());
+
+        var response = await web.Http.PostAsync($"/api/interviews/{id}/approve", JsonBody(new { confirm = true }));
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("approve.dataset_exists", await ErrorCode(response));
+        Assert.Equal(7, datasets.Current[name]); // the foreign Dataset is untouched
+        Assert.Single(datasets.Current);
+        Assert.Empty(web.Services.Interviews.ApprovedSimulations());
+    }
+
+    [Fact]
+    public async Task ApproveCreatesThePlantsOwnDatasetAndRemoveDeletesItOnlyWhenAsked()
+    {
+        if (Connection is null) return; // needs FLOWSIM_TEST_PG
+        string id8 = Guid.NewGuid().ToString("N")[..8];
+        string kept = "PlanTestDsKeep" + id8, deleted = "PlanTestDsDrop" + id8;
+        var names = new Queue<string>([kept, deleted]);
+        var datasets = new InMemoryPlantDatasets();
+        using var registry = new PostgresWebPlantRegistry(Connection);
+        await using var web = await Start(() => new ScriptedModel(InterviewToPreview(names.Dequeue())), Connection, registry: registry, datasets: datasets);
+        try
+        {
+            foreach (string name in new[] { kept, deleted })
+            {
+                var id = await NewInterview(web.Http);
+                await Send(web.Http, id, "A bottler; late orders after labeler jams.");
+                var approve = await web.Http.PostAsync($"/api/interviews/{id}/approve", JsonBody(new { confirm = true }));
+                Assert.Equal(HttpStatusCode.Created, approve.StatusCode);
+                var approved = (await approve.Content.ReadFromJsonAsync<JsonObject>())!;
+                Assert.Equal(name, approved["dataset"]!.GetValue<string>());
+                Assert.True(approved["datasetCreated"]!.GetValue<bool>());
+                Assert.Equal(365, datasets.Current[name]);
+                var entry = registry.Find(name)!;
+                Assert.Equal(name, entry.Dataset);
+                Assert.True(entry.DatasetCreated);
+            }
+            var listed = (await Get(web.Http, "/api/plants"))["plants"]!.AsArray().OfType<JsonObject>().Single(p => p["simulation"]!.GetValue<string>() == kept);
+            Assert.Equal(kept, listed["dataset"]!.GetValue<string>());
+            Assert.True(listed["datasetCreated"]!.GetValue<bool>());
+            Assert.Contains($"| Historian Dataset | {kept} |", await web.Http.GetStringAsync($"/api/plants/{kept}/demo-guide"));
+
+            // Remove without the box: tables go, the Dataset stays.
+            var keep = await web.Http.DeleteAsync($"/api/plants/{kept}?confirm=true");
+            Assert.Equal(HttpStatusCode.OK, keep.StatusCode);
+            Assert.False((await keep.Content.ReadFromJsonAsync<JsonObject>())!["datasetDeleted"]!.GetValue<bool>());
+            Assert.Null(web.Services.Plants.Registration(kept));
+            Assert.True(datasets.Current.ContainsKey(kept));
+
+            // With the box: the Dataset goes too.
+            var drop = await web.Http.DeleteAsync($"/api/plants/{deleted}?confirm=true&deleteDataset=true");
+            Assert.Equal(HttpStatusCode.OK, drop.StatusCode);
+            Assert.True((await drop.Content.ReadFromJsonAsync<JsonObject>())!["datasetDeleted"]!.GetValue<bool>());
+            Assert.Null(web.Services.Plants.Registration(deleted));
+            Assert.False(datasets.Current.ContainsKey(deleted));
+            Assert.Equal(0L, CountTables(deleted));
+        }
+        finally { Cleanup(kept); Cleanup(deleted); }
+    }
+
+    [Fact]
+    public async Task RemoveNeverDeletesADatasetThePageDidNotCreate()
+    {
+        if (Connection is null) return;
+        string name = "PlanTestDsShared" + Guid.NewGuid().ToString("N")[..8];
+        using var registry = new PostgresWebPlantRegistry(Connection);
+        // No Historian here: the plant is recorded against the shared TIMEBASE_DATASET, created by someone else.
+        await using var web = await Start(() => new ScriptedModel(InterviewToPreview(name)), Connection, registry: registry);
+        try
+        {
+            var id = await NewInterview(web.Http);
+            await Send(web.Http, id, "A bottler; late orders after labeler jams.");
+            Assert.Equal(HttpStatusCode.Created, (await web.Http.PostAsync($"/api/interviews/{id}/approve", JsonBody(new { confirm = true }))).StatusCode);
+            Assert.False(registry.Find(name)!.DatasetCreated);
+
+            var refused = await web.Http.DeleteAsync($"/api/plants/{name}?confirm=true&deleteDataset=true");
+            Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+            Assert.Equal("remove.dataset_not_owned", await ErrorCode(refused));
+            Assert.NotNull(web.Services.Plants.Registration(name)); // nothing was removed
+
+            // Removing without the box works; it stops the hosted plant before dropping its tables.
+            Assert.Equal(HttpStatusCode.OK, (await web.Http.DeleteAsync($"/api/plants/{name}?confirm=true")).StatusCode);
+            Assert.Null(web.Services.Plants.Registration(name));
+        }
+        finally { Cleanup(name); }
+    }
+
+    [Fact]
+    public async Task AFailedAdmissionDeletesTheDatasetItJustCreated()
+    {
+        if (Connection is null) return;
+        string name = "PlanTestDsUndo" + Guid.NewGuid().ToString("N")[..8];
+        var datasets = new InMemoryPlantDatasets();
+        await using var web = await Start(() => new ScriptedModel(InterviewToPreview(name)), Connection, datasets: datasets);
+        try
+        {
+            NewPlant(web.Services.Plants, name, "6h"); // the name is already admitted with another model
+            var id = await NewInterview(web.Http);
+            await Send(web.Http, id, "A bottler; late orders after labeler jams.");
+            var response = await web.Http.PostAsync($"/api/interviews/{id}/approve", JsonBody(new { confirm = true }));
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal("plant.already_admitted", await ErrorCode(response));
+            Assert.Empty(datasets.Current);
+            Assert.Empty(web.Services.Interviews.ApprovedSimulations());
         }
         finally { Cleanup(name); }
     }

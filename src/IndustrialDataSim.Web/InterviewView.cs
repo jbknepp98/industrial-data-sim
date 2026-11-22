@@ -11,7 +11,8 @@ namespace IndustrialDataSim.Web;
 /// </summary>
 public static class InterviewView
 {
-    public static object Build(InterviewRecord record, InterviewLibrary library, string? dataset, bool busy, DateTimeOffset nowUtc)
+    /// <param name="ownDatasets">True when approving creates a Dataset named for the plant; false (no Historian) shows <paramref name="sharedDataset"/>.</param>
+    public static object Build(InterviewRecord record, InterviewLibrary library, bool ownDatasets, string? sharedDataset, bool busy, DateTimeOffset nowUtc)
     {
         var needs = record.NeedsJson is null ? new JsonObject() : JsonNode.Parse(record.NeedsJson) as JsonObject ?? new JsonObject();
         return new
@@ -23,7 +24,7 @@ public static class InterviewView
             messages = Messages(record),
             needs = new { audience = needs["audience"], requests = needs["requests"] ?? new JsonArray() },
             storylines = Cards(needs, library),
-            approval = Approval(record, dataset, nowUtc),
+            approval = Approval(record, ownDatasets, sharedDataset, nowUtc),
             // The stored preview document as written by preview_plant (camelCase, like plant preview).
             preview = record.PreviewJson is null ? null : JsonNode.Parse(record.PreviewJson)
         };
@@ -96,7 +97,7 @@ public static class InterviewView
     /// Dataset and tables, computed from the draft with "now" as the anchor.
     /// Null while there is no preview to approve.
     /// </summary>
-    private static object? Approval(InterviewRecord record, string? dataset, DateTimeOffset nowUtc)
+    private static object? Approval(InterviewRecord record, bool ownDatasets, string? sharedDataset, DateTimeOffset nowUtc)
     {
         if (record.DraftModelJson is null || record.PreviewJson is null) return null;
         var loaded = PlantModelLoader.Load(record.DraftModelJson, nowUtc);
@@ -112,7 +113,9 @@ public static class InterviewView
             tablePrefix = model.TablePrefix,
             backfill,
             historyStartsUtc = model.StartUtc,
-            dataset,
+            dataset = ownDatasets ? model.Simulation : sharedDataset,
+            newDataset = ownDatasets,
+            datasetPurgeAgeDays = ownDatasets ? PlantDatasets.PurgeAgeDays : (int?)null,
             tables = PlantSchema.TablesFor(model).Select(t => PlantSchema.PhysicalName(model, t.Purpose)).ToList()
         };
     }

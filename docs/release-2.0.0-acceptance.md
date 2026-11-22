@@ -31,6 +31,7 @@ make a live gate Passed.
 | P19 | The 1.x session simulator is unchanged | Its tests pass in the same CI run; no change under its runtime paths | Passed |
 | P20 | Documentation current: install, operator reference, codes, compatibility, handoff | November 22 pass: this specification and matrix, the 2.0 handoff, CLAUDE.md, README, compatibility record; the codes reference and an overview are drafted as KB articles kept outside git | Partial: further KB articles (install, interview, library, operating plants) and reorganizing plant-simulation.md as a user guide are open |
 | P21 | Owner approval of a bare `2.0.0` | — | Open |
+| P22 | Each plant approved on the page gets its own 365-day Dataset; a taken name is refused; Remove deletes the Dataset only when asked, and only one the page created | Tests (`HistorianDatasetTests`, `WebTests`) against a fake Historian that answers as Historian 2.0.0 did when probed on November 22 (create, duplicate in any case refused, delete, already gone); the probe created and deleted `PlanTestDatasetProbe` with the DataSim client | Partial: a live approve-and-remove through the page on the new image is open |
 
 ## Evidence records
 

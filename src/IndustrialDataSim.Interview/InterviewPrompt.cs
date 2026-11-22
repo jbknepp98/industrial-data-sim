@@ -21,7 +21,7 @@ public static class InterviewPrompt
     internal const string PlantLimits = """
         - At most 2 production lines, 6 SKUs, 8 operators and 4 technicians.
         - The simulation name is PascalCase: 2 to 32 letters or digits, starting with an upper-case letter (for example AcmeNuggs). Its lower-case form prefixes every table, and it names the tag root.
-        - Backfill (days of history before now) is a whole number followed by d or h, for example "6d". It must fit the Historian Dataset's purge age; 6 days is a safe default for a 7-day purge.
+        - Backfill (days of history before now) is a whole number followed by d or h, for example "6d". The plant gets its own Historian Dataset with a 365-day purge age, so any backfill up to 365 days is kept.
         - The preview covers the backfill plus 1 to 72 hours after now (24 by default).
         """;
 

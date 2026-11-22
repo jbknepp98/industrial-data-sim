@@ -47,7 +47,9 @@ The CLI and skill remain for hand-written models and diagnostics.
   prefix (29 for the largest acceptance plants). Every plant table has its natural key, `row_version` (the Connect watermark),
   `modified_utc`, `is_deleted` and `deleted_utc`.
 - **Historian:** tags under the plant's tag root, written in batches of at most 1000
-  points to the Dataset in `TIMEBASE_DATASET`.
+  points. A plant approved on the page writes to its own Dataset, named like the
+  simulation and created at approval with a 365-day purge age; the page never writes
+  to, or deletes, a Dataset it did not create. The CLI writes to `TIMEBASE_DATASET`.
 - **Live delivery:** backfill, then live, from snapshots, with catch-up after any stop in
   steps of at most 6 hours of plant time.
 - **Storyline library:** 15 storylines (`examples/storylines/storylines.json`): 8
@@ -76,8 +78,9 @@ The CLI and skill remain for hand-written models and diagnostics.
    (`plant.interrupted_batch_resent`); this deliberately differs from the 1.x Uncertain
    rule because plant tags are deterministic.
 4. **Ownership.** A simulation creates, writes and drops only tables with its own prefix
-   and its own registry rows. Removal never touches another simulation's tables or any
-   Historian tag.
+   and its own registry rows. Removal never touches another simulation's tables. The page
+   writes tags only to a Dataset it created for that plant, and deletes that Dataset only
+   when the user asks in the Remove dialog.
 5. **One writer per simulation.** A Postgres advisory lock admits one host per
    simulation. A plant another process holds is shown `running_elsewhere` and never
    written.
@@ -111,8 +114,8 @@ Frozen at 2.0.0; a change needs a new version and the affected acceptance repeat
 Plants stay small by owner decision: 2 lines, 6 units per line, 6 SKUs, 8 operators,
 4 technicians, 6 customers, 20 parts, 12 failure modes, 6 preventive plans and 10 planted
 incidents ([full rules](plant-simulation.md#limits-owner-decision-keep-plants-small)).
-Backfill is up to the storyline's own history (14 days at most in the library); the
-Dataset's purge age should be longer. An interview costs about 60,000–75,000 input and
+Backfill is up to the storyline's own history (14 days at most in the library); a
+plant's own Dataset keeps 365 days. An interview costs about 60,000–75,000 input and
 3,000 output Gage tokens with Claude Sonnet 4.6 and no prompt caching. No limit is set on
 the number of plants one container hosts; acceptance ran three at once.
 

@@ -61,7 +61,7 @@ public static partial class DemoGuide
             ["TagRoot"] = model.TagRoot,
             ["prefix"] = model.TablePrefix,
             ["StartUtc"] = model.StartUtc.UtcDateTime.ToString("ddd MMM d HH:mm 'UTC'", CultureInfo.InvariantCulture),
-            ["Dataset"] = string.IsNullOrWhiteSpace(dataset) ? "not set (TIMEBASE_DATASET)" : dataset,
+            ["Dataset"] = string.IsNullOrWhiteSpace(dataset) ? "not recorded" : dataset,
             ["UnmetRequests"] = UnmetRequests(needs),
             ["Headline"] = Headline(summary)
         };

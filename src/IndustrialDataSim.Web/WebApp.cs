@@ -87,7 +87,6 @@ public static class WebApp
             {
                 status = gage.Ok && database == "ok" ? "ok" : "degraded",
                 database,
-                dataset = services.Dataset,
                 gage
             }, Json);
         });
@@ -149,7 +148,7 @@ public static class WebApp
                 var session = InterviewSession.Start(services.Library, new LazyModel(services), services.Interviews, services.InterviewOptions, services.Clock);
                 services.Log.Write("interview.started", null, new { interviewId = session.Id });
                 var record = services.Interviews.Load(session.Id)!;
-                return Results.Json(InterviewView.Build(record, services.Library, services.Dataset, false, services.Clock()), Json, statusCode: StatusCodes.Status201Created);
+                return Results.Json(InterviewView.Build(record, services.Library, services.Datasets is not null, services.Dataset, false, services.Clock()), Json, statusCode: StatusCodes.Status201Created);
             }
             catch (RuntimeFailure failure) { return Failure(failure, StatusCodes.Status503ServiceUnavailable); }
         });
@@ -159,7 +158,7 @@ public static class WebApp
             try
             {
                 return services.Interviews.Load(id) is { } record
-                    ? Results.Json(InterviewView.Build(record, services.Library, services.Dataset, services.Gate.IsBusy(id), services.Clock()), Json)
+                    ? Results.Json(InterviewView.Build(record, services.Library, services.Datasets is not null, services.Dataset, services.Gate.IsBusy(id), services.Clock()), Json)
                     : NotFound();
             }
             catch (RuntimeFailure failure) { return Failure(failure, StatusCodes.Status503ServiceUnavailable); }
@@ -262,12 +261,12 @@ public static class WebApp
             using var gate = services.Gate.TryEnter(id);
             if (gate is null)
                 return Error(StatusCodes.Status409Conflict, "interview.busy", "The interviewer is still answering. Wait for the answer and review the preview, then approve.");
-            try { return Approve(id, services, context.RequestServices.GetRequiredService<PlantHostingService>()); }
+            try { return await Approve(id, services, context.RequestServices.GetRequiredService<PlantHostingService>(), context.RequestAborted); }
             catch (RuntimeFailure failure) { return Failure(failure); }
         });
     }
 
-    private static IResult Approve(Guid id, WebServices services, PlantHostingService hosting)
+    private static async Task<IResult> Approve(Guid id, WebServices services, PlantHostingService hosting, CancellationToken stop)
     {
         var record = services.Interviews.Load(id);
         if (record is null) return NotFound();
@@ -275,8 +274,6 @@ public static class WebApp
             return Error(StatusCodes.Status409Conflict, "approve.already_approved", $"This interview was already approved as {record.ApprovedSimulation}. See the Plants tab.");
         if (record.DraftModelJson is null || record.PreviewJson is null)
             return Error(StatusCodes.Status409Conflict, "approve.no_preview", "There is no current preview to approve. Ask the interviewer to show the preview, review it, then approve.");
-        if (string.IsNullOrWhiteSpace(services.Dataset))
-            return Error(StatusCodes.Status503ServiceUnavailable, "hosting.dataset_missing", "Set TIMEBASE_DATASET to the Historian Dataset for plant tags and restart the container before approving.");
 
         // The anchor is fixed now, in whole seconds like the CLI; the history ends here.
         var now = services.Clock();
@@ -289,12 +286,35 @@ public static class WebApp
                 errors = loaded.Errors.Take(10)
             }, Json, statusCode: StatusCodes.Status409Conflict);
         var model = loaded.Model!;
-        var registration = services.Plants.Admit(model, record.DraftModelJson);
+
+        // The plant's own Dataset, named like the simulation, is created first.
+        // A name some Dataset already has is refused, so the page never writes
+        // to a Dataset it did not create. If admission then fails, the new
+        // Dataset is deleted again, leaving nothing behind.
+        string? dataset = null;
+        if (services.Datasets is { } datasets)
+        {
+            if (await datasets.Exists(model.Simulation, stop)) return DatasetTaken(model.Simulation);
+            try { await datasets.Create(model.Simulation, stop); }
+            catch (RuntimeFailure failure) when (failure.Error.Code == "historian.dataset_exists") { return DatasetTaken(model.Simulation); }
+            dataset = model.Simulation;
+        }
+        PlantRegistration registration;
+        try { registration = services.Plants.Admit(model, record.DraftModelJson); }
+        catch (RuntimeFailure)
+        {
+            if (dataset is not null)
+            {
+                try { await services.Datasets!.Delete(dataset, CancellationToken.None); }
+                catch (RuntimeFailure cleanup) { services.Log.Write("plant.dataset_cleanup_failed", model.Simulation, new { code = cleanup.Error.Code, message = $"The plant was not admitted, and its new Dataset {dataset} could not be deleted again: {cleanup.Message} Delete it in Historian → Datasets." }); }
+            }
+            throw;
+        }
         if (!services.Interviews.MarkApproved(id, model.Simulation))
             return Error(StatusCodes.Status409Conflict, "approve.already_approved", "This interview was approved by another request a moment ago. See the Plants tab.");
-        services.Registry.Add(model.Simulation, id);
+        services.Registry.Add(model.Simulation, id, dataset ?? services.Dataset, datasetCreated: dataset is not null);
         hosting.StartPlant(model.Simulation);
-        services.Log.Write("plant.approved", model.Simulation, new { interviewId = id, anchorUtc = registration.AnchorUtc, startUtc = registration.StartUtc, tables = PlantSchema.TablesFor(model).Count });
+        services.Log.Write("plant.approved", model.Simulation, new { interviewId = id, anchorUtc = registration.AnchorUtc, startUtc = registration.StartUtc, tables = PlantSchema.TablesFor(model).Count, dataset = dataset ?? services.Dataset, datasetCreated = dataset is not null });
         return Results.Json(new
         {
             simulation = model.Simulation,
@@ -302,11 +322,17 @@ public static class WebApp
             tagRoot = model.TagRoot,
             anchorUtc = registration.AnchorUtc,
             startUtc = registration.StartUtc,
-            dataset = services.Dataset,
+            dataset = dataset ?? services.Dataset,
+            datasetCreated = dataset is not null,
             tables = PlantSchema.TablesFor(model).Select(t => PlantSchema.PhysicalName(model, t.Purpose)).ToList(),
-            message = "Approved. The plant is admitted and starting: it backfills its history, then runs live."
+            message = dataset is null
+                ? "Approved. The plant is admitted and starting: it backfills its history, then runs live."
+                : $"Approved. The Dataset {dataset} was created (purge age {PlantDatasets.PurgeAgeDays} days) and the plant is starting: it backfills its history, then runs live."
         }, Json, statusCode: StatusCodes.Status201Created);
     }
+
+    private static IResult DatasetTaken(string name) => Error(StatusCodes.Status409Conflict, "approve.dataset_exists",
+        $"Historian already has a Dataset named {name}. Each plant gets a new Dataset named after it, and the page never writes to one it did not create. Ask the interviewer to give the plant another name, or delete that Dataset in Historian if it is no longer needed, then approve again.");
 
     private static string EventName(InterviewEventKind kind) => kind switch
     {
@@ -340,6 +366,7 @@ public static class WebApp
             try
             {
                 var owned = services.Interviews.ApprovedSimulations();
+                var entries = services.Registry.List().ToDictionary(e => e.Simulation, StringComparer.Ordinal);
                 var registered = services.Plants.List();
                 var plants = registered.Select(r =>
                 {
@@ -357,10 +384,13 @@ public static class WebApp
                         resentBatches = r.UncertainBatches,
                         sendingInProgress = r.SendingUntilUtc is not null,
                         managed,
+                        // Known for plants approved here; another host's plant writes wherever that host was told to.
+                        dataset = entries.TryGetValue(r.Simulation, out var entry) ? entry.Dataset ?? services.Dataset : null,
+                        datasetCreated = entry?.DatasetCreated == true,
                         hosting = status
                     };
                 }).ToList();
-                return Results.Json(new { dataset = services.Dataset, plants }, Json);
+                return Results.Json(new { datasetPurgeAgeDays = services.Datasets is null ? (int?)null : PlantDatasets.PurgeAgeDays, plants }, Json);
             }
             catch (RuntimeFailure failure) { return Failure(failure, StatusCodes.Status503ServiceUnavailable); }
         });
@@ -382,18 +412,44 @@ public static class WebApp
             return Results.Json(new { simulation = name, hosting = hosting.Status(name) }, Json);
         });
 
-        app.MapDelete("/api/plants/{name}", async (string name, bool? confirm) =>
+        app.MapDelete("/api/plants/{name}", async (string name, bool? confirm, bool? deleteDataset) =>
         {
             if (confirm != true)
                 return Error(StatusCodes.Status400BadRequest, "remove.confirm_required", "Removing drops the plant's tables. Confirm in the page (it sends ?confirm=true).");
             if (Ownership(services, name) is { } refused) return refused;
             try
             {
+                // Read the entry first: removing the plant deletes its registry row.
+                var entry = services.Registry.Find(name);
+                string? dataset = entry?.DatasetCreated == true ? entry.Dataset : null;
+                if (deleteDataset == true && (dataset is null || services.Datasets is null))
+                {
+                    string target = (entry?.Dataset ?? services.Dataset) is { } other ? "the Dataset " + other : "a Dataset";
+                    return Error(StatusCodes.Status409Conflict, "remove.dataset_not_owned",
+                        $"This plant writes to {target} that the page did not create, so the page never deletes it. Remove the plant without deleting its Dataset. Nothing was removed.");
+                }
+
                 await hosting.StopPlant(name);
                 int dropped = services.Plants.Remove(name);
                 hosting.Forget(name);
-                services.Log.Write("plant.removed", name, new { droppedTables = dropped });
-                return Results.Json(new { simulation = name, droppedTables = dropped, message = "Tables and registration removed. Historian tags already published are not affected." }, Json);
+                if (deleteDataset != true)
+                {
+                    services.Log.Write("plant.removed", name, new { droppedTables = dropped, dataset = entry?.Dataset, datasetDeleted = false });
+                    return Results.Json(new { simulation = name, droppedTables = dropped, datasetDeleted = false,
+                        message = entry?.Dataset is { } kept
+                            ? $"Tables and registration removed. The Dataset {kept} and its tags were kept; delete it in Historian when it is no longer needed."
+                            : "Tables and registration removed. Historian tags already published are not affected." }, Json);
+                }
+                try { await services.Datasets!.Delete(dataset!, CancellationToken.None); }
+                catch (RuntimeFailure failure)
+                {
+                    services.Log.Write("plant.removed", name, new { droppedTables = dropped, dataset, datasetDeleted = false, code = failure.Error.Code });
+                    return Error(StatusCodes.Status502BadGateway, "remove.dataset_failed",
+                        $"The plant's tables and registration were removed, but its Dataset {dataset} could not be deleted: {failure.Message} Delete it in Historian → Datasets.");
+                }
+                services.Log.Write("plant.removed", name, new { droppedTables = dropped, dataset, datasetDeleted = true });
+                return Results.Json(new { simulation = name, droppedTables = dropped, datasetDeleted = true,
+                    message = $"Tables, registration and the Dataset {dataset} with all its tags were removed." }, Json);
             }
             catch (RuntimeFailure failure) { return Failure(failure); }
         });
@@ -411,7 +467,8 @@ public static class WebApp
         app.MapGet("/api/plants/{name}/demo-guide", (string name, string? format) => Download(services, name, model =>
         {
             var interview = services.Interviews.ApprovedSimulations().Contains(name) ? FindInterview(services, name) : null;
-            var guide = DemoGuide.Build(services.DemoGuideTemplate, services.Library, interview?.NeedsJson, model, services.Dataset, services.Clock());
+            string? dataset = services.Registry.Find(name)?.Dataset ?? services.Dataset;
+            var guide = DemoGuide.Build(services.DemoGuideTemplate, services.Library, interview?.NeedsJson, model, dataset, services.Clock());
             return format == "html" ? Results.Text(guide.Html, "text/html; charset=utf-8") : Results.Text(guide.Markdown, "text/markdown; charset=utf-8");
         }));
     }

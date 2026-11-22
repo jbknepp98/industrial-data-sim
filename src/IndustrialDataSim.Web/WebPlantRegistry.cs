@@ -3,15 +3,28 @@ using Npgsql;
 
 namespace IndustrialDataSim.Web;
 
-/// <summary>A plant this web container hosts, and whether hosting is switched on.</summary>
-public sealed record HostedPlantEntry(string Simulation, Guid InterviewId, bool HostingEnabled);
+/// <summary>
+/// A plant this web container hosts, whether hosting is switched on, and the
+/// Historian Dataset its tags go to. DatasetCreated is true only when the page
+/// created that Dataset for this plant; only then may the page delete it.
+/// Dataset is null for plants approved before plants had their own Dataset;
+/// they write to TIMEBASE_DATASET.
+/// </summary>
+public sealed record HostedPlantEntry(string Simulation, Guid InterviewId, bool HostingEnabled, string? Dataset = null, bool DatasetCreated = false);
 
 /// <summary>Which plants the web container runs. Tests use an in-memory copy.</summary>
 public interface IWebPlantRegistry
 {
-    void Add(string simulation, Guid interviewId);
+    void Add(string simulation, Guid interviewId, string? dataset = null, bool datasetCreated = false);
     void SetHostingEnabled(string simulation, bool enabled);
     IReadOnlyList<HostedPlantEntry> List();
+}
+
+public static class WebPlantRegistryExtensions
+{
+    /// <summary>The entry for one plant, or null when the page did not approve it.</summary>
+    public static HostedPlantEntry? Find(this IWebPlantRegistry registry, string simulation) =>
+        registry.List().FirstOrDefault(e => e.Simulation == simulation);
 }
 
 /// <summary>
@@ -50,18 +63,40 @@ public sealed class PostgresWebPlantRegistry : IWebPlantRegistry, IDisposable
                   hosting_enabled  boolean NOT NULL DEFAULT true,
                   admitted_utc     timestamptz NOT NULL DEFAULT now())
                 """, connection, transaction)) create.ExecuteNonQuery();
+            // Added in 2.0.0-rc.2: each plant's own Dataset. Older rows keep NULL
+            // and write to TIMEBASE_DATASET, as they always did. ALTER TABLE takes
+            // an exclusive lock even when the columns exist, which can deadlock
+            // with a concurrent plant removal (its cascade touches this table),
+            // so it runs only when a column is actually missing.
+            using (var check = new NpgsqlCommand("""
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_schema = current_schema() AND table_name = 'flowsim_web_plants' AND column_name IN ('dataset', 'dataset_created')
+                """, connection, transaction))
+            {
+                if (Convert.ToInt64(check.ExecuteScalar()) < 2)
+                    using (var columns = new NpgsqlCommand("""
+                        ALTER TABLE flowsim_web_plants
+                          ADD COLUMN IF NOT EXISTS dataset text,
+                          ADD COLUMN IF NOT EXISTS dataset_created boolean NOT NULL DEFAULT false
+                        """, connection, transaction)) columns.ExecuteNonQuery();
+            }
             transaction.Commit();
             tableReady = true;
         }
         return connection;
     }
 
-    public void Add(string simulation, Guid interviewId)
+    public void Add(string simulation, Guid interviewId, string? dataset = null, bool datasetCreated = false)
     {
         using var connection = Open();
-        using var command = new NpgsqlCommand("INSERT INTO flowsim_web_plants (simulation, interview_id) VALUES (@s, @i) ON CONFLICT (simulation) DO NOTHING", connection);
+        using var command = new NpgsqlCommand("""
+            INSERT INTO flowsim_web_plants (simulation, interview_id, dataset, dataset_created) VALUES (@s, @i, @d, @c)
+            ON CONFLICT (simulation) DO NOTHING
+            """, connection);
         command.Parameters.AddWithValue("s", simulation);
         command.Parameters.AddWithValue("i", interviewId);
+        command.Parameters.AddWithValue("d", (object?)dataset ?? DBNull.Value);
+        command.Parameters.AddWithValue("c", datasetCreated);
         command.ExecuteNonQuery();
     }
 
@@ -77,10 +112,11 @@ public sealed class PostgresWebPlantRegistry : IWebPlantRegistry, IDisposable
     public IReadOnlyList<HostedPlantEntry> List()
     {
         using var connection = Open();
-        using var command = new NpgsqlCommand("SELECT simulation, interview_id, hosting_enabled FROM flowsim_web_plants ORDER BY simulation", connection);
+        using var command = new NpgsqlCommand("SELECT simulation, interview_id, hosting_enabled, dataset, dataset_created FROM flowsim_web_plants ORDER BY simulation", connection);
         using var reader = command.ExecuteReader();
         var entries = new List<HostedPlantEntry>();
-        while (reader.Read()) entries.Add(new(reader.GetString(0), reader.GetGuid(1), reader.GetBoolean(2)));
+        while (reader.Read())
+            entries.Add(new(reader.GetString(0), reader.GetGuid(1), reader.GetBoolean(2), reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetBoolean(4)));
         return entries;
     }
 }
@@ -91,7 +127,10 @@ public sealed class InMemoryWebPlantRegistry : IWebPlantRegistry
     private readonly Dictionary<string, HostedPlantEntry> entries = new(StringComparer.Ordinal);
     private readonly object gate = new();
 
-    public void Add(string simulation, Guid interviewId) { lock (gate) entries.TryAdd(simulation, new(simulation, interviewId, true)); }
+    public void Add(string simulation, Guid interviewId, string? dataset = null, bool datasetCreated = false)
+    {
+        lock (gate) entries.TryAdd(simulation, new(simulation, interviewId, true, dataset, datasetCreated));
+    }
 
     public void SetHostingEnabled(string simulation, bool enabled)
     {

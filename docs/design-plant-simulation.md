@@ -306,6 +306,12 @@ their stack.
 - **History length is part of a storyline:** the interview refuses a backfill
   shorter than a chosen storyline's own or starting after a planted event,
   and tells the user when that exceeds the Dataset's purge age.
+- **Each plant its own Dataset (after rc.1):** a plant approved on the page
+  writes to a new Historian Dataset named exactly like the simulation, with a
+  365-day purge age, instead of a shared `Test` Dataset. A taken name is
+  refused, never reused. On Remove the user chooses whether to delete the
+  Dataset too (a checkbox, off by default); only Datasets the page created can
+  be deleted.
 
 ## Open questions for the owner (answered above)
 

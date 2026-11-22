@@ -1,3 +1,14 @@
+# Unreleased (after 2.0.0-rc.1)
+
+- **Each plant approved on the page gets its own Historian Dataset** (owner decision,
+  November 22, 2026). Approve creates a Dataset named exactly like the plant, with a
+  365-day purge age, and the plant's tags go only there. A name that a Dataset
+  already has is refused (`approve.dataset_exists`), so the page never writes to a
+  Dataset it did not create. The Remove dialog has **Also delete its Dataset**, off by
+  default; it deletes only a Dataset the page created. `TIMEBASE_DATASET` is now
+  optional: only plants approved with rc.1 still use it. The CLI is unchanged.
+- Needs a new candidate version and the affected acceptance (P22) before release.
+
 # industrial-data-sim 2.0.0-rc.1: release candidate
 
 Candidate, not a release. Approved by the owner on November 22, 2026 as the

@@ -79,6 +79,7 @@ public sealed class PlantHostingService : IHostedService
     private Task startup = Task.CompletedTask;
 
     /// <param name="historianFactory">Creates the Historian client for one plant; returns null to deliver rows only (tests).</param>
+    /// <param name="dataset">TIMEBASE_DATASET: only for plants approved before each plant had its own Dataset.</param>
     public PlantHostingService(PlantStore store, IWebPlantRegistry registry, Func<string, HistorianClient?> historianFactory,
         string? dataset, JsonLog log, PlantHostingOptions? options = null)
     {
@@ -185,19 +186,22 @@ public sealed class PlantHostingService : IHostedService
                 }
 
                 var model = LoadRegistered(name);
+                // A plant approved here writes to its own Dataset; one approved
+                // before that existed writes to TIMEBASE_DATASET, as it always did.
+                string? target = registry.Find(name)?.Dataset ?? dataset;
                 if (historianFactory(name) is { } client)
                 {
                     historian = client;
-                    if (string.IsNullOrWhiteSpace(dataset))
-                        throw new RuntimeFailure("hosting.dataset_missing", "Set TIMEBASE_DATASET to the Historian Dataset the plants' tags are written to, then restart the container.");
+                    if (string.IsNullOrWhiteSpace(target))
+                        throw new RuntimeFailure("hosting.dataset_missing", "This plant has no Dataset of its own recorded, and TIMEBASE_DATASET is not set. Set TIMEBASE_DATASET to the Dataset it wrote to before, then restart the container.");
                 }
-                var host = new PlantHost(store, model, historian, dataset ?? "")
+                var host = new PlantHost(store, model, historian, target ?? "")
                 {
                     Notice = (code, message) => log.Write(code, name, new { message })
                 };
                 Set(name, new(HostingState.Starting, DateTimeOffset.UtcNow));
-                log.Write("plant.started", name, new { dataset = historian is null ? null : dataset, startUtc = model.StartUtc, lookaheadHours = host.LookaheadHours });
-                if (historian is not null) await WarnAboutRetention(name, model, historian);
+                log.Write("plant.started", name, new { dataset = historian is null ? null : target, startUtc = model.StartUtc, lookaheadHours = host.LookaheadHours });
+                if (historian is not null) await WarnAboutRetention(name, model, historian, target!);
 
                 long rows = 0, points = 0;
                 bool? caughtUp = null;
@@ -282,10 +286,10 @@ public sealed class PlantHostingService : IHostedService
     }
 
     /// <summary>Historian drops points older than the Dataset's purge age; say so up front, as plant run does.</summary>
-    private async Task WarnAboutRetention(string name, PlantModel model, HistorianClient historian)
+    private async Task WarnAboutRetention(string name, PlantModel model, HistorianClient historian, string target)
     {
         await historian.Authenticate(CancellationToken.None);
-        var settings = await historian.ReadDatasetSettings(dataset!, CancellationToken.None);
+        var settings = await historian.ReadDatasetSettings(target, CancellationToken.None);
         if (settings.PurgeAgeDays > 0 && model.StartUtc < DateTimeOffset.UtcNow.AddDays(-settings.PurgeAgeDays))
             log.Write("plant.retention_warning", name, new
             {

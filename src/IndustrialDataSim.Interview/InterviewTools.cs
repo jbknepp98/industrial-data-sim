@@ -325,7 +325,7 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
             if (defaultModel is not null && plant.StartUtc > defaultModel.StartUtc)
                 return Failure([new("tool.backfill_too_short", "$.backfill",
                     $"These storylines need their own history length ({string.Join(", ", own.Distinct())}): their events, and the recoveries after them, are timed for it. " +
-                    "Leave backfill empty to use it. If the user's Historian Dataset purges sooner, tell them Historian will drop the oldest points while Postgres keeps every row, and let them choose.")]);
+                    "Leave backfill empty to use it.")]);
         }
         // Every planted event needs a normal day of history before it: a drift
         // that starts before the history has no golden baseline to compare
@@ -338,8 +338,7 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
             int days = (int)Math.Ceiling((Anchor() - planted.Min()).TotalDays) + 1;
             return Failure([new("tool.backfill_too_short", "$.backfill",
                 $"The chosen storylines plant events from {planted.Min():yyyy-MM-dd HH:mm} UTC, but the history starts at {plant.StartUtc:yyyy-MM-dd HH:mm} UTC. " +
-                $"Use a backfill of at least {days}d (or leave backfill empty for the storylines' own). If the user's Historian Dataset purges sooner, " +
-                "tell them Historian will drop the oldest points while Postgres keeps every row, and let them choose.")]);
+                $"Use a backfill of at least {days}d (or leave backfill empty for the storylines' own).")]);
         }
         state.DraftModelJson = modelJson;
         state.PreviewJson = null; // a preview of an older draft must never be approved

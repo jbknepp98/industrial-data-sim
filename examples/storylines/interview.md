@@ -64,13 +64,17 @@ PM work orders"). They don't change the plant.
 
 - **AI and network.** Tell them:
   - the plant runs locally;
-  - its rows go to the `flow_data_sim` Postgres database and its tags to their
-    Historian Dataset;
+  - its rows go to the `flow_data_sim` Postgres database and its tags to a
+    Historian Dataset (on the web page, a new one named after the plant,
+    created when they approve it);
   - any AI in the demo uses the provider already approved for Gage.
 
   Ask whether the audience is sensitive to AI or to cloud use.
-- **History:** how many days of history the demo needs. It must fit the
-  Dataset's purge age; 6 days is a safe default for a 7-day purge.
+- **History:** how many days of history the demo needs. Leave it to the
+  storylines unless the user asks: each has its own length. On the web page the
+  plant's own Dataset keeps 365 days, so any history up to that is kept. When
+  building with the CLI into an existing Dataset, the history must fit that
+  Dataset's purge age.
 - **When:** demo dates are relative to now. If the demo is later, run the plant
   continuously, or rebuild it nearer the day.
 

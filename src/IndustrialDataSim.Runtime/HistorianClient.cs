@@ -89,6 +89,70 @@ public sealed class HistorianClient : IDisposable
             root.TryGetProperty("lda", out _) ? Number("lda") : null);
     }
 
+    /// <summary>Whether a Dataset with exactly this name exists (<c>GET /api/datasets/{name}/exists</c>).</summary>
+    public async Task<bool> DatasetExists(string dataset, CancellationToken stop)
+    {
+        using var exists = await GetJson(DatasetPath(dataset) + "/exists", stop);
+        return exists.RootElement.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => throw ProtocolFailure()
+        };
+    }
+
+    /// <summary>
+    /// Creates a Dataset with the given purge age (<c>POST /api/datasets</c>
+    /// with <c>{"n", "pa"}</c>). Historian refuses a name that any Dataset
+    /// already has, in any letter case; that becomes historian.dataset_exists,
+    /// so a caller can never take over a Dataset it did not create. Like every
+    /// POST here it is sent once and never retried.
+    /// </summary>
+    public async Task CreateDataset(string dataset, int purgeAgeDays, CancellationToken stop)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        stop = deadline.Token;
+        await Authenticate(stop);
+        using var request = Request(HttpMethod.Post, "api/datasets");
+        request.Content = new StringContent(JsonSerializer.Serialize(new { n = dataset, pa = purgeAgeDays }), Encoding.UTF8, "application/json");
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stop);
+        if (response.StatusCode == HttpStatusCode.BadRequest && await ErrorKey(response, stop) == "Error.DatasetAlreadyExists")
+            throw new RuntimeFailure("historian.dataset_exists",
+                $"Historian already has a Dataset named {dataset} (names are compared ignoring case). Nothing was written to it. Choose another name, or delete that Dataset in Historian if it is no longer needed.");
+        RequireOk(response, "Dataset create");
+    }
+
+    /// <summary>
+    /// Deletes a Dataset and all its history (<c>DELETE /api/datasets/{name}</c>).
+    /// Returns false when it was already gone. Callers delete only Datasets
+    /// they created.
+    /// </summary>
+    public async Task<bool> DeleteDataset(string dataset, CancellationToken stop)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
+        deadline.CancelAfter(TimeSpan.FromSeconds(60));
+        stop = deadline.Token;
+        await Authenticate(stop);
+        using var request = Request(HttpMethod.Delete, DatasetPath(dataset));
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stop);
+        if (response.StatusCode == HttpStatusCode.NotFound && await ErrorKey(response, stop) == "Error.DatasetNotFound") return false;
+        RequireOk(response, "Dataset delete");
+        return true;
+    }
+
+    /// <summary>The <c>key</c> of a small Historian error body, or null. The body itself is never logged.</summary>
+    private static async Task<string?> ErrorKey(HttpResponseMessage response, CancellationToken stop)
+    {
+        try
+        {
+            using var json = JsonDocument.Parse(await ReadBytes(response, 16 * 1024, stop), new JsonDocumentOptions { MaxDepth = 8 });
+            return json.RootElement.ValueKind == JsonValueKind.Object && json.RootElement.TryGetProperty("key", out var key) && key.ValueKind == JsonValueKind.String
+                ? key.GetString() : null;
+        }
+        catch (Exception error) when (error is JsonException or RuntimeFailure) { return null; }
+    }
+
     internal void ValidateRetention(DatasetSettings settings, DateTimeOffset earliestPendingUtc)
     {
         // Compare ages instead of subtracting an untrusted day count from the

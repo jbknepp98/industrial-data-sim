@@ -43,11 +43,12 @@ curl -s http://localhost:8480/api/health
   interviews them (Claude through Pulse Gage), previews the plant, builds it
   only on their **Approve and run** click, hosts it inside the container
   (surviving restarts), and offers the demo guide, Connect spec and Atlas
-  starter per plant. Plants approved there are managed there: stop, start and
+  starter per plant. Each plant approved there gets its own Historian
+  Dataset, named after it, with a 365-day purge age. Plants approved there are managed there: stop, start and
   remove them on its Plants tab, never with `plant run` or `plant remove` here.
 - **It does not answer:** offer the setup (`deployment/web/README.md` in the
   repository: Pulse client with the `Pulse` and `Historian` audiences, a Soft
-  client policy, the Gage model, the Dataset purge age, `plant gage-check`),
+  client policy, the Gage model, `plant gage-check`),
   or carry on with the CLI path below.
 - **Use the CLI path below** when the page is not installed, when the user
   wants Claude Code to drive, or for what the page does not do: hand-written
