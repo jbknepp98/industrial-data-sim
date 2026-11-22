@@ -198,16 +198,104 @@ public sealed class PlantStore : IDisposable
         Progress(simulation, "UPDATE flowsim_simulations SET tag_cursor_utc = @u, sending_until_utc = NULL WHERE simulation = @s AND sending_until_utc = @u", untilUtc);
 
     /// <summary>
-    /// After a crash between intent and completion, the batch's acceptance is
-    /// unknown. Following the simulator's no-replay rule, the cursor moves past
-    /// it and the event is counted, instead of sending the points again.
+    /// After a crash or power loss between intent and completion, the batch's
+    /// acceptance is unknown. Plant tags are deterministic (the same tag, time
+    /// and value every time), so sending the batch again is harmless: the
+    /// intent is cleared, the cursor stays where it was, and the next cycle
+    /// resends the batch. Counted in uncertain_batches. (Owner decision,
+    /// November 22, 2026: resend for plant simulations.)
     /// </summary>
-    public bool SkipUncertainBatch(string simulation)
+    public bool ResendInterruptedBatch(string simulation)
     {
         using var connection = Open();
-        using var command = new NpgsqlCommand("UPDATE flowsim_simulations SET tag_cursor_utc = sending_until_utc, sending_until_utc = NULL, uncertain_batches = uncertain_batches + 1 WHERE simulation = @s AND sending_until_utc IS NOT NULL", connection);
+        using var command = new NpgsqlCommand("UPDATE flowsim_simulations SET sending_until_utc = NULL, uncertain_batches = uncertain_batches + 1 WHERE simulation = @s AND sending_until_utc IS NOT NULL", connection);
         command.Parameters.AddWithValue("s", simulation);
         return command.ExecuteNonQuery() == 1;
+    }
+
+    // ---------------- engine snapshots ----------------
+
+    private bool snapshotTableReady;
+
+    /// <summary>
+    /// The latest engine snapshot of each simulation. The writer owns the
+    /// registry, so the table is created on first use, also in databases
+    /// bootstrapped before snapshots existed. Deleting a simulation's
+    /// registration deletes its snapshot.
+    /// </summary>
+    private void EnsureSnapshotTable(NpgsqlConnection connection)
+    {
+        if (snapshotTableReady) return;
+        using var transaction = connection.BeginTransaction();
+        Execute(connection, transaction, "SELECT pg_advisory_xact_lock(hashtext('flowsim-admission'))");
+        Execute(connection, transaction, """
+            CREATE TABLE IF NOT EXISTS flowsim_snapshots (
+              simulation      text PRIMARY KEY REFERENCES flowsim_simulations (simulation) ON DELETE CASCADE,
+              at_utc          timestamptz NOT NULL,
+              engine_version  integer NOT NULL,
+              model_sha256    text NOT NULL,
+              change_sequence bigint NOT NULL,
+              state           text NOT NULL,
+              state_sha256    text NOT NULL,
+              saved_utc       timestamptz NOT NULL DEFAULT now())
+            """);
+        transaction.Commit();
+        snapshotTableReady = true;
+    }
+
+    /// <summary>Saves (replaces) the simulation's snapshot. Only call once rows and tags are delivered through its time.</summary>
+    public void SaveSnapshot(PlantRegistration registration, PlantSnapshot snapshot)
+    {
+        using var connection = Open();
+        EnsureSnapshotTable(connection);
+        using var command = new NpgsqlCommand("""
+            INSERT INTO flowsim_snapshots (simulation, at_utc, engine_version, model_sha256, change_sequence, state, state_sha256, saved_utc)
+            VALUES (@s, @a, @v, @m, @c, @t, @h, now())
+            ON CONFLICT (simulation) DO UPDATE SET at_utc = EXCLUDED.at_utc, engine_version = EXCLUDED.engine_version,
+              model_sha256 = EXCLUDED.model_sha256, change_sequence = EXCLUDED.change_sequence, state = EXCLUDED.state,
+              state_sha256 = EXCLUDED.state_sha256, saved_utc = EXCLUDED.saved_utc
+            """, connection);
+        command.Parameters.AddWithValue("s", registration.Simulation);
+        command.Parameters.AddWithValue("a", snapshot.AtUtc.ToUniversalTime());
+        command.Parameters.AddWithValue("v", snapshot.EngineVersion);
+        command.Parameters.AddWithValue("m", registration.ModelSha256);
+        command.Parameters.AddWithValue("c", snapshot.ChangeSequence);
+        command.Parameters.AddWithValue("t", snapshot.State);
+        command.Parameters.AddWithValue("h", Sha256(snapshot.State));
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// The stored snapshot, or null with the reason it cannot be used. A
+    /// snapshot is used only when it was written by this engine version for
+    /// this exact model, is intact, and lies within what was already delivered;
+    /// otherwise the plant replays from its start, which is always correct.
+    /// </summary>
+    public (PlantSnapshot? Snapshot, string? Ignored) LoadSnapshot(PlantRegistration registration, DateTimeOffset? deliveredThroughUtc)
+    {
+        using var connection = Open();
+        EnsureSnapshotTable(connection);
+        using var command = new NpgsqlCommand("SELECT at_utc, engine_version, model_sha256, change_sequence, state, state_sha256 FROM flowsim_snapshots WHERE simulation = @s", connection);
+        command.Parameters.AddWithValue("s", registration.Simulation);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read()) return (null, null);
+        var snapshot = new PlantSnapshot(reader.GetInt32(1), reader.GetFieldValue<DateTimeOffset>(0).ToUniversalTime(), reader.GetInt64(3), reader.GetString(4));
+        if (snapshot.EngineVersion != PlantEngine.EngineVersion) return (null, $"it was written by engine version {snapshot.EngineVersion}, and this is version {PlantEngine.EngineVersion}");
+        if (reader.GetString(2) != registration.ModelSha256) return (null, "it belongs to a different model");
+        if (reader.GetString(5) != Sha256(snapshot.State)) return (null, "its state is damaged");
+        if (snapshot.ChangeSequence > registration.AppliedSequence) return (null, "it is ahead of the rows in the database");
+        if (deliveredThroughUtc is { } delivered && snapshot.AtUtc > delivered) return (null, "it is ahead of the tags in Historian");
+        return (snapshot, null);
+    }
+
+    /// <summary>The time of the stored snapshot, for status; null when there is none.</summary>
+    public DateTimeOffset? SnapshotUtc(string simulation)
+    {
+        using var connection = Open();
+        EnsureSnapshotTable(connection);
+        using var command = new NpgsqlCommand("SELECT at_utc FROM flowsim_snapshots WHERE simulation = @s", connection);
+        command.Parameters.AddWithValue("s", simulation);
+        return command.ExecuteScalar() is DateTime time ? new DateTimeOffset(DateTime.SpecifyKind(time, DateTimeKind.Utc)) : null;
     }
 
     private void Progress(string simulation, string sql, DateTimeOffset untilUtc)

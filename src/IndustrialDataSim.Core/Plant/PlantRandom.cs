@@ -22,6 +22,9 @@ internal sealed class PlantRandom
         state = BinaryPrimitives.ReadUInt64LittleEndian(digest);
     }
 
+    /// <summary>The generator position, saved in engine snapshots so a resumed run continues the same stream.</summary>
+    internal ulong State { get => state; set => state = value; }
+
     internal ulong NextUInt64()
     {
         ulong z = state += 0x9E3779B97F4A7C15UL;

@@ -126,8 +126,8 @@ late, and the next order slips.
 
 ## Outputs
 
-**Historian.** The existing 1.x adapter is used unchanged: durable batches,
-blind publish, no replay. Tag names follow the ISA-style hierarchy and
+**Historian.** The existing 1.x adapter is used: durable batches and blind
+publish. An interrupted batch is resent (round 3 decision below). Tag names follow the ISA-style hierarchy and
 descriptor conventions from past demos, for example `Site.Area.Line.Unit.Speed`.
 
 **Postgres (new).** The schemas follow the `atlas-demo-database` rules, adapted
@@ -257,6 +257,19 @@ Consequences for the design:
   `simulationname_tablepurpose`, for example `acmenuggs_maintenancetickets`.
   Postgres needs no quoting, and Connect queries stay simple. Column names are
   lowercase snake_case too.
+
+## Owner decisions, round 3 (November 22, 2026)
+
+- **Resend interrupted tag batches** for plant simulations. Plant tags are
+  deterministic, so a resent point is identical; this replaces the 1.x
+  "skip, never replay" rule for the plant host only.
+- **Snapshots** of the engine state, so a plant can run for months and be
+  installed by Timebase users on laptops that sleep and power-cycle often:
+  saved hourly in `flowsim_snapshots`, versioned by `PlantEngine.EngineVersion`,
+  falling back to a full replay whenever a snapshot cannot be used, and
+  catching up after a gap in bounded slices. Implemented November 22, 2026;
+  see the live-run section of [plant-simulation.md](plant-simulation.md).
+- Real sleep and power-cycle acceptance tests are deferred.
 
 ## Open questions for the owner (answered above)
 

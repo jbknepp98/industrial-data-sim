@@ -144,8 +144,8 @@ public static partial class CliApplication
                 }
                 case "status":
                     result = args.Length == 3
-                        ? (object)(store.Registration(args[2]) is { } one ? Status(one) : throw new RuntimeFailure("plant.not_admitted", "No simulation with this name is registered."))
-                        : new { simulations = store.List().Select(Status) };
+                        ? (object)(store.Registration(args[2]) is { } one ? Status(store, one) : throw new RuntimeFailure("plant.not_admitted", "No simulation with this name is registered."))
+                        : new { simulations = store.List().Select(r => Status(store, r)).ToList() };
                     break;
                 case "remove":
                     result = new { simulation = args[2], droppedTables = store.Remove(args[2]), message = "Tables and registration removed. Historian tags already published are not affected." };
@@ -177,6 +177,7 @@ public static partial class CliApplication
         using var historian = new HistorianClient(HistorianConnection.FromEnvironment());
         var host = new PlantHost(store, model, historian, dataset);
         void Line(object value) { output.WriteLine(JsonSerializer.Serialize(value, JsonOptions)); output.Flush(); }
+        host.Notice = (name, message) => Line(new { @event = name, message });
         Line(new { @event = "plant.started", simulation, dataset, startUtc = model.StartUtc, lookaheadHours = host.LookaheadHours });
         // Historian drops points older than the Dataset's purge age. Say so up front
         // instead of letting the oldest backfill disappear without explanation.
@@ -192,7 +193,7 @@ public static partial class CliApplication
         {
             host.RunAsync(cycle =>
             {
-                if (cycle.Batches < 0) { Line(new { @event = "plant.uncertain_batch_skipped", message = "A tag batch from an interrupted run was skipped, not resent." }); return; }
+                if (cycle.Batches < 0) { Line(new { @event = "plant.interrupted_batch_resent", message = "The tag batch in flight when the plant last stopped unexpectedly is being sent again. Plant tags are deterministic, so resent points are identical." }); return; }
                 rows += cycle.RowsApplied; points += cycle.PointsPublished;
                 if (cycle.CaughtUp != caughtUp || DateTimeOffset.UtcNow - lastReport > TimeSpan.FromMinutes(10))
                 {
@@ -211,9 +212,11 @@ public static partial class CliApplication
         return stop.IsCancellationRequested ? 130 : 0;
     }
 
-    private static object Status(PlantRegistration r) => new
+    private static object Status(PlantStore store, PlantRegistration r) => new
     {
-        r.Simulation, r.TablePrefix, r.AnchorUtc, r.StartUtc, r.AppliedSequence, r.TagCursorUtc, r.UncertainBatches,
+        r.Simulation, r.TablePrefix, r.AnchorUtc, r.StartUtc, r.AppliedSequence, r.TagCursorUtc,
+        snapshotUtc = store.SnapshotUtc(r.Simulation),
+        resentBatches = r.UncertainBatches, // batches interrupted by a crash or power loss and sent again
         sendingInProgress = r.SendingUntilUtc is not null
     };
 

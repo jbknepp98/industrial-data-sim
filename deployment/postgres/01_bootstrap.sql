@@ -38,7 +38,9 @@ CREATE TABLE IF NOT EXISTS flowsim_simulations (
   applied_sequence  bigint NOT NULL DEFAULT 0,
   -- Historian: points are published through tag_cursor_utc. sending_until_utc is
   -- set before a publish and cleared after; a value found on restart means that
-  -- batch's acceptance is uncertain and it is skipped, never replayed.
+  -- batch was interrupted. Plant tags are deterministic, so it is sent again and
+  -- counted in uncertain_batches. (flowsim_snapshots, the engine snapshots, is
+  -- created by the simulator on first use.)
   tag_cursor_utc    timestamptz,
   sending_until_utc timestamptz,
   uncertain_batches bigint NOT NULL DEFAULT 0

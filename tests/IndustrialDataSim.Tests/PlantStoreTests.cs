@@ -93,14 +93,17 @@ public class PlantStoreTests
     private static string Normalize(object? value) => value switch
     {
         null => "null",
-        DateTimeOffset t => t.UtcDateTime.ToString("O"),
-        DateTime t => DateTime.SpecifyKind(t, DateTimeKind.Utc).ToString("O"),
+        // timestamptz keeps microseconds; .NET keeps 100 ns ticks.
+        DateTimeOffset t => Microseconds(t.UtcDateTime).ToString("O"),
+        DateTime t => Microseconds(DateTime.SpecifyKind(t, DateTimeKind.Utc)).ToString("O"),
         double d => Decimal((decimal)d),
         decimal d => Decimal(d),
         int or long => System.Convert.ToInt64(value).ToString(System.Globalization.CultureInfo.InvariantCulture),
         bool b => b ? "true" : "false",
         _ => value.ToString()!
     };
+
+    private static DateTime Microseconds(DateTime t) => new(t.Ticks - t.Ticks % 10, DateTimeKind.Utc);
 
     private static string Decimal(decimal value)
     {
@@ -172,5 +175,106 @@ public class PlantStoreTests
             drop.ExecuteNonQuery();
             try { store.Remove(name); } catch (RuntimeFailure) { }
         }
+    }
+
+    private static void AssertTablesMatchEngine(string connection, PlantModel model, DateTimeOffset through)
+    {
+        var run = PlantEngine.Run(model, through.AddSeconds(1));
+        var expected = PlantPreview.FinalTables(new PlantRun(model, run.StartUtc, through, run.Changes.Where(c => c.Utc <= through).ToList(), [], []));
+        foreach (var table in PlantSchema.TablesFor(model))
+        {
+            var stored = ReadTable(connection, model.TablePrefix + table.Purpose, table.Columns);
+            var wanted = expected.GetValueOrDefault(table.Purpose, []);
+            Assert.Equal(wanted.Count, stored.Count);
+            var byKey = stored.ToDictionary(r => (string)r[table.Key]!);
+            foreach (var row in wanted)
+                foreach (var column in table.Columns)
+                    Assert.Equal(Normalize(row[column.Name]), Normalize(byKey[(string)row[table.Key]!][column.Name]));
+        }
+    }
+
+    /// <summary>
+    /// The host catches up in bounded slices, saves snapshots as it goes, resumes
+    /// from the stored snapshot after a restart (or a sleep: the clock jumps),
+    /// and falls back to a full replay when the snapshot is damaged. The rows are
+    /// the engine's full history every time.
+    /// </summary>
+    [Fact]
+    public async Task HostResumesFromSnapshotsAndCatchesUpInSlicesWithTheSameHistory()
+    {
+        if (Connection is not { } connection) return;
+        string name = Unique();
+        var (model, json) = Example(name);
+        using var store = new PlantStore(connection);
+        try
+        {
+            store.Admit(model, json);
+            var clock = Anchor;
+            var notices = new List<string>();
+            PlantHost Host() => new(store, model, null, "unused") { UtcNow = () => clock, Notice = (e, _) => notices.Add(e) };
+
+            // A 14-day backfill: several bounded cycles, each saving a newer snapshot.
+            var host = Host();
+            var cycles = new List<PlantCycle>();
+            do cycles.Add(await host.CycleAsync(50, CancellationToken.None)); while (!cycles[^1].CaughtUp);
+            Assert.True(cycles.Count >= 14 * 24 / PlantHost.BackfillSliceHours, $"{cycles.Count} cycles");
+            Assert.All(cycles.Zip(cycles.Skip(1)), p => Assert.True(p.Second.ThroughUtc - p.First.ThroughUtc <= TimeSpan.FromHours(PlantHost.BackfillSliceHours)));
+            Assert.Equal(Anchor, cycles[^1].ThroughUtc);
+            Assert.Equal(new DateTimeOffset(Anchor.UtcDateTime.Date.AddHours(Anchor.Hour), TimeSpan.Zero), store.SnapshotUtc(name));
+            Assert.Empty(notices);
+            AssertTablesMatchEngine(connection, model, Anchor);
+
+            // Restart after the laptop slept for 9 hours: resume from the snapshot, catch up.
+            clock = Anchor.AddHours(9).AddMinutes(13);
+            host = Host();
+            do cycles.Add(await host.CycleAsync(50, CancellationToken.None)); while (!cycles[^1].CaughtUp);
+            Assert.Equal(["plant.snapshot_resumed"], notices);
+            Assert.Equal(Anchor.AddHours(9), store.SnapshotUtc(name));
+            AssertTablesMatchEngine(connection, model, clock);
+
+            // A damaged snapshot is ignored: full replay, same history, and a fresh snapshot.
+            using (var db = new NpgsqlConnection(connection))
+            {
+                db.Open();
+                using var damage = new NpgsqlCommand("UPDATE flowsim_snapshots SET state = state || ' ' WHERE simulation = @s", db);
+                damage.Parameters.AddWithValue("s", name);
+                Assert.Equal(1, damage.ExecuteNonQuery());
+            }
+            notices.Clear();
+            clock = clock.AddHours(2);
+            host = Host();
+            do cycles.Add(await host.CycleAsync(50, CancellationToken.None)); while (!cycles[^1].CaughtUp);
+            Assert.Equal(["plant.snapshot_ignored"], notices);
+            AssertTablesMatchEngine(connection, model, clock);
+            Assert.Equal(Anchor.AddHours(11), store.SnapshotUtc(name));
+            Assert.NotNull(store.LoadSnapshot(store.Registration(name)!, null).Snapshot);
+        }
+        finally { try { store.Remove(name); } catch (RuntimeFailure) { } }
+        Assert.Null(store.SnapshotUtc(name)); // removal deletes the snapshot with the registration
+    }
+
+    /// <summary>An interrupted tag batch is sent again: intent cleared, cursor kept, counted.</summary>
+    [Fact]
+    public void InterruptedTagBatchIsResentNotSkipped()
+    {
+        if (Connection is not { } connection) return;
+        string name = Unique();
+        var (model, json) = Example(name);
+        using var store = new PlantStore(connection);
+        try
+        {
+            store.Admit(model, json);
+            Assert.False(store.ResendInterruptedBatch(name));
+            store.BeginSending(name, model.StartUtc);
+            store.CompleteSending(name, model.StartUtc);
+            store.BeginSending(name, model.StartUtc.AddMinutes(5)); // then the power went out
+            Assert.True(store.ResendInterruptedBatch(name));
+            var registration = store.Registration(name)!;
+            Assert.Equal(model.StartUtc, registration.TagCursorUtc); // the batch after the cursor goes again
+            Assert.Null(registration.SendingUntilUtc);
+            Assert.Equal(1, registration.UncertainBatches);
+            Assert.False(store.ResendInterruptedBatch(name));
+        }
+        finally { try { store.Remove(name); } catch (RuntimeFailure) { } }
     }
 }

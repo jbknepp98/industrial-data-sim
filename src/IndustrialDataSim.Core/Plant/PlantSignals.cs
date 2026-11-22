@@ -21,6 +21,7 @@ public sealed class PlantSignals
     private readonly Dictionary<string, List<PlantLineSegment>> segmentsByLine;
     private readonly Dictionary<string, double[]> goodBefore, rejectBefore;
     private readonly List<(DateTimeOffset Utc, double Level)> stock = [];
+    private readonly double stockBase;
 
     public PlantSignals(PlantRun run)
     {
@@ -33,6 +34,9 @@ public sealed class PlantSignals
             // Cumulative output at the start of each segment, for O(log n) counts.
             var good = new double[list.Count + 1];
             var reject = new double[list.Count + 1];
+            // A run resumed from a snapshot starts from the totals of every earlier segment.
+            good[0] = run.Base?.Good.GetValueOrDefault(line) ?? 0;
+            reject[0] = run.Base?.Reject.GetValueOrDefault(line) ?? 0;
             for (int i = 0; i < list.Count; i++)
             {
                 double gross = list[i].CasesPerMinute * (list[i].End - list[i].Start).TotalMinutes;
@@ -43,7 +47,7 @@ public sealed class PlantSignals
             rejectBefore[line] = reject;
         }
         // Warehouse stock steps with each inventory transaction, in change order.
-        double level = 0;
+        double level = stockBase = run.Base?.Stock ?? 0;
         foreach (var change in run.Changes.Where(c => c.Table == "inventorytransactions" && c.Operation == "insert"))
         {
             level += System.Convert.ToDouble(change.Columns["quantity_cases"]);
@@ -97,7 +101,7 @@ public sealed class PlantSignals
                 if (stock[middle].Utc <= utc) { found = middle; low = middle + 1; }
                 else high = middle - 1;
             }
-            return found < 0 ? 0.0 : stock[found].Level;
+            return found < 0 ? stockBase : stock[found].Level;
         }
         var list = segmentsByLine[tag.Line];
         int index = SegmentIndex(list, utc);

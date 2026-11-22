@@ -86,25 +86,54 @@ plant run <simulation>
 ```
 
 The admitted plant is delivered until the container stops (`docker stop` sends
-SIGINT; exit code 130). Each cycle replays the engine from the plant start
-through now, plus a look-ahead of the longest `warningHours` + 1 hour. The
-look-ahead means vibration already rises before a failure the engine will
-produce. Only rows and tag samples at or before now are delivered.
+SIGINT; exit code 130). Each cycle runs the engine from the latest snapshot
+through the delivery point, plus a look-ahead of the longest `warningHours` + 1
+hour. The look-ahead means vibration already rises before a failure the engine
+will produce. Only rows and tag samples at or before now are delivered.
 
 - **Rows:** Postgres, exactly once (see above).
 - **Tags:** Historian, in batches of at most 1000 points, written to the Dataset
   in `TIMEBASE_DATASET`. The publish intent (`sending_until_utc`) is recorded
   before each batch and cleared after it. A graceful stop always finishes the
-  batch in flight. If the process is killed mid-batch, the next start skips that
-  batch and counts it in `uncertain_batches`; it never resends it.
+  batch in flight. If the process is killed or loses power mid-batch, the next
+  start sends that batch again (event `plant.interrupted_batch_resent`, counted
+  as `resentBatches` in status). Plant tags are deterministic, so a resent point
+  has the same tag, time and value. This differs from the 1.x Uncertain rule on
+  purpose (owner decision, November 22, 2026).
+- **Snapshots:** once rows and tags are delivered past a whole hour of plant
+  time, the engine state at that hour is saved in `flowsim_snapshots` (one row
+  per simulation, created automatically, removed with the simulation). Later
+  cycles and restarts resume from it, so a cycle's cost does not grow with the
+  plant's age. A resumed run is identical to a run from the plant start; the
+  tests compare every row, line state and tag value at many snapshot instants.
+  A snapshot from another engine version, for another model, damaged, or
+  ahead of what was delivered is ignored (`plant.snapshot_ignored`) and the
+  plant replays from its start: slower, never different.
+- **Sleep, power loss and long stops:** the plant computes everything from the
+  calendar, not from elapsed run time. After a laptop wakes or the container
+  restarts, the next cycles deliver the missing period exactly as if it had run
+  throughout. A catch-up advances at most 6 hours of plant time per cycle, each
+  from the newest snapshot, so even a week's gap is delivered in bounded steps.
 - **Retention check:** at start the host reads the Dataset's purge age. If the
   backfill begins before it, the host logs `plant.retention_warning`: Historian
   will drop those oldest points, while Postgres keeps every row.
 - **One host per simulation:** a Postgres advisory lock refuses a second host
   (`plant.host_running`).
 - **Log:** the host prints one JSON line per change of condition:
-  `plant.started`, `plant.backfilling` (every 10 minutes), `plant.live` and
-  `plant.stopped`.
+  `plant.started`, `plant.snapshot_resumed` or `plant.snapshot_ignored`,
+  `plant.backfilling` (every 10 minutes), `plant.live` and `plant.stopped`.
+
+Measured engine cost for the Bluebird plant, one cycle with a 13-hour look-ahead:
+
+| Plant age | From the plant start | From a snapshot | Snapshot size |
+| --- | --- | --- | --- |
+| 6 days | 1 ms | 1 ms | 3 KB |
+| 90 days | 26 ms | 0.1 ms | 2 KB |
+| 1 year | 66 ms (+8 ms signal setup) | 0.5 ms | 3 KB |
+
+Engine changes that alter its output must bump `PlantEngine.EngineVersion`:
+running plants replay their stored history and would otherwise stop with
+`plant.history_mismatch`. `PlantSnapshotTests` pins the output with hashes.
 
 The env file passed with `--env-file` needs the `TIMEBASE_*` settings (Historian,
 Pulse, client credentials, CA bundle and Dataset) and `FLOWSIM_PG_CONNECTION`
@@ -255,6 +284,6 @@ Further rules:
 - **Suppliers, purchase orders and raw-material lots:** quality excursions
   stand in for supplier effects.
 - **Utilities correlated with the process,** and multiple sites.
-- **Replay cost:** each live cycle replays the engine from the plant start, so
-  it grows with run length. That is fine for weeks to months of a small plant;
-  checkpointing is future work.
+- **Sleep and power-cycle acceptance:** catch-up after a clock jump is covered
+  by tests with a simulated clock; a real laptop sleep and a hard power loss
+  in Docker are still to be run.
