@@ -3,11 +3,13 @@
     <Project Path="tools/IndustrialDataSim.DemoPreview/IndustrialDataSim.DemoPreview.csproj" />
     <Project Path="tools/IndustrialDataSim.ControlProbe/IndustrialDataSim.ControlProbe.csproj" />
     <Project Path="tools/IndustrialDataSim.CapacityProbe/IndustrialDataSim.CapacityProbe.csproj" />
+    <Project Path="tools/IndustrialDataSim.InterviewProbe/IndustrialDataSim.InterviewProbe.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/IndustrialDataSim.Cli/IndustrialDataSim.Cli.csproj" />
     <Project Path="src/IndustrialDataSim.Core/IndustrialDataSim.Core.csproj" />
     <Project Path="src/IndustrialDataSim.Runtime/IndustrialDataSim.Runtime.csproj" />
+    <Project Path="src/IndustrialDataSim.Interview/IndustrialDataSim.Interview.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/IndustrialDataSim.CrashProbe/IndustrialDataSim.CrashProbe.csproj" />

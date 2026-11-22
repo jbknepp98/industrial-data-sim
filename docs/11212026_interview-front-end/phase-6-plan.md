@@ -109,13 +109,13 @@ caching and thinking blocks survive.
 
 <success-criteria>
 <automated-verification>
-- [ ] Build and full tests pass; the fake-model interview test is green
-- [ ] No build or run tool is exposed (asserted)
+- [x] Build and full tests pass; the fake-model interview test is green (Release 1044/1044 with `FLOWSIM_TEST_PG` set, November 22, 2026; `InterviewTests` 20, the live one gated by `FLOWSIM_TEST_GAGE=1`)
+- [x] No build or run tool is exposed (asserted by `NoBuildOrRunToolIsExposed`, which also checks the schemas are strict)
 </automated-verification>
 <end-to-end-verification>
-- [ ] A small console harness (`tools/IndustrialDataSim.InterviewProbe`) runs a live interview through Gage from the terminal, playing "maintenance manager at a bottler, late orders": the conversation reaches a valid preview, and the cost per interview is recorded in tokens
-- [ ] Kill the probe mid-interview and restart it: the session resumes at the last message
-- [ ] Ask for an unsupported story ("energy spikes"): the interviewer says it's not available yet and offers the closest available one
+- [x] A small console harness (`tools/IndustrialDataSim.InterviewProbe`) runs a live interview through Gage from the terminal, playing "maintenance manager at a bottler, late orders": the conversation reaches a valid preview, and the cost per interview is recorded in tokens. Passed through Gage (`anthropic/claude`) in the simulator image on the Timebase network: `PlanTestBottler`, valid draft, 2.0 MB preview. 3 turns used 87,767 input and 3,382 output tokens (9 model calls). Pulse reported no cache reads, because requests carry no `cache_control`
+- [x] Kill the probe mid-interview and restart it: the session resumes at the last message. The container was SIGKILLed during turn 2's `compose_model`, leaving status `in_turn` with 7 messages stored. `--resume` finished the turn (preview), skipped the 2 script lines already sent and reached a valid preview
+- [x] Ask for an unsupported story ("energy spikes"): the interviewer says it's not available yet and offers the closest available one. Passed twice live. `energy-per-unit-spike` has `closest: null`, so the tool offers the best available match for the audience and says nothing close exists. The model said so and offered "Labeler jams make orders late"
 </end-to-end-verification>
 </success-criteria>
 
