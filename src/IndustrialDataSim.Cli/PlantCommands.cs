@@ -126,11 +126,16 @@ public static partial class CliApplication
             WriteResult(output, [new("storyline.not_available", "$", $"\"{waiting.Title}\" is {waiting.Engine}, not available yet. Choose an available storyline.")]);
             return 1;
         }
-        string baseId = chosen[0].Base ?? "";
-        var baseFile = ReadPlainFile(Path.Combine(folder, "bases", baseId + ".json"));
-        if (baseId.Length == 0 || baseFile.Error is not null)
+        if (PlantStorylines.CommonBase(chosen) is not { } baseId)
         {
-            WriteResult(output, [new("storyline.base_missing", "$", $"\"{chosen[0].Title}\" has no base plant in {folder}/bases. It may not be available yet.")]);
+            WriteResult(output, [new("storyline.wrong_base", "$", "These storylines share no base plant: " +
+                string.Join("; ", chosen.Select(c => $"{c.Id} runs on {string.Join(", ", c.Bases)}")) + ". Choose storylines that share a base.")]);
+            return 1;
+        }
+        var baseFile = ReadPlainFile(Path.Combine(folder, "bases", baseId + ".json"));
+        if (baseFile.Error is not null)
+        {
+            WriteResult(output, [new("storyline.base_missing", "$", $"The base plant \"{baseId}\" is missing from {folder}/bases. Check that the storyline folder is complete.")]);
             return 1;
         }
         var composed = PlantStorylines.Compose(baseId, baseFile.Json!, chosen, new System.Text.Json.Nodes.JsonObject { ["simulation"] = simulation });

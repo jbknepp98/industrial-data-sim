@@ -78,10 +78,12 @@ public static partial class DemoGuide
         string stepTemplate = block[(block.IndexOf('\n', stepAt) + 1)..];
 
         var storylines = new StringBuilder();
+        string? baseId = PlantStorylines.CommonBase(chosen); // the base the interview composed on
         for (int i = 0; i < chosen.Count; i++)
         {
             var storyline = chosen[i];
-            var moments = InterviewTools.Appearances(storyline, model, run, tables, document);
+            var talkTrack = storyline.TalkTrackFor(baseId);
+            var moments = InterviewTools.Appearances(storyline, model, run, tables, document, baseId);
             var storylineValues = new Dictionary<string, string>(values)
             {
                 ["StorylineNumber"] = (i + 1).ToString(CultureInfo.InvariantCulture),
@@ -92,9 +94,9 @@ public static partial class DemoGuide
                 ["Moment"] = Moment(moments["moments"] as JsonArray ?? [], nowUtc)
             };
             storylines.Append(Fill(storylineTemplate, storylineValues));
-            for (int s = 0; s < storyline.TalkTrack.Count; s++)
+            for (int s = 0; s < talkTrack.Count; s++)
             {
-                var step = storyline.TalkTrack[s];
+                var step = talkTrack[s];
                 var targets = step.Tags.Concat(step.Tables).Select(t => "`" + Fill(t, values) + "`").ToList();
                 storylines.Append(Fill(stepTemplate, new Dictionary<string, string>(storylineValues)
                 {

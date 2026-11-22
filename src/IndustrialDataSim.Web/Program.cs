@@ -4,20 +4,26 @@
 //   FLOWSIM_PG_CONNECTION      flow_data_sim connection string (required)
 //   TIMEBASE_PULSE_URL, TIMEBASE_CLIENT_ID, TIMEBASE_CLIENT_SECRET, TIMEBASE_CA_BUNDLE
 //                              the Pulse client: Gage for the interview, Historian for plant tags
-//   TIMEBASE_HISTORIAN_URL     Historian for plant tags (see HistorianConnection)
+//   TIMEBASE_BASE_URL, TIMEBASE_AUDIENCE, TIMEBASE_PROFILE
+//                              Historian for plant tags (see HistorianConnection)
 //   TIMEBASE_DATASET           the Dataset approved plants write their tags to
 //   FLOWSIM_GAGE_MODEL         Gage handle, default anthropic/claude
 //   FLOWSIM_STORYLINES         storyline folder, default ./storylines next to the program
 //   FLOWSIM_WEB_URLS           listen address, default http://127.0.0.1:8480
 //   FLOWSIM_WEB_ALLOWED_HOSTS  accepted Host names, default localhost;127.0.0.1;[::1]
 // Secrets are never logged or echoed.
+//
+// `flow-data-simulator-web healthcheck` asks the running page for /api/health
+// (the image's Docker health check) and exits 0 when it answers.
 using IndustrialDataSim.Interview;
 using IndustrialDataSim.Runtime;
 using IndustrialDataSim.Web;
 
-var log = new JsonLog(Console.Out);
 string? Setting(string key) => Environment.GetEnvironmentVariable(key) is { Length: > 0 } value ? value : null;
 
+if (args is ["healthcheck"]) return await WebHealthProbe.Run(Setting("FLOWSIM_WEB_URLS"), Console.Error);
+
+var log = new JsonLog(Console.Out);
 string? connection = Setting("FLOWSIM_PG_CONNECTION");
 if (connection is null)
 {

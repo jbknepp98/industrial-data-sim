@@ -84,7 +84,9 @@ adds no extra lines or staff.
   then the KPIs they named.
 - **Propose one to three** in their own words: the pitch, who it speaks to, and
   the moment the audience will see.
-- **Check the fit.** Storylines need the same base plant. If two clash, offer a
+- **Check the fit.** Storylines must share a base plant. Some run on several
+  (their `Bases`), so check every chosen storyline's list before you say two
+  clash; compose picks a base they all run on. If they share none, offer a
   choice.
 - **Rare stories:** if what they want is rare in the evidence, say how many
   meetings raised it. It helps them judge whether it will land.

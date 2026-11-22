@@ -7,16 +7,37 @@ namespace IndustrialDataSim.Core.Plant;
 /// <summary>One step of a storyline's demo talk track: the tool, what to open, what to ask, what the audience sees.</summary>
 public sealed record PlantTalkStep(string Tool, IReadOnlyList<string> Tags, IReadOnlyList<string> Tables, string Ask, string Expect);
 
+/// <summary>The same storyline written for another base plant: its own fragment, and a talk track when the equipment differs (empty: reuse the storyline's).</summary>
+public sealed record PlantStorylineVariant(string Base, JsonObject Fragment, IReadOnlyList<PlantTalkStep> TalkTrack);
+
 /// <summary>
 /// A demo storyline grounded in real customer needs: who it is for, what it
 /// shows, and how to build it (a model fragment on a base plant). Engine is
 /// "available" (buildable today), "planned" (on the roadmap) or "later".
+/// <see cref="Variants"/> lets an available storyline also run on other bases
+/// (for example the labeler jam on the syrup-batch plant's filler line).
 /// </summary>
 public sealed record PlantStoryline(string Id, string Title, string Pitch, IReadOnlyList<string> Industries,
     IReadOnlyList<string> Roles, IReadOnlyList<string> Kpis, int Evidence, IReadOnlyList<string> Systems,
     string Engine, IReadOnlyList<string> Requires, string? Closest, string? Base, JsonObject? Fragment, IReadOnlyList<PlantTalkStep> TalkTrack)
 {
     public bool Available => Engine == "available";
+
+    /// <summary>Other bases this storyline is written for, each with its own fragment and talk track.</summary>
+    public IReadOnlyList<PlantStorylineVariant> Variants { get; init; } = [];
+
+    /// <summary>Every base this storyline runs on: its own base first, then its variants' bases.</summary>
+    public IReadOnlyList<string> Bases => Base is null ? [] : [Base, .. Variants.Select(v => v.Base)];
+
+    public bool RunsOn(string baseId) => Bases.Contains(baseId);
+
+    /// <summary>The fragment for a base, or null when the storyline is not written for it.</summary>
+    public JsonObject? FragmentFor(string? baseId) =>
+        baseId is null || baseId == Base ? Fragment : Variants.FirstOrDefault(v => v.Base == baseId)?.Fragment;
+
+    /// <summary>The talk track for a base: a variant's own when it has one, otherwise the storyline's.</summary>
+    public IReadOnlyList<PlantTalkStep> TalkTrackFor(string? baseId) =>
+        Variants.FirstOrDefault(v => v.Base == baseId) is { TalkTrack.Count: > 0 } variant ? variant.TalkTrack : TalkTrack;
 }
 
 public sealed record PlantStorylineLibrary(IReadOnlyList<PlantStoryline> Storylines)
@@ -71,7 +92,9 @@ public static class PlantStorylines
     ];
 
     private static readonly string[] EntryFields =
-        ["id", "title", "pitch", "industries", "roles", "kpis", "evidence", "systems", "engine", "requires", "closest", "base", "fragment", "talkTrack"];
+        ["id", "title", "pitch", "industries", "roles", "kpis", "evidence", "systems", "engine", "requires", "closest", "base", "fragment", "talkTrack", "variants"];
+
+    private static readonly string[] VariantFields = ["base", "fragment", "talkTrack"];
 
     private static readonly string[] StepFields = ["tool", "tags", "tables", "ask", "expect"];
 
@@ -145,9 +168,62 @@ public static class PlantStorylines
             if (fragment is null) errors.Add(new("storyline.fragment", path + ".fragment", "An available storyline needs a fragment object (it may be empty)."));
             if (talk.Count < 3 || talk.Count > 6) errors.Add(new("storyline.talk_track", path + ".talkTrack", "An available storyline needs 3 to 6 talk-track steps."));
         }
+        var variants = new List<PlantStorylineVariant>();
+        if (item["variants"] is { } variantsNode)
+        {
+            if (engine != "available" || variantsNode is not JsonArray variantItems)
+                errors.Add(new("storyline.variants", path + ".variants", "Only an available storyline can have variants, as a list of {base, fragment, talkTrack} objects."));
+            else
+                for (int i = 0; i < variantItems.Count; i++)
+                    if (Variant(variantItems[i], $"{path}.variants[{i}]", errors) is { } variant)
+                    {
+                        if (variant.Base == baseId || variants.Any(v => v.Base == variant.Base))
+                            errors.Add(new("storyline.variant_base", $"{path}.variants[{i}].base", $"The base \"{variant.Base}\" is already covered. Each variant needs a different base from the storyline's own and from the other variants."));
+                        else variants.Add(variant);
+                    }
+        }
         if (errors.Count > before) return null;
-        return new(id, title, pitch, industries, roles, kpis, evidence, systems, engine, requires, closest, baseId, fragment, talk);
+        return new(id, title, pitch, industries, roles, kpis, evidence, systems, engine, requires, closest, baseId, fragment, talk) { Variants = variants };
     }
+
+    private static PlantStorylineVariant? Variant(JsonNode? node, string path, List<ValidationError> errors)
+    {
+        if (node is not JsonObject item)
+        {
+            errors.Add(new("storyline.variant", path, "Each variant must be an object with base, fragment and talkTrack."));
+            return null;
+        }
+        int before = errors.Count;
+        Fields(item, VariantFields, path, errors);
+        string baseId = Text(item, "base", path, errors);
+        if (item["fragment"] is not JsonObject fragment)
+        {
+            errors.Add(new("storyline.fragment", path + ".fragment", "A variant needs a fragment object for its base."));
+            fragment = new JsonObject();
+        }
+        // Optional: without one, the storyline's own talk track applies (when the
+        // equipment it names is the same on both bases).
+        var talk = new List<PlantTalkStep>();
+        if (item["talkTrack"] is JsonArray steps)
+        {
+            for (int i = 0; i < steps.Count; i++)
+                if (Step(steps[i], $"{path}.talkTrack[{i}]", errors) is { } step) talk.Add(step);
+            if (talk.Count < 3 || talk.Count > 6)
+                errors.Add(new("storyline.talk_track", path + ".talkTrack", "Give a variant 3 to 6 talk-track steps that name its base's equipment, or leave talkTrack out to reuse the storyline's own."));
+        }
+        else if (item.ContainsKey("talkTrack"))
+            errors.Add(new("storyline.talk_track", path + ".talkTrack", "Set talkTrack to a list of steps, or leave it out to reuse the storyline's own."));
+        return errors.Count > before ? null : new(baseId, fragment, talk);
+    }
+
+    /// <summary>
+    /// The base plant every chosen storyline runs on: the first of the first
+    /// storyline's bases (its own base, then its variants) that all the others
+    /// also run on. Null when they share none. Deterministic, so the demo guide
+    /// finds the same base the interview composed on.
+    /// </summary>
+    public static string? CommonBase(IReadOnlyList<PlantStoryline> storylines) =>
+        storylines.Count == 0 ? null : storylines[0].Bases.FirstOrDefault(b => storylines.All(s => s.RunsOn(b)));
 
     private static PlantTalkStep? Step(JsonNode? node, string path, List<ValidationError> errors)
     {
@@ -168,8 +244,8 @@ public static class PlantStorylines
     }
 
     /// <summary>
-    /// Builds plant model JSON: the base, then each storyline's fragment in
-    /// order, then the overrides. Returns errors for unavailable storylines,
+    /// Builds plant model JSON: the base, then each storyline's fragment for
+    /// that base (its own or a variant's) in order, then the overrides. Returns errors for unavailable storylines,
     /// storylines written for another base, and conflicting fragments.
     /// </summary>
     public static PlantComposeResult Compose(string baseId, string baseJson, IReadOnlyList<PlantStoryline> storylines, JsonObject? overrides = null)
@@ -185,12 +261,12 @@ public static class PlantStorylines
                 errors.Add(new("storyline.not_available", storyline.Id, $"\"{storyline.Title}\" is {storyline.Engine}, not available yet. Choose an available storyline."));
                 continue;
             }
-            if (storyline.Base != baseId)
+            if (storyline.FragmentFor(baseId) is not { } fragment)
             {
-                errors.Add(new("storyline.wrong_base", storyline.Id, $"\"{storyline.Title}\" is written for the base \"{storyline.Base}\", not \"{baseId}\"."));
+                errors.Add(new("storyline.wrong_base", storyline.Id, $"\"{storyline.Title}\" is written for the base(s) {string.Join(", ", storyline.Bases.Select(b => $"\"{b}\""))}, not \"{baseId}\"."));
                 continue;
             }
-            Merge(model, storyline.Fragment!, "$", storyline.Id, owners, errors);
+            Merge(model, fragment, "$", storyline.Id, owners, errors);
         }
         if (overrides is not null) Merge(model, overrides, "$", null, null, errors);
         return errors.Count == 0 ? new(model.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), []) : new(null, errors);

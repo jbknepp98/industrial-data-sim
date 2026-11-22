@@ -76,7 +76,7 @@ public static class InterviewPrompt
             .Append(". KPIs: ").Append(string.Join(", ", storyline.Kpis))
             .Append(". Evidence: ").Append(storyline.Evidence).Append(" meetings");
         if (storyline.Requires.Count > 0) text.Append(". Requires: ").Append(string.Join(", ", storyline.Requires));
-        if (storyline.Base is { } baseId) text.Append(". Base: ").Append(baseId);
+        if (storyline.Bases.Count > 0) text.Append(storyline.Bases.Count == 1 ? ". Base: " : ". Bases: ").Append(string.Join(", ", storyline.Bases));
         text.AppendLine(".");
     }
 

@@ -1,0 +1,78 @@
+# Flow Data Simulator web container for a Timebase 2.0 Docker stack.
+# Setup steps: deployment/web/README.md. Paths below are relative to this file.
+#
+# Use it on its own, next to the running Timebase stack:
+#   docker compose -f deployment/web/compose.snippet.yml up -d
+# or copy the services into the Timebase docker-compose.yml (then drop the
+# `networks:` blocks: services in the same file share its default network).
+#
+# Installs without the flow_data_sim database add `--profile postgres` to also
+# start flow-data-sim-pg. Skip it when flow-data-sim-pg already runs.
+#
+# Private settings stay in env files outside source control (mode 600):
+#   web.env        Pulse client, CA bundle path, Dataset, FLOWSIM_PG_CONNECTION
+#   postgres.env   POSTGRES_* plus FLOWSIM_WRITER_PASSWORD and FLOWSIM_READER_PASSWORD
+# Templates: web.env.example and postgres.env.example next to this file.
+# FLOWSIM_WEB_ENV, FLOWSIM_PG_ENV and FLOWSIM_CERTS point elsewhere if you keep
+# them outside the repository (recommended).
+
+name: flow-data-sim
+
+services:
+  flow-data-simulator-web:
+    image: flow-data-simulator-web:2.0.0-dev
+    build:
+      context: ../..
+      dockerfile: deployment/web/Dockerfile
+    container_name: flow-data-simulator-web
+    restart: unless-stopped
+    env_file: ${FLOWSIM_WEB_ENV:-./web.env}
+    environment:
+      FLOWSIM_WEB_URLS: http://0.0.0.0:8480
+    # The page has no login: publish it on the host's loopback only.
+    ports:
+      - "127.0.0.1:${FLOWSIM_WEB_PORT:-8480}:8480"
+    volumes:
+      # The Pulse root CA; TIMEBASE_CA_BUNDLE=/certs/pulse-root-ca.pem in web.env.
+      - ${FLOWSIM_CERTS:-./certs}:/certs:ro
+    # SIGINT lets each hosted plant finish its in-flight Historian batch and
+    # save its snapshot. The program waits up to 150 s, so allow more here.
+    stop_signal: SIGINT
+    stop_grace_period: 180s
+    labels:
+      title: Flow Data Simulator
+    networks: [timebase]
+
+  flow-data-sim-pg:
+    profiles: [postgres]
+    image: postgres:16
+    container_name: flow-data-sim-pg
+    restart: unless-stopped
+    env_file: ${FLOWSIM_PG_ENV:-./postgres.env}
+    # Optional: reach it from the host (psql, tests) on loopback only.
+    ports:
+      - "127.0.0.1:${FLOWSIM_PG_PORT:-5435}:5432"
+    volumes:
+      - flow-data-sim-pg-data:/var/lib/postgresql/data
+      # Runs once, on an empty data volume: roles, row-version sequence, registry.
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-flowsim.sh:ro
+      - ../postgres/01_bootstrap.sql:/flowsim/01_bootstrap.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [timebase]
+
+networks:
+  timebase:
+    # The Timebase stack's network (docker network ls). The default matches a
+    # stack started from a folder named timebase-2-0-beta.
+    name: ${TIMEBASE_NETWORK:-timebase-2-0-beta_default}
+    external: true
+
+volumes:
+  flow-data-sim-pg-data:
+    # A fixed name, the same as the hand-started database's volume, so
+    # `--profile postgres` never creates a second, empty database beside it.
+    name: flow-data-sim-pg-data

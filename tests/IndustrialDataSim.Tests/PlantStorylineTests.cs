@@ -27,7 +27,8 @@ public class PlantStorylineTests
     {
         var library = Library();
         var storylines = ids.Select(id => library.Find(id)!).ToList();
-        var composed = PlantStorylines.Compose(storylines[0].Base!, BaseJson(storylines[0].Base!), storylines);
+        string baseId = PlantStorylines.CommonBase(storylines)!;
+        var composed = PlantStorylines.Compose(baseId, BaseJson(baseId), storylines);
         Assert.True(composed.IsValid, JsonSerializer.Serialize(composed.Errors));
         var loaded = PlantModelLoader.Load(composed.ModelJson!, Anchor);
         Assert.True(loaded.IsValid, JsonSerializer.Serialize(loaded.Errors));
@@ -52,11 +53,12 @@ public class PlantStorylineTests
         // Every storyline the engine cannot build yet names what to offer instead (two have no fit).
         Assert.Equal(2, library.Storylines.Count(s => !s.Available && s.Closest is null));
         foreach (var s in library.Storylines.Where(s => s.Available))
-        {
-            var baseModel = JsonNode.Parse(BaseJson(s.Base!))!.AsObject();
-            foreach (var area in s.Requires.Where(a => a is "quality" or "shipping"))
-                Assert.True(baseModel.ContainsKey(area), $"{s.Id} requires {area}, which base {s.Base} lacks");
-        }
+            foreach (string baseId in s.Bases)
+            {
+                var baseModel = JsonNode.Parse(BaseJson(baseId))!.AsObject();
+                foreach (var area in s.Requires.Where(a => a is "quality" or "shipping"))
+                    Assert.True(baseModel.ContainsKey(area), $"{s.Id} requires {area}, which base {baseId} lacks");
+            }
     }
 
     [Theory]
@@ -73,6 +75,78 @@ public class PlantStorylineTests
             foreach (var table in step.Tables)
                 Assert.Contains(table.Replace("{prefix}", model.TablePrefix), tables);
         }
+    }
+
+    public static TheoryData<string, string> Variants()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var s in Library().Storylines)
+            foreach (var v in s.Variants) data.Add(s.Id, v.Base);
+        return data;
+    }
+
+    /// <summary>A storyline's variant builds on its own base, and its talk track (or the storyline's, when it has none) names real tags and tables there.</summary>
+    [Theory]
+    [MemberData(nameof(Variants))]
+    public void EveryVariantBuildsOnItsBaseAndNamesRealTagsAndTables(string id, string baseId)
+    {
+        var storyline = Library().Find(id)!;
+        var composed = PlantStorylines.Compose(baseId, BaseJson(baseId), [storyline]);
+        Assert.True(composed.IsValid, JsonSerializer.Serialize(composed.Errors));
+        var loaded = PlantModelLoader.Load(composed.ModelJson!, Anchor);
+        Assert.True(loaded.IsValid, JsonSerializer.Serialize(loaded.Errors));
+        var model = loaded.Model!;
+        var tags = new PlantSignals(new PlantRun(model, model.StartUtc, model.StartUtc, [], [], [])).Tags.Select(t => t.Name).ToHashSet();
+        var tables = PlantSchema.TablesFor(model).Select(t => PlantSchema.PhysicalName(model, t.Purpose)).ToHashSet();
+        foreach (var step in storyline.TalkTrackFor(baseId))
+        {
+            foreach (var tag in step.Tags) Assert.Contains(tag.Replace("{TagRoot}", model.TagRoot), tags);
+            foreach (var table in step.Tables) Assert.Contains(table.Replace("{prefix}", model.TablePrefix), tables);
+        }
+    }
+
+    /// <summary>
+    /// The beverage audience's plant (phase 8, audience A): late orders, repeat
+    /// failures and syrup holds on one two-line plant. Storylines 1 and 2 run
+    /// on the syrup-batch base through their variants.
+    /// </summary>
+    [Fact]
+    public void LabelerRepeatFailureAndSyrupHoldsShareTheSyrupBatchPlant()
+    {
+        var library = Library();
+        string[] ids = ["labeler-jams-late-orders", "repeat-bearing-failure", "golden-batch-syrup-holds"];
+        Assert.Equal("beverage-syrup-batch", PlantStorylines.CommonBase(ids.Select(i => library.Find(i)!).ToList()));
+        Assert.Equal("beverage-2-line", PlantStorylines.CommonBase([library.Find(ids[0])!, library.Find(ids[1])!]));
+        Assert.Null(PlantStorylines.CommonBase([library.Find("golden-batch-reactor-drift")!, library.Find(ids[0])!]));
+
+        var model = Build(ids);
+        Assert.Equal(["MX1", "L1"], model.Lines.Select(l => l.Id));
+        Assert.Equal(2, model.Drifts.Count);
+        var run = PlantEngine.Run(model, Anchor);
+        Assert.Equal(2, run.Failures.Count(f => f.Mode == "LB202-JAM" && f.Planted));
+        Assert.Equal(3, run.Failures.Count(f => f.Mode == "AG101-SEAL" && f.Planted));
+        Assert.True(run.Changes.Count(c => c.Table == "partsusage" && (string?)c.Columns["part_id"] == "PRT-AG-SEAL") >= 3);
+        Assert.Contains(run.Changes, c => c.Table == "salesorders" && c.Columns.TryGetValue("on_time", out var onTime) && onTime is false);
+        Assert.Contains(run.Changes, c => c.Table == "qualityholds" && c.Operation == "insert");
+    }
+
+    [Fact]
+    public void LoaderRejectsBadVariants()
+    {
+        var json = JsonNode.Parse(File.ReadAllText(Path.Combine(Root, "storylines.json")))!.AsObject();
+        var list = json["storylines"]!.AsArray();
+        var labeler = list.First(s => s!["id"]!.GetValue<string>() == "labeler-jams-late-orders")!;
+        labeler["variants"]!.AsArray().Add(new JsonObject { ["base"] = labeler["base"]!.GetValue<string>(), ["fragment"] = new JsonObject() });
+        var later = list.First(s => s!["engine"]!.GetValue<string>() == "later")!;
+        later["variants"] = new JsonArray(new JsonObject { ["base"] = "beverage-2-line", ["fragment"] = new JsonObject() });
+        var bearing = list.First(s => s!["id"]!.GetValue<string>() == "repeat-bearing-failure")!;
+        bearing["variants"]![0]!["talkTrack"] = new JsonArray();
+        bearing["variants"]![0]!["colour"] = "blue";
+        var codes = PlantStorylines.Load(json.ToJsonString()).Errors.Select(e => e.Code).ToList();
+        Assert.Contains("storyline.variant_base", codes);
+        Assert.Contains("storyline.variants", codes);
+        Assert.Contains("storyline.talk_track", codes);
+        Assert.Contains("storyline.unknown_field", codes);
     }
 
     [Fact]
@@ -142,6 +216,38 @@ public class PlantStorylineTests
         Assert.True(uncertified.Count >= 2, $"{uncertified.Count} uncertified runs");
         Assert.All(uncertified, c => Assert.Equal("L2", runs[(string)c["run_id"]!]["line_id"]));
         Assert.True(Rate(uncertified) > 3 * Rate(tables["operatorcompliance"].Where(c => c["certified"] is true)));
+    }
+
+    /// <summary>
+    /// The chemicals audience's plant (phase 8, audience B): golden batch drift
+    /// in the reactor plus both certification storylines, through their
+    /// chemicals-batch variants.
+    /// </summary>
+    [Fact]
+    public void ReactorDriftAndBothCertificationStorylinesShareTheChemicalsPlant()
+    {
+        var model = Build("golden-batch-reactor-drift", "uncertified-technician-closure", "uncertified-operator-run");
+        Assert.Equal(["R1", "D1"], model.Lines.Select(l => l.Id));
+        Assert.Single(model.Drifts);
+        var run = PlantEngine.Run(model, Anchor);
+        var tables = PlantPreview.FinalTables(run);
+
+        // 3a: the planted night-crew agitator seal failure is repaired by the technician whose certificate lapsed.
+        var planted = run.Failures.Single(f => f.Planted && f.Mode == "AG101-SEAL");
+        Assert.InRange(planted.FailedUtc, Anchor.AddDays(-3), Anchor.AddDays(-2));
+        var uncertifiedWork = tables["workcompliance"].Where(c => c["certified"] is false).ToList();
+        var ticket = tables["maintenancetickets"].Single(t => Equals(t["failure_code"], "AG101-SEAL") && Equals(t["assigned_utc"], planted.FailedUtc.AddMinutes(model.Maintenance.DetectionMinutes)));
+        Assert.Contains(uncertifiedWork, c => Equals(c["ticket_id"], ticket["ticket_id"]) && Equals(c["technician_id"], "E1008"));
+
+        // 3b: Rosa Delgado's DRUM-B runs on the drumming line, after her work instruction lapsed, reject more.
+        var runs = tables["productionruns"].ToDictionary(r => (string)r["run_id"]!);
+        var uncertifiedRuns = tables["operatorcompliance"].Where(c => c["certified"] is false).ToList();
+        Assert.True(uncertifiedRuns.Count >= 3, $"{uncertifiedRuns.Count} uncertified runs");
+        Assert.All(uncertifiedRuns, c =>
+        {
+            Assert.Equal("D1", runs[(string)c["run_id"]!]["line_id"]);
+            Assert.Equal("DRUM-B", runs[(string)c["run_id"]!]["sku"]);
+        });
     }
 
     /// <summary>The three golden-batch storylines compose on their batch bases and carry their drifts (and 5a its cleaning PM).</summary>

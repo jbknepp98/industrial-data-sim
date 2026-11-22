@@ -316,6 +316,31 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Contains("/api/interviews", await web.Http.GetStringAsync("/app.js"));
     }
 
+    [Theory]
+    [InlineData("http://0.0.0.0:8480", "http://127.0.0.1:8480/api/health")]
+    [InlineData("http://+:9000;http://127.0.0.1:9001", "http://127.0.0.1:9000/api/health")]
+    [InlineData("http://[::]:8480", "http://127.0.0.1:8480/api/health")]
+    [InlineData("http://127.0.0.1:8480", "http://127.0.0.1:8480/api/health")]
+    [InlineData(null, "http://127.0.0.1:8480/api/health")]
+    public void TheHealthProbeAsksTheLoopbackAddressOfTheFirstListenUrl(string? urls, string expected) =>
+        Assert.Equal(expected, WebHealthProbe.HealthUrl(urls).ToString());
+
+    [Fact]
+    public async Task TheHealthProbeSucceedsAgainstARunningPageAndFailsWhenNothingListens()
+    {
+        await using var web = await Start(() => new ScriptedModel());
+        var error = new StringWriter();
+        Assert.Equal(0, await WebHealthProbe.Run(web.Http.BaseAddress!.ToString().TrimEnd('/'), error));
+        Assert.Equal("", error.ToString());
+
+        using var free = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        free.Start();
+        int port = ((System.Net.IPEndPoint)free.LocalEndpoint).Port;
+        free.Stop();
+        Assert.Equal(1, await WebHealthProbe.Run($"http://127.0.0.1:{port}", error));
+        Assert.Contains("did not answer", error.ToString());
+    }
+
     // ---------------- approve and host (live Postgres) ----------------
 
     [Fact]

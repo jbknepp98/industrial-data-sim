@@ -276,6 +276,50 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Contains(errors, e => e!["path"]!.GetValue<string>() == "$.storylines[1]" && e["code"]!.GetValue<string>() == "tool.unknown_storyline");
     }
 
+    /// <summary>Storylines 1 and 2 run on the syrup-batch base through their variants, so they compose with 5b; a storyline with no shared base is refused.</summary>
+    [Fact]
+    public async Task ComposePicksTheBaseEveryChosenStorylineRunsOn()
+    {
+        JsonObject? combined = null, clash = null;
+        object Storylines(params string[] ids) => new
+        {
+            storylines = ids, simulation = "PlanTestBases", backfill = "",
+            lineNames = Array.Empty<object>(), productNames = Array.Empty<object>(), peopleNames = Array.Empty<object>()
+        };
+        var model = new ScriptedModel(
+            _ => Reply("tool_use", Call(InterviewTools.ComposeModel, Storylines("labeler-jams-late-orders", "repeat-bearing-failure", "golden-batch-syrup-holds"))),
+            r => { combined = ResultJson(LastResults(r).Single()); return Reply("tool_use", Call(InterviewTools.ComposeModel, Storylines("labeler-jams-late-orders", "golden-batch-reactor-drift"))); },
+            r => { clash = ResultJson(LastResults(r).Single()); return Reply("end_turn", Text("OK.")); });
+        await Start(model).Send("Hello");
+        Assert.True(combined!["valid"]!.GetValue<bool>(), combined.ToJsonString());
+        Assert.Equal("beverage-syrup-batch", combined["base"]!.GetValue<string>());
+        var error = Assert.Single(clash!["errors"]!.AsArray());
+        Assert.Equal("tool.storyline_base", error!["code"]!.GetValue<string>());
+        Assert.Equal("$.storylines[1]", error["path"]!.GetValue<string>());
+    }
+
+    /// <summary>A backfill that starts after a storyline's planted drift is refused with the backfill it needs.</summary>
+    [Fact]
+    public async Task ComposeRefusesABackfillThatStartsAfterThePlantedEvents()
+    {
+        JsonObject? result = null;
+        var model = new ScriptedModel(
+            _ => Reply("tool_use", Call(InterviewTools.ComposeModel, new
+            {
+                storylines = new[] { "golden-batch-syrup-holds" }, simulation = "PlanTestShort", backfill = "6d",
+                lineNames = Array.Empty<object>(), productNames = Array.Empty<object>(), peopleNames = Array.Empty<object>()
+            })),
+            r => { result = ResultJson(LastResults(r).Single()); return Reply("end_turn", Text("OK.")); });
+        var store = new InMemoryInterviewStore();
+        var session = Start(model, store);
+        await session.Send("Hello");
+        var error = Assert.Single(result!["errors"]!.AsArray());
+        Assert.Equal("tool.backfill_too_short", error!["code"]!.GetValue<string>());
+        Assert.Equal("$.backfill", error["path"]!.GetValue<string>());
+        Assert.Contains("10d", error["message"]!.GetValue<string>()); // 5b's own history length
+        Assert.Null(store.Load(session.Id)!.DraftModelJson);
+    }
+
     [Fact]
     public async Task TheRoundLimitEndsTheTurnAndLeavesAValidHistory()
     {

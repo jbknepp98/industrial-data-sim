@@ -92,12 +92,38 @@
           "ask": "Why were orders late this week, and what should maintenance do about Labeler 202?",
           "expect": "An answer that joins the jams, the tickets and the late orders, and points to the worn gripper pads."
         }
+      ],
+      "variants": [
+        {
+          "base": "beverage-syrup-batch",
+          "fragment": {
+            "demand": {
+              "ordersPerDay": 3.8,
+              "dueDays": {
+                "minimum": 1.2,
+                "maximum": 2.2
+              }
+            },
+            "incidents": [
+              {
+                "failureMode": "LB202-JAM",
+                "at": "-30h",
+                "note": "Storyline: the jam the demo walks through; vibration climbs for 8 hours first."
+              },
+              {
+                "failureMode": "LB202-JAM",
+                "at": "-3d",
+                "note": "Storyline: an earlier jam on the same labeler."
+              }
+            ]
+          }
+        }
       ]
     },
     {
       "id": "repeat-bearing-failure",
       "title": "The same bearing keeps failing",
-      "pitch": "The mix tank agitator bearing fails three times in ten days, and each repair is treated as a one-off.",
+      "pitch": "The mix tank agitator fails three times in ten days on the same part (a bearing, or a seal on the syrup plant), and each repair is treated as a one-off.",
       "industries": [
         "food-beverage",
         "cpg",
@@ -175,6 +201,60 @@
           "tables": [],
           "ask": "Which assets have repeat failures this month, and what did they cost in parts and downtime?",
           "expect": "Mix Tank 101 at the top, with the bearing as the common part."
+        }
+      ],
+      "variants": [
+        {
+          "base": "beverage-syrup-batch",
+          "fragment": {
+            "incidents": [
+              {
+                "failureMode": "AG101-SEAL",
+                "at": "-5d",
+                "note": "Storyline: first agitator seal leak on the syrup mix tank."
+              },
+              {
+                "failureMode": "AG101-SEAL",
+                "at": "-3d",
+                "note": "Storyline: second seal leak on the same agitator."
+              },
+              {
+                "failureMode": "AG101-SEAL",
+                "at": "-20h",
+                "note": "Storyline: third seal leak in under a week."
+              }
+            ]
+          },
+          "talkTrack": [
+            {
+              "tool": "Connect",
+              "tags": [],
+              "tables": [
+                "{prefix}maintenancetickets",
+                "{prefix}partsusage"
+              ],
+              "ask": "List corrective tickets on agitator AG-101 (syrup mix tank 101) with the parts used.",
+              "expect": "Three tickets in under a week, each replacing the agitator seal."
+            },
+            {
+              "tool": "Explorer",
+              "tags": [
+                "{TagRoot}.MX1.AG-101.Vibration",
+                "{TagRoot}.MX1.AG-101.Status",
+                "{TagRoot}.MX1.Phase"
+              ],
+              "tables": [],
+              "ask": "Trend the agitator's vibration and status with the mix tank's phase across the week.",
+              "expect": "The same vibration rise before every leak, and the mix tank stops mid-batch each time: a pattern, not bad luck."
+            },
+            {
+              "tool": "Gage",
+              "tags": [],
+              "tables": [],
+              "ask": "Which assets have repeat failures this month, and what did they cost in parts and downtime?",
+              "expect": "Agitator AG-101 at the top, with the seal as the common part."
+            }
+          ]
         }
       ]
     },
@@ -363,6 +443,92 @@
           "ask": "Open Lena Fischer's ExpiredCertifications and Filler 201's UncertifiedWork.",
           "expect": "The same answer from the model: the person, the lapsed certificate and the equipment it touched."
         }
+      ],
+      "variants": [
+        {
+          "base": "chemicals-batch",
+          "fragment": {
+            "maintenance": {
+              "certification": {
+                "validDays": 365,
+                "issued": [
+                  {
+                    "technician": "E1007",
+                    "skill": "mechanical",
+                    "at": "-120d"
+                  },
+                  {
+                    "technician": "E1008",
+                    "skill": "mechanical",
+                    "at": "-375d"
+                  },
+                  {
+                    "technician": "E1008",
+                    "skill": "electrical",
+                    "at": "-200d"
+                  }
+                ],
+                "safetyCritical": [
+                  "AG101-SEAL",
+                  "JK101-TRAP"
+                ],
+                "whenNoneCertified": "assignAnyway"
+              }
+            },
+            "incidents": [
+              {
+                "failureMode": "AG101-SEAL",
+                "at": "-3d",
+                "shift": "CrewB",
+                "note": "Storyline: safety-critical reactor agitator seal failure on the night crew. The only mechanic on site, Lena Fischer, let her mechanical certificate lapse 10 days ago."
+              }
+            ]
+          },
+          "talkTrack": [
+            {
+              "tool": "Gage",
+              "tags": [],
+              "tables": [
+                "{prefix}workcompliance",
+                "{prefix}maintenancetickets",
+                "{prefix}trainingrecords"
+              ],
+              "ask": "Which safety-critical work orders were closed by technicians whose certificate had expired?",
+              "expect": "The Reactor 101 agitator seal repair three nights ago, closed by Lena Fischer, whose mechanical certificate had lapsed."
+            },
+            {
+              "tool": "Connect",
+              "tags": [],
+              "tables": [
+                "{prefix}workcompliance",
+                "{prefix}trainingrecords"
+              ],
+              "ask": "Show the compliance check for that ticket and the technician's training record.",
+              "expect": "certified = false with the reason \"certificate expired\" and its date; the training record's status is Expired."
+            },
+            {
+              "tool": "Explorer",
+              "tags": [
+                "{TagRoot}.R1.AG-101.Status",
+                "{TagRoot}.R1.AG-101.Vibration",
+                "{TagRoot}.R1.State"
+              ],
+              "tables": [],
+              "ask": "Trend the reactor agitator's status and vibration around that repair.",
+              "expect": "Vibration climbs, the agitator faults and the reactor stops; it is back running after the uncertified repair."
+            },
+            {
+              "tool": "Atlas",
+              "tags": [],
+              "tables": [
+                "{prefix}trainingrecords",
+                "{prefix}workcompliance"
+              ],
+              "ask": "Open Lena Fischer's ExpiredCertifications and agitator AG-101's UncertifiedWork.",
+              "expect": "The same answer from the model: the person, the lapsed certificate and the equipment it touched."
+            }
+          ]
+        }
       ]
     },
     {
@@ -485,6 +651,85 @@
           ],
           "ask": "Open Line 2's UncertifiedRuns and Rosa Delgado's ExpiredCertifications.",
           "expect": "The runs, the operator and the lapsed work-instruction certificate, linked in one model."
+        }
+      ],
+      "variants": [
+        {
+          "base": "chemicals-batch",
+          "fragment": {
+            "maintenance": {
+              "certification": {
+                "operators": {
+                  "workInstructions": [
+                    {
+                      "id": "WI-D1-DRUMB",
+                      "line": "D1",
+                      "skus": [
+                        "DRUM-B"
+                      ],
+                      "validDays": 180,
+                      "issued": [
+                        {
+                          "operator": "E1009",
+                          "at": "-40d"
+                        },
+                        {
+                          "operator": "E1010",
+                          "at": "-196d"
+                        }
+                      ]
+                    }
+                  ],
+                  "whenOperatorUncertified": "runAnyway",
+                  "rejectPercentWhenUncertified": 4.5
+                }
+              }
+            }
+          },
+          "talkTrack": [
+            {
+              "tool": "Explorer",
+              "tags": [
+                "{TagRoot}.D1.RejectCount",
+                "{TagRoot}.D1.SKU",
+                "{TagRoot}.D1.State"
+              ],
+              "tables": [],
+              "ask": "Trend Drumming Line 1 RejectCount with the SKU over the last week.",
+              "expect": "RejectCount climbs much faster during some DRUM-B runs: the ones started on the night crew."
+            },
+            {
+              "tool": "Connect",
+              "tags": [],
+              "tables": [
+                "{prefix}operatorcompliance",
+                "{prefix}productionruns"
+              ],
+              "ask": "Join operatorcompliance to productionruns and compare reject rates.",
+              "expect": "Uncertified DRUM-B runs on Drumming Line 1 reject about 4.5% of drums; certified runs far fewer."
+            },
+            {
+              "tool": "Gage",
+              "tags": [],
+              "tables": [
+                "{prefix}operatorcompliance",
+                "{prefix}productionruns",
+                "{prefix}trainingrecords"
+              ],
+              "ask": "Which runs were operated without a current certification, and what was their reject rate?",
+              "expect": "Rosa Delgado's DRUM-B runs on Drumming Line 1, after her WI-D1-DRUMB certificate expired, with about 4.5% rejects."
+            },
+            {
+              "tool": "Atlas",
+              "tags": [],
+              "tables": [
+                "{prefix}operatorcompliance",
+                "{prefix}trainingrecords"
+              ],
+              "ask": "Open Drumming Line 1's UncertifiedRuns and Rosa Delgado's ExpiredCertifications.",
+              "expect": "The runs, the operator and the lapsed work-instruction certificate, linked in one model."
+            }
+          ]
         }
       ]
     },

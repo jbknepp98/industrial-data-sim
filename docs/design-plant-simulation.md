@@ -271,6 +271,42 @@ Consequences for the design:
   see the live-run section of [plant-simulation.md](plant-simulation.md).
 - Real sleep and power-cycle acceptance tests are deferred.
 
+## Owner decisions, round 4 (November 22, 2026): the web interview
+
+The interview front-end plan (`docs/11212026_interview-front-end/plan.md`)
+made the Claude skill's interview available to any Timebase user as a page in
+their stack.
+
+- **Front end:** a local web container (`flow-data-simulator-web`, ASP.NET
+  Core minimal API with a plain page) in the Timebase Docker stack, not a
+  Flow-hosted service. Access is the loopback port; the page has no login, so
+  it is published on `127.0.0.1` only. Multi-user access is out of scope.
+- **Gage reuse:** Claude is reached only through Pulse's Gage proxy with the
+  Pulse client's token (official Anthropic SDK, base URL set to Pulse). The
+  customer's already-approved Gage provider is reused; no Anthropic key is
+  entered or stored, and there are no Managed Agents. The Pulse client needs
+  the `Pulse` audience and a Soft client policy.
+- **Explain and stop:** when no model is reachable, the page names the Pulse
+  setting to fix and stops. There is no AI-free form fallback and no
+  direct-key fallback.
+- **Approval stays human:** the model has no build or run tool. Only the
+  user's **Approve and run** click admits and starts a plant.
+- **In-container hosting:** approved plants run inside the web container as
+  background services (no Docker socket) and resume from snapshots after a
+  restart. A plant another process delivers (BluebirdBev's own container) is
+  shown "running elsewhere" and never written. Migrating BluebirdBev into the
+  web container is the owner's later choice.
+- **Golden batch scope:** golden batch drift is modeled for a chemicals
+  reactor (5a), syrup batching feeding the filler (5b) and pharma under GxP
+  (5c), each with one batch unit counting as a line. Certification compliance
+  covers technicians (3a) and operators (3b).
+- **Storylines on several bases (phase 8):** to give each target audience one
+  two-line plant, a storyline may carry variants for other bases. Storylines 1
+  and 2 run on the syrup-batch plant and 3a and 3b on the chemicals plant.
+- **History length is part of a storyline:** the interview refuses a backfill
+  shorter than a chosen storyline's own or starting after a planted event,
+  and tells the user when that exceeds the Dataset's purge age.
+
 ## Open questions for the owner (answered above)
 
 1. **Postgres location:** a container in the same Docker network as Timebase

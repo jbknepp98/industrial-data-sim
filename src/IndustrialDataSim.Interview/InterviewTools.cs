@@ -240,7 +240,7 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
                 ["id"] = r.Storyline.Id, ["title"] = r.Storyline.Title, ["engine"] = r.Storyline.Engine, ["available"] = r.Storyline.Available,
                 ["score"] = r.Score, ["reasons"] = new JsonArray(r.Reasons.Select(x => (JsonNode)x).ToArray()),
                 ["evidence"] = $"raised in {r.Storyline.Evidence} recorded customer meetings", ["pitch"] = r.Storyline.Pitch,
-                ["base"] = r.Storyline.Base, ["requires"] = new JsonArray(r.Storyline.Requires.Select(x => (JsonNode)x).ToArray())
+                ["bases"] = new JsonArray(r.Storyline.Bases.Select(x => (JsonNode)x).ToArray()), ["requires"] = new JsonArray(r.Storyline.Requires.Select(x => (JsonNode)x).ToArray())
             };
             if (r.OfferInstead is { } offer)
                 item["offerInstead"] = new JsonObject { ["id"] = offer.Id, ["title"] = offer.Title, ["reason"] = offer.Reason };
@@ -284,12 +284,12 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
             else if (!storyline.Available)
                 errors.Add(new("tool.storyline_not_available", path, $"\"{storyline.Title}\" is {storyline.Engine}, not in the simulator yet." +
                     (storyline.Closest is { } closest ? $" Offer \"{closest}\" instead." : " Nothing close is available; tell the user plainly.")));
-            else if (chosen.Count > 0 && storyline.Base != chosen[0].Base)
-                errors.Add(new("tool.storyline_base", path, $"This storyline uses the base plant \"{storyline.Base}\", but \"{chosen[0].Id}\" uses \"{chosen[0].Base}\". Choose storylines with the same base."));
+            else if (chosen.Count > 0 && PlantStorylines.CommonBase([.. chosen, storyline]) is null)
+                errors.Add(new("tool.storyline_base", path, $"This storyline runs on the base plant(s) {string.Join(", ", storyline.Bases)}, but the storylines before it share only {string.Join(", ", chosen[0].Bases.Where(b => chosen.All(c => c.RunsOn(b))))}. Choose storylines that share a base."));
             else chosen.Add(storyline);
         }
         if (errors.Count > 0) return Failure(errors);
-        string baseId = chosen[0].Base!;
+        string baseId = PlantStorylines.CommonBase(chosen)!;
         if (!library.Bases.TryGetValue(baseId, out var baseJson))
             return Failure([new("tool.base_missing", "$.storylines", $"The base plant \"{baseId}\" is missing from the storyline folder. Tell the user the library is incomplete.")]);
 
@@ -314,6 +314,33 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
         }
 
         var plant = loaded.Model!;
+        // A storyline that sets its own backfill needs all of it (for example
+        // 5a's 14 days put the jacket clean, and the recovery after it, inside
+        // the history). A shorter override would quietly lose that part.
+        var own = chosen.Select(c => c.FragmentFor(baseId)?["timeline"]?["backfill"]?.GetValue<string>()).OfType<string>().ToList();
+        if (own.Count > 0 && backfill.Length > 0)
+        {
+            var storylineDefault = PlantStorylines.Compose(baseId, baseJson, chosen, new JsonObject { ["simulation"] = simulation });
+            var defaultModel = storylineDefault.IsValid ? PlantModelLoader.Load(storylineDefault.ModelJson!, Anchor()).Model : null;
+            if (defaultModel is not null && plant.StartUtc > defaultModel.StartUtc)
+                return Failure([new("tool.backfill_too_short", "$.backfill",
+                    $"These storylines need their own history length ({string.Join(", ", own.Distinct())}): their events, and the recoveries after them, are timed for it. " +
+                    "Leave backfill empty to use it. If the user's Historian Dataset purges sooner, tell them Historian will drop the oldest points while Postgres keeps every row, and let them choose.")]);
+        }
+        // Every planted event needs a normal day of history before it: a drift
+        // that starts before the history has no golden baseline to compare
+        // with, and the plant starts in the middle of the problem.
+        var planted = plant.Drifts.Select(d => d.FromUtc)
+            .Concat(plant.Quality?.Excursions.Select(e => e.FromUtc) ?? [])
+            .Concat(plant.Incidents.Select(i => i.AtUtc)).ToList();
+        if (planted.Count > 0 && planted.Min() < plant.StartUtc.AddDays(1))
+        {
+            int days = (int)Math.Ceiling((Anchor() - planted.Min()).TotalDays) + 1;
+            return Failure([new("tool.backfill_too_short", "$.backfill",
+                $"The chosen storylines plant events from {planted.Min():yyyy-MM-dd HH:mm} UTC, but the history starts at {plant.StartUtc:yyyy-MM-dd HH:mm} UTC. " +
+                $"Use a backfill of at least {days}d (or leave backfill empty for the storylines' own). If the user's Historian Dataset purges sooner, " +
+                "tell them Historian will drop the oldest points while Postgres keeps every row, and let them choose.")]);
+        }
         state.DraftModelJson = modelJson;
         state.PreviewJson = null; // a preview of an older draft must never be approved
         state.Needs["chosenStorylines"] = new JsonArray(chosen.Select(c => (JsonNode)c.Id).ToArray());
@@ -392,7 +419,7 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
             ["endUtc"] = run.EndUtc,
             ["summary"] = document["summary"]?.DeepClone(),
             ["rows"] = new JsonObject(tables.Select(t => KeyValuePair.Create(model.TablePrefix + t.Key, (JsonNode?)t.Value.Count))),
-            ["storylines"] = new JsonArray(chosen.Select(s => (JsonNode)Appearances(s, model, run, tables, document)).ToArray()),
+            ["storylines"] = new JsonArray(chosen.Select(s => (JsonNode)Appearances(s, model, run, tables, document, PlantStorylines.CommonBase(chosen))).ToArray()),
             ["next"] = "Explain the numbers and each storyline's moments, then ask the user to review the preview and click \"Approve and run\", or say what to change. You cannot build or run the plant yourself."
         };
         return new ToolOutcome(Json(output), false) { PreviewChanged = true };
@@ -404,11 +431,11 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
     /// <paramref name="document"/> is the camelCase preview document of the run.
     /// </summary>
     public static JsonObject Appearances(PlantStoryline storyline, PlantModel model, PlantRun run,
-        Dictionary<string, List<Dictionary<string, object?>>> tables, JsonObject document)
+        Dictionary<string, List<Dictionary<string, object?>>> tables, JsonObject document, string? baseId = null)
     {
         List<Dictionary<string, object?>> Rows(string name) => tables.TryGetValue(name, out var rows) ? rows : [];
         var moments = new JsonArray();
-        var fragment = storyline.Fragment ?? new JsonObject();
+        var fragment = storyline.FragmentFor(baseId) ?? storyline.Fragment ?? new JsonObject();
 
         // Planted breakdowns: the warning build-up, the failure, and the tickets it opened.
         var modes = Objects(fragment["incidents"]).Select(i => i["failureMode"]?.GetValue<string>()).OfType<string>().ToHashSet(StringComparer.Ordinal);
@@ -461,7 +488,7 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
         return new JsonObject
         {
             ["id"] = storyline.Id, ["title"] = storyline.Title, ["moments"] = moments,
-            ["talkTrack"] = new JsonArray(storyline.TalkTrack.Select(t => (JsonNode)$"{t.Tool}: {t.Ask}").ToArray())
+            ["talkTrack"] = new JsonArray(storyline.TalkTrackFor(baseId).Select(t => (JsonNode)$"{t.Tool}: {t.Ask}").ToArray())
         };
     }
 

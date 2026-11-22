@@ -29,6 +29,30 @@ Repository: the `industrial-data-sim` working copy (this skill lives in its
 - `docs/design-plant-simulation.md`: design and owner decisions.
 - `examples/plants/bluebird-bev.json`: a complete worked example.
 
+## The web page comes first when it is installed
+
+The web container `flow-data-simulator-web` runs the same interview, library
+and engine as a page in the Timebase stack, with no Claude Code needed. Check
+for it before interviewing here:
+
+```bash
+curl -s http://localhost:8480/api/health
+```
+
+- **It answers:** point the user to <http://localhost:8480>. The page
+  interviews them (Claude through Pulse Gage), previews the plant, builds it
+  only on their **Approve and run** click, hosts it inside the container
+  (surviving restarts), and offers the demo guide, Connect spec and Atlas
+  starter per plant. Plants approved there are managed there: stop, start and
+  remove them on its Plants tab, never with `plant run` or `plant remove` here.
+- **It does not answer:** offer the setup (`deployment/web/README.md` in the
+  repository: Pulse client with the `Pulse` and `Historian` audiences, a Soft
+  client policy, the Gage model, the Dataset purge age, `plant gage-check`),
+  or carry on with the CLI path below.
+- **Use the CLI path below** when the page is not installed, when the user
+  wants Claude Code to drive, or for what the page does not do: hand-written
+  models, edits to a running plant, re-anchoring.
+
 ## Rules (owner decisions; do not relax them)
 
 - **Keep plants small:** at most 2 lines, few units, the minimum staff that
@@ -62,7 +86,12 @@ web interview uses. In short:
    then KPIs, and explain each with its `pitch`. Only `available` storylines
    can be built. For `planned` or `later` ones, say "not in the simulator
    yet", offer the storyline in its `closest` field, and record the request
-   in the demo guide.
+   in the demo guide. Chosen storylines must share a base plant; some run on
+   several (`base` plus `variants`), and `plant compose` picks one they all
+   run on. Keep a storyline's own `timeline.backfill` (5a: 14 days, 5b: 10
+   days): a shorter history loses its baseline or its recovery. When that is
+   longer than the Dataset's purge age, say so: Historian drops the oldest
+   points, Postgres keeps every row.
 5. **Plant:** names that feel like theirs (simulation name in PascalCase, for
    example `AcmeNuggs`; site, line and product names). Change rates or staff
    only if the story requires it. Keep plants small.
