@@ -43,6 +43,7 @@
     <p class="note">On batch lines the running time is split into recipe phases (shades of green in the timeline above; hover for the batch and phase). Down time inside a phase stretches it, and the phase resumes where it stopped.</p>
     <div class="legend" data-pp="phase-legend"></div>
     <div class="cols" data-pp="batch-records"></div>
+    <div data-pp="batch-compare" hidden style="margin-top:16px"></div>
   </section>
 
   <section data-pp="cert-section" hidden>
@@ -272,6 +273,29 @@
       const recipes = b.recipes.map(r => ({ recipe: r.recipe, sku: r.sku, batches: r.batches, mean_cycle_minutes: r.meanCycleMinutes }));
       $('batch-records').innerHTML =
         rowsTable(`${b.total} batches, ${b.discharged} discharged, ${b.interruptedPhases} phases interrupted by a breakdown`, recipes);
+      batchComparison(b);
+    }
+
+    // Golden batch comparison (summary.batches.comparison, engine phase 4): one row per
+    // discharged batch; rows that started inside a drift window are shaded.
+    function batchComparison(b) {
+      const rows = b.comparison || [];
+      if (!rows.length) return;
+      const box = $('batch-compare');
+      box.hidden = false;
+      const drifts = b.drifts || [];
+      const inDrift = r => drifts.some(d => d.line === r.line && (!d.recipe || d.recipe === r.recipe) &&
+        Date.parse(r.startUtc) >= Date.parse(d.fromUtc) && (!d.untilUtc || Date.parse(r.startUtc) < Date.parse(d.untilUtc)));
+      const shade = 'background:color-mix(in srgb, var(--change) 25%, transparent)';
+      const num = x => x == null ? '<span style="color:var(--muted)">null</span>' : esc(x);
+      const windows = drifts.map(d => `${esc(d.phase)} on ${esc(d.line)}: ${esc(d.cause)}, ${fmtIso(d.fromUtc)} to ${d.untilUtc ? fmtIso(d.untilUtc) : 'still active'}${d.endsWith ? ` (ended by ${esc(d.endsWith)})` : ''}`);
+      const offGolden = rows.filter(r => r.golden === false).length;
+      box.innerHTML = `<div class="chart-label" style="margin-bottom:6px">Batch comparison · ${rows.length} batches, ${offGolden} off golden</div>` +
+        (windows.length ? `<p class="note"><i class="sw" style="${shade}"></i> Shaded rows started inside a drift window. ${windows.join('; ')}.</p>` : '') +
+        `<div class="scroll"><table><tr>${['batch', 'recipe', 'start', 'cycle min', 'yield %', 'deviation', 'golden', 'status'].map(c => `<th>${c}</th>`).join('')}</tr>` +
+        rows.map(r => `<tr${inDrift(r) ? ` style="${shade}"` : ''}><td>${esc(r.batch)}</td><td>${esc(r.recipe)}</td><td>${fmtIso(r.startUtc)}</td>` +
+          `<td>${num(r.cycleMinutes)}</td><td>${num(r.yieldPercent)}</td><td${r.golden === false ? ' style="color:var(--down); font-weight:600"' : ''}>${num(r.deviationScore)}</td>` +
+          `<td>${r.golden == null ? '' : r.golden ? 'yes' : 'no'}</td><td>${esc(r.status)}</td></tr>`).join('') + '</table></div>';
     }
 
     function tables() {
