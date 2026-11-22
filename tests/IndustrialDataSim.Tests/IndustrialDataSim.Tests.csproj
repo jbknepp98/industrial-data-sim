@@ -19,6 +19,7 @@
     <ProjectReference Include="../../src/IndustrialDataSim.Cli/IndustrialDataSim.Cli.csproj" />
     <ProjectReference Include="../../src/IndustrialDataSim.Runtime/IndustrialDataSim.Runtime.csproj" />
     <ProjectReference Include="../../src/IndustrialDataSim.Interview/IndustrialDataSim.Interview.csproj" />
+    <ProjectReference Include="../../src/IndustrialDataSim.Web/IndustrialDataSim.Web.csproj" />
     <ProjectReference Include="../IndustrialDataSim.CrashProbe/IndustrialDataSim.CrashProbe.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 

@@ -46,6 +46,14 @@ public interface IInterviewStore
     /// <summary>Saves the needs profile, draft and preview (null clears the draft or preview).</summary>
     void SaveState(Guid id, string needsJson, string? draftModelJson, string? previewJson);
     void SetStatus(Guid id, string status);
+    /// <summary>
+    /// Records that the user approved this interview's preview and the plant was
+    /// admitted under <paramref name="simulation"/> (status approved). Returns
+    /// false when the interview was already approved; nothing changes then.
+    /// </summary>
+    bool MarkApproved(Guid id, string simulation);
+    /// <summary>Simulations admitted from an approved interview: the plants a web container may stop, start and remove.</summary>
+    IReadOnlySet<string> ApprovedSimulations();
 }
 
 /// <summary>
@@ -218,6 +226,26 @@ public sealed class PostgresInterviewStore : IInterviewStore, IDisposable
         command.ExecuteNonQuery();
     }
 
+    public bool MarkApproved(Guid id, string simulation)
+    {
+        using var connection = Open();
+        using var command = new NpgsqlCommand("UPDATE flowsim_interviews SET status = @s, approved_simulation = @m, updated_utc = now() WHERE id = @i AND approved_simulation IS NULL", connection);
+        command.Parameters.AddWithValue("i", id);
+        command.Parameters.AddWithValue("s", InterviewStatus.Approved);
+        command.Parameters.AddWithValue("m", simulation);
+        return command.ExecuteNonQuery() == 1;
+    }
+
+    public IReadOnlySet<string> ApprovedSimulations()
+    {
+        using var connection = Open();
+        using var command = new NpgsqlCommand("SELECT DISTINCT approved_simulation FROM flowsim_interviews WHERE approved_simulation IS NOT NULL", connection);
+        using var reader = command.ExecuteReader();
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        while (reader.Read()) names.Add(reader.GetString(0));
+        return names;
+    }
+
     private static void Execute(NpgsqlConnection connection, NpgsqlTransaction transaction, string sql)
     {
         using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -260,5 +288,20 @@ public sealed class InMemoryInterviewStore : IInterviewStore
     public void SetStatus(Guid id, string status)
     {
         lock (gate) interviews[id] = interviews[id] with { Status = status };
+    }
+
+    public bool MarkApproved(Guid id, string simulation)
+    {
+        lock (gate)
+        {
+            if (interviews[id].ApprovedSimulation is not null) return false;
+            interviews[id] = interviews[id] with { Status = InterviewStatus.Approved, ApprovedSimulation = simulation };
+            return true;
+        }
+    }
+
+    public IReadOnlySet<string> ApprovedSimulations()
+    {
+        lock (gate) return interviews.Values.Select(i => i.ApprovedSimulation).OfType<string>().ToHashSet(StringComparer.Ordinal);
     }
 }

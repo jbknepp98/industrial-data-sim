@@ -13,9 +13,11 @@ namespace IndustrialDataSim.Interview;
 public sealed class InterviewState
 {
     /// <summary>
-    /// The needs profile: {"audience": record_audience input (its requestedStories
-    /// lists what the user asked for that the simulator cannot show yet),
-    /// "chosenStorylines": [...]}. It feeds the demo guide (phase 7).
+    /// The needs profile: {"audience": record_audience input, "chosenStorylines":
+    /// [...], "requests": [...]}. "requests" accumulates the asks the simulator
+    /// cannot show yet ({words, storyline, title, engine, offeredInstead}),
+    /// recorded by code from find_storylines askedFor and record_audience
+    /// requestedStories; entries are never removed. It feeds the demo guide.
     /// </summary>
     public JsonObject Needs { get; set; } = new();
     public string? DraftModelJson { get; set; }
@@ -53,6 +55,7 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
     private const int MaxRanked = 8, MaxListedEvents = 8, MaxReportedErrors = 20;
 
     private static readonly JsonSerializerOptions Compact = new() { WriteIndented = false };
+    private static readonly JsonSerializerOptions CamelCase = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     /// <summary>Activity labels for the page while a tool runs.</summary>
     public static string Activity(string toolName) => toolName switch
@@ -72,12 +75,17 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
     /// required and additionalProperties false, strings, integers, enums and
     /// arrays. Ranges and counts are enforced in code instead.
     /// </summary>
-    public IReadOnlyList<ToolUnion> Definitions { get; } = BuildDefinitions();
+    public IReadOnlyList<ToolUnion> Definitions => definitions ??= BuildDefinitions(library.Storylines.Storylines.Select(st => st.Id).Append(NoStoryline).ToList());
+    private IReadOnlyList<ToolUnion>? definitions;
+
+    /// <summary>The askedFor value for a request that no library storyline covers.</summary>
+    public const string NoStoryline = "none";
 
     public static IReadOnlyList<string> Names { get; } = [RecordAudience, FindStorylines, ComposeModel, PreviewPlant];
 
-    private static IReadOnlyList<ToolUnion> BuildDefinitions()
+    private static IReadOnlyList<ToolUnion> BuildDefinitions(IReadOnlyList<string> storylineIds)
     {
+        IReadOnlyList<string> StorylineIds() => storylineIds;
         JsonObject StringList(string description) => new() { ["type"] = "array", ["description"] = description, ["items"] = new JsonObject { ["type"] = "string" } };
         JsonObject Enum(IEnumerable<string> values) => new() { ["type"] = "string", ["enum"] = new JsonArray(values.Select(v => (JsonNode)v).ToArray()) };
         JsonObject Rename(string key, string value, string description) => new()
@@ -104,7 +112,20 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
                 }),
             Tool(FindStorylines,
                 "Rank the storyline library for the recorded audience (call record_audience first). The ranking is deterministic: industry, then roles, then KPIs, then your keywords. Each result has its engine status, the reasons, its evidence count and, for storylines that are not available yet, what to offer instead.",
-                new() { ["keywords"] = StringList("The user's own words for what they want to see, for example \"late orders\" or \"energy spikes\". Empty to rank by the profile alone.") }),
+                new()
+                {
+                    ["keywords"] = StringList("The user's own words for what they want to see, for example \"late orders\" or \"energy spikes\". Empty to rank by the profile alone."),
+                    ["askedFor"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["description"] = "Every story the user has explicitly asked to see so far in this interview (not stories you suggested), each mapped to the library storyline that would show it, or \"none\" when no storyline in the library covers it. Repeat earlier asks on every call. Empty list when the user has asked for nothing specific.",
+                        ["items"] = Schema(new()
+                        {
+                            ["storyline"] = Enum(StorylineIds()),
+                            ["words"] = new JsonObject { ["type"] = "string", ["description"] = "What the user asked for, in their words." }
+                        })
+                    }
+                }),
             Tool(ComposeModel,
                 "Compose and validate the draft plant model from 1 to 3 available storylines that share a base plant, plus the user's names. Returns \"valid\" with a short model summary, or the validation errors with their field paths; fix every error and call again. A valid model is saved as the draft and replaces any earlier draft and preview.",
                 new()
@@ -184,16 +205,31 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
             ["industry"] = industry, ["product"] = product, ["roles"] = Array(roles), ["kpis"] = Array(kpis), ["pains"] = Array(pains),
             ["systems"] = Array(systems), ["constraints"] = Array(constraints), ["historyDays"] = historyDays, ["requestedStories"] = Array(requested)
         };
+        // requestedStories only ever adds: a later profile update that leaves it
+        // empty must not erase what the user asked for earlier.
+        foreach (string words in requested) RecordRequest(state, words, null);
         return new ToolOutcome(Json(new JsonObject { ["saved"] = true, ["next"] = "Call find_storylines to rank the library for this audience." }), false) { NeedsChanged = true };
     }
 
     private ToolOutcome Find(JsonElement input, InterviewState state)
     {
-        var read = new ToolInput(input, ["keywords"]);
+        var read = new ToolInput(input, ["keywords", "askedFor"]);
         var keywords = read.Strings("keywords", 0);
+        var asks = read.Asks("askedFor", library.Storylines.Storylines.Select(s => s.Id).Append(NoStoryline).ToList());
         if (!read.IsValid) return Failure(read.Errors);
         if (Profile(state) is not { } profile)
             return Failure([new("tool.audience_missing", "$", "Record the audience first: call record_audience with the industry and roles, then call find_storylines again.")]);
+
+        // Asks the simulator cannot show are recorded here, by code, from the
+        // model's own mapping: the demo guide lists them under "Asked for, not
+        // in the simulator yet". No keyword matching is involved.
+        bool requestsChanged = false;
+        foreach (var (storylineId, words, _) in asks)
+        {
+            var storyline = library.Storylines.Find(storylineId);
+            if (storyline is { Available: true }) continue;
+            requestsChanged |= RecordRequest(state, words, storyline);
+        }
 
         var ranked = StorylineRanking.Rank(library.Storylines, profile, keywords).Take(MaxRanked).ToList();
         var results = new JsonArray();
@@ -215,9 +251,15 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
             ["storylines"] = results,
             ["note"] = ranked.Count == 0
                 ? "Nothing in the library matches this profile. Ask more about the audience's problems, or offer the most evidenced available storyline."
-                : "Propose one to three available storylines. If the user asked for a storyline that is not available, say it is not in the simulator yet, offer its offerInstead, and call record_audience again with the request added to requestedStories."
+                : "Propose one to three available storylines. If the user asked for a storyline that is not available, say plainly it is not in the simulator yet and offer its offerInstead."
         };
-        return new ToolOutcome(Json(output), false);
+        var notAvailable = Requests(state);
+        if (notAvailable.Count > 0)
+        {
+            output["recordedRequests"] = notAvailable.DeepClone();
+            output["requestNote"] = "These asks are saved for the demo guide as \"not in the simulator yet\". Tell the user so in plain words, and offer each one's offeredInstead when it has one.";
+        }
+        return new ToolOutcome(Json(output), false) { NeedsChanged = requestsChanged };
     }
 
     private ToolOutcome Compose(JsonElement input, InterviewState state)
@@ -335,7 +377,8 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
         var end = model.AnchorUtc.AddHours(hours);
         if (model.EndUtc is { } modelEnd && modelEnd < end) end = modelEnd;
         var run = PlantEngine.Run(model, end);
-        var document = JsonSerializer.SerializeToNode(PlantPreview.Build(run, PreviewSampleSeconds))!.AsObject();
+        // camelCase, like the CLI's plant preview, so the page's shared renderer reads either.
+        var document = JsonSerializer.SerializeToNode(PlantPreview.Build(run, PreviewSampleSeconds), CamelCase)!.AsObject();
         state.PreviewJson = document.ToJsonString(Compact);
 
         var tables = PlantPreview.FinalTables(run);
@@ -355,8 +398,12 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
         return new ToolOutcome(Json(output), false) { PreviewChanged = true };
     }
 
-    /// <summary>Where one storyline shows up in the preview, from what its fragment plants.</summary>
-    private static JsonObject Appearances(PlantStoryline storyline, PlantModel model, PlantRun run,
+    /// <summary>
+    /// Where one storyline shows up in a run, from what its fragment plants.
+    /// Public for the demo guide, which reruns the admitted plant.
+    /// <paramref name="document"/> is the camelCase preview document of the run.
+    /// </summary>
+    public static JsonObject Appearances(PlantStoryline storyline, PlantModel model, PlantRun run,
         Dictionary<string, List<Dictionary<string, object?>>> tables, JsonObject document)
     {
         List<Dictionary<string, object?>> Rows(string name) => tables.TryGetValue(name, out var rows) ? rows : [];
@@ -425,6 +472,44 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
     {
         var now = clock();
         return new DateTimeOffset(now.UtcTicks - now.UtcTicks % TimeSpan.TicksPerSecond, TimeSpan.Zero);
+    }
+
+    /// <summary>The asks the simulator cannot show yet: Needs["requests"], in the order first asked.</summary>
+    public static JsonArray Requests(InterviewState state) =>
+        state.Needs["requests"] as JsonArray ?? (JsonArray)(state.Needs["requests"] = new JsonArray());
+
+    /// <summary>
+    /// Adds one unmet ask unless it is already recorded (same storyline id, or
+    /// the same words when it maps to no storyline). Returns true when added.
+    /// Entries are never removed: the list is what the user asked for.
+    /// </summary>
+    private bool RecordRequest(InterviewState state, string words, PlantStoryline? storyline)
+    {
+        var requests = Requests(state);
+        foreach (var existing in requests.OfType<JsonObject>())
+        {
+            string? id = existing["storyline"]?.GetValue<string>();
+            if (storyline is not null && id == storyline.Id) return false;
+            if (string.Equals(existing["words"]?.GetValue<string>(), words, StringComparison.OrdinalIgnoreCase))
+            {
+                // A words-only entry (from record_audience) learns its storyline when find_storylines maps it.
+                if (id is null && storyline is not null) Describe(existing, storyline);
+                return storyline is not null && id is null;
+            }
+        }
+        var entry = new JsonObject { ["words"] = words, ["storyline"] = null, ["title"] = null, ["engine"] = storyline is null ? "unmapped" : null, ["offeredInstead"] = null };
+        if (storyline is not null) Describe(entry, storyline);
+        requests.Add(entry);
+        return true;
+
+        void Describe(JsonObject target, PlantStoryline s)
+        {
+            target["storyline"] = s.Id;
+            target["title"] = s.Title;
+            target["engine"] = s.Engine;
+            target["offeredInstead"] = s.Closest is { } closest && library.Storylines.Find(closest) is { } offer
+                ? new JsonObject { ["id"] = offer.Id, ["title"] = offer.Title } : null;
+        }
     }
 
     internal static AudienceProfile? Profile(InterviewState state)
