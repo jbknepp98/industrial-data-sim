@@ -4,7 +4,8 @@
 //   FLOWSIM_PG_CONNECTION      flow_data_sim connection string (required)
 //   TIMEBASE_PULSE_URL, TIMEBASE_CLIENT_ID, TIMEBASE_CLIENT_SECRET, TIMEBASE_CA_BUNDLE
 //                              the Pulse client: Gage for the interview, Historian for plant tags
-//   TIMEBASE_HISTORIAN_URL     Historian for plant tags (see HistorianConnection)
+//   TIMEBASE_BASE_URL, TIMEBASE_AUDIENCE, TIMEBASE_PROFILE
+//                              Historian for plant tags (see HistorianConnection)
 //   TIMEBASE_DATASET           the Dataset approved plants write their tags to
 //   FLOWSIM_GAGE_MODEL         Gage handle, default anthropic/claude
 //   FLOWSIM_STORYLINES         storyline folder, default ./storylines next to the program

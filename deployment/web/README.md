@@ -47,9 +47,10 @@ meters the interview's model calls but never refuses them. A Throttle policy
 can stop an interview mid-turn (`gage.throttled`, HTTP 429); Block stops every
 call (`gage.blocked`).
 
-An interview costs roughly 65,000 to 90,000 input tokens and about 3,000
-output tokens (measured with Claude Sonnet 4.6; see
-[docs/plant-simulation.md](../../docs/plant-simulation.md#the-web-container)).
+An interview to an approved plant costs roughly 60,000 to 75,000 input
+tokens and about 3,000 output tokens (measured with Claude Sonnet 4.6, no
+prompt caching; see
+[docs/plant-simulation.md](../../docs/plant-simulation.md#packaging-and-live-acceptance-phase-8)).
 Usage per client is in **Pulse → Gage → Usage** (administrators only).
 
 ## 3. Choose the Gage model
@@ -66,10 +67,13 @@ models compose weaker plants.
 ## 4. Check the Dataset's purge age
 
 Plants backfill history before they go live: 6 days for the library's base
-plants (`timeline.backfill`). Historian drops points older than the Dataset's
-**purge age**, so it must be longer than the backfill. Pick a Dataset just for
-simulated data, for example `Test`, then in **Historian → Datasets → Test**
-check the purge age (7 days or more for a 6-day backfill; 0 keeps everything).
+plants, and longer for some storylines (golden batch: 10 days for syrup, 14
+days for the reactor, so the drift has golden batches before it and a recovery
+after it). Historian drops points older than the Dataset's **purge age**, so
+it should be longer than the backfill. Pick a Dataset just for simulated data,
+for example `Test`, then in **Historian → Datasets → Test** check the purge
+age (15 days covers every storyline; 0 keeps everything). The interview tells
+the user when a plant's history is longer than the purge age.
 
 If the backfill starts before the purge age, the plant still runs and logs
 `plant.retention_warning`. Historian drops the oldest points, while Postgres

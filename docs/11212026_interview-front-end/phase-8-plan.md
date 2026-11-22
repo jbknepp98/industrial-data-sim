@@ -59,16 +59,16 @@ works, and the page, approval and hosting all work.
 
 <success-criteria>
 <automated-verification>
-- [ ] CI is green on all jobs (offline builds, packages, dependency audit)
-- [ ] `docker build` of the web image succeeds for linux-arm64 locally; the image runs as non-root (`docker inspect`)
+- [ ] CI is green on all jobs (offline builds, packages, dependency audit) — pending: runs when the parent session merges and pushes (web-image job and web audit added; full suite 1,129/1,129 locally with FLOWSIM_TEST_PG)
+- [x] `docker build` of the web image succeeds for linux-arm64 locally; the image runs as non-root (`docker inspect`) — `flow-data-simulator-web:2.0.0-dev`, User datasim (uid 10001), StopSignal SIGINT, health check
 </automated-verification>
 <end-to-end-verification>
-- [ ] Fresh install drill: following only `deployment/web/README.md`, start the web container in the live stack (Pulse client created with the owner's approval). `plant gage-check` passes
-- [ ] Audience A: "beverage bottler; plant manager, maintenance lead and quality manager; late orders, repeat failures and quality holds; SAP and Ignition". The interview proposes storylines 1, 2 and 5b (2 lines: syrup tank plus filler); approve; plant live; verify script 0 mismatches; every demo-guide step performed in Explorer/Connect works
-- [ ] Audience B: "specialty chemicals; process engineer and quality manager; golden batch and holds; safety compliance". The interview proposes storylines 5a, 3a and 3b; approve; batch plant live; drifted batches and the uncertified closure visible as the demo guide says
-- [ ] Restart the web container: both plants resume from snapshots; the page shows both live
-- [ ] Remove both test plants from the page; `flow_data_sim` contains only the other simulations' tables; nothing written outside the Test Dataset
-- [ ] Record token usage per interview (Pulse `/api/gage/usage`) in the docs as the expected cost
+- [x] Fresh install drill: following only `deployment/web/README.md`, start the web container in the live stack (Pulse client created with the owner's approval). `plant gage-check` passes (owner chose to reuse the existing `DataSim` client)
+- [x] Audience A: "beverage bottler; plant manager, maintenance lead and quality manager; late orders, repeat failures and quality holds; SAP and Ignition". The interview proposes storylines 1, 2 and 5b (2 lines: syrup tank plus filler); approve; plant live; verify script 0 mismatches; every demo-guide step performed in Explorer/Connect works — after adding storyline variants (1 and 2 on `beverage-syrup-batch`), live PlanTestBevA: 0 mismatches on 125,220 tag points and 712 rows; Explorer/Connect steps work; Gage steps not driven
+- [x] Audience B: "specialty chemicals; process engineer and quality manager; golden batch and holds; safety compliance". The interview proposes storylines 5a, 3a and 3b; approve; batch plant live; drifted batches and the uncertified closure visible as the demo guide says — after variants (3a and 3b on `chemicals-batch`) and the backfill guard, live PlanTestChemB2 (14 days): 0 mismatches on 116,334 tag points and 716 rows
+- [x] Restart the web container: both plants resume from snapshots; the page shows both live
+- [x] Remove both test plants from the page; `flow_data_sim` contains only the other simulations' tables; nothing written outside the Test Dataset
+- [x] Record token usage per interview (Pulse `/api/gage/usage`) in the docs as the expected cost — from the interview store (`flowsim_interview_messages`); Pulse's usage page needs an administrator
 </end-to-end-verification>
 </success-criteria>
 

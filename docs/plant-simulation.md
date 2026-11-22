@@ -9,6 +9,11 @@ It simulates a small plant on one clock:
 - **Production → Maintenance loop:** always on.
 - **Quality and Shipping areas:** optional.
 - **Certification compliance:** optional (`maintenance.certification`).
+- **Batch units and golden batch drift:** optional (`batch` on a line, `drifts`).
+
+Most users build plants on the web page (`flow-data-simulator-web`, setup in
+[deployment/web/README.md](../deployment/web/README.md)); the CLI and the
+Claude Code skill remain for hand-written models and changes.
 
 The milestones so far:
 
@@ -19,6 +24,10 @@ The milestones so far:
 5. The Quality and Shipping areas.
 6. The Connect mapping spec and the Atlas starter.
 7. Certification compliance for technicians and operators (`EngineVersion` 2).
+8. Batch units, golden batch drift and batch quality (`EngineVersion` 4).
+9. The web interview: Gage client, interview service, the page with
+   in-container hosting, and the packaged image (interview front-end plan,
+   phases 1–8, November 22, 2026).
 
 ## Commands
 
@@ -623,8 +632,8 @@ Environment: the simulator container's settings (`TIMEBASE_PULSE_URL`,
 optional `FLOWSIM_GAGE_MODEL`, `FLOWSIM_STORYLINES` (default: the
 `storylines` folder shipped next to the program), `FLOWSIM_WEB_URLS` and
 `FLOWSIM_WEB_ALLOWED_HOSTS`. Run it with `--stop-signal SIGINT
---stop-timeout 150`, so a stop lets each plant finish its in-flight batch (the
-host waits up to 150 s).
+--stop-timeout 180` (the compose snippet does), so a stop lets each plant
+finish its in-flight batch (the host waits up to 150 s).
 
 | Endpoint | Purpose |
 | --- | --- |
@@ -661,6 +670,58 @@ plant. Markdown, or HTML with `?format=html`.
 `tools/plant-preview/plant-preview.js` and `plant-preview.css`, which the web
 project links into `wwwroot/shared/`.
 
+## Packaging and live acceptance (phase 8)
+
+**Image.** `deployment/web/Dockerfile` builds `flow-data-simulator-web` from
+source, natively for linux-arm64 and linux-x64 (`docker buildx --platform`);
+the web image is Docker-only, so osx-arm64 and win-x64 do not apply to it.
+
+- Two self-contained programs share one .NET runtime in `/opt/datasim/app`:
+  `flow-data-simulator-web` (the entrypoint) and `IndustrialDataSim.Cli` (for
+  `plant gage-check` and diagnostics).
+- The storyline library, base models and demo guide template are in
+  `./storylines`.
+- It runs as user `datasim` (uid 10001), stops on SIGINT, and listens on
+  `0.0.0.0:8480` inside the container.
+- `flow-data-simulator-web healthcheck` is the Docker health check: it asks
+  `/api/health` on loopback (no model call, no curl in the image) and passes
+  whenever the page answers, even "degraded".
+
+**Compose.** `deployment/web/compose.snippet.yml` joins the Timebase network
+(`TIMEBASE_NETWORK`), publishes the page on `127.0.0.1` only, passes the env
+file and the CA folder, and stops with SIGINT and a 180 s grace period (the
+host waits up to 150 s for in-flight batches). `--profile postgres` also
+starts `flow-data-sim-pg` and bootstraps it on first start
+(`postgres-init.sh` runs `01_bootstrap.sql`).
+
+**CI.** The offline job builds and tests the whole solution, including the
+Interview and Web projects. The packages job also audits the web project's
+packages (Anthropic, Npgsql) and records the SDK's runtimes, since ASP.NET
+Core is a shared framework rather than a NuGet package. The `web-image` job
+builds the image on linux-arm64 and linux-x64 runners, checks the user, stop
+signal and health check, smoke-tests it against a throwaway Postgres (healthy,
+database `ok`, `gage.missing_setting` explained, exit 0 on stop) and keeps the
+saved image as an artifact. Nothing is pushed to a registry.
+
+**Live acceptance, November 22, 2026** (Timebase 2.0.0 stack, image
+`flow-data-simulator-web:2.0.0-dev`, Dataset `Test` with a 7-day purge age):
+
+| Check | Result |
+| --- | --- |
+| Fresh install from the README (existing `DataSim` client reused, owner's choice) | `plant gage-check` passed (`anthropic/claude` → claude-sonnet-4-6); container healthy; BluebirdBev shown "running elsewhere" |
+| Beverage audience: plant manager, maintenance lead, quality manager; late orders, repeat failures, holds; SAP and Ignition | Proposed 1, 2 and 5b on `beverage-syrup-batch` (8-day history after the backfill guard); live 17 s after approval; 125,220 tag points and 712 rows equal to the engine |
+| Chemicals audience: process engineer, quality manager; golden batch, holds, safety compliance | Proposed 5a, 3a and 3b on `chemicals-batch` (14 days); 116,334 tag points and 716 rows equal to the engine |
+| Demo guides | Every Explorer and Connect step shows what the guide says (Gage and Atlas steps not driven) |
+| Container restart | Both plants stopped cleanly, resumed from their snapshots, live within a second, nothing resent; still equal to the engine |
+| Removal from the page | 29 tables each dropped; only BluebirdBev's tables and the simulator's tables remain; the 105 new tags are all in `Test` |
+
+**Expected cost per interview** (Pulse Gage, Claude Sonnet 4.6, no prompt
+caching): the approved interviews used 64,160 input and 2,901 output tokens
+(beverage) and 69,059 and 3,149 (chemicals); a 3-turn interview generally
+uses 60,000–75,000 input and about 3,000 output tokens. Pulse's own usage
+page (Pulse → Gage → Usage) needs an administrator; this client gets HTTP 403
+there.
+
 ## Storyline library and composing a model
 
 `examples/storylines/storylines.json` holds the demo storylines, taken from
@@ -672,7 +733,9 @@ records:
 - how strong the evidence is: the number of customer meetings;
 - whether the engine supports it: `available`, `planned` or `later`;
 - a model fragment for a base plant (`examples/storylines/bases/`);
-- a talk track for the demo.
+- a talk track for the demo;
+- optionally, `variants`: the same storyline written for other bases, each
+  with its own fragment and, when the equipment differs, its own talk track.
 
 The interview script (`interview.md`) and the demo-guide template
 (`demo-guide.md`) sit next to it.
@@ -689,6 +752,30 @@ the simulation name, validates the result and writes the model file.
 - **Conflicts are reported:** any other value that two storylines set
   differently is reported as `storyline.conflict`, with both ids and the path.
 - **Unavailable storylines are refused:** `storyline.not_available`.
+- **One base for all:** `compose` uses the first base of the first storyline
+  (its own, then its variants') that every chosen storyline runs on
+  (`PlantStorylines.CommonBase`). Storylines that share none are refused with
+  `storyline.wrong_base`. The interview and the demo guide use the same rule.
+
+| Storyline | Bases |
+| --- | --- |
+| 1 Labeler jams make orders late | `beverage-2-line`, `beverage-syrup-batch` (more orders, tighter due dates on the single filler line) |
+| 2 The same bearing keeps failing | `beverage-2-line` (MX-101 bearing), `beverage-syrup-batch` (AG-101 seal) |
+| 3a Uncertified technician closure | `beverage-2-line` (filler valve), `chemicals-batch` (reactor agitator seal) |
+| 3b Uncertified operator run | `beverage-2-line` (Berry on Line 2), `chemicals-batch` (DRUM-B on the drumming line) |
+| 5a, 5b, 5c golden batch, quality hold traced | their own base only |
+
+So the beverage audience (1, 2 and 5b) and the chemicals audience (5a, 3a and
+3b) each get one two-line plant.
+
+**History length.** The interview's `compose_model` refuses
+(`tool.backfill_too_short`) a backfill that starts less than a day before a
+planted event, or that is shorter than a chosen storyline's own
+`timeline.backfill` (5a: 14 days, so the jacket clean and the recovery after
+it are inside the history; 5b: 10 days, so golden batches come before the
+drift). When that is longer than the Dataset's purge age, the interview says
+so: Historian drops the oldest points (`plant.retention_warning`), and
+Postgres keeps every row.
 
 ## How the loop works
 
