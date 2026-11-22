@@ -218,6 +218,38 @@ public class PlantStorylineTests
         Assert.True(Rate(uncertified) > 3 * Rate(tables["operatorcompliance"].Where(c => c["certified"] is true)));
     }
 
+    /// <summary>
+    /// The chemicals audience's plant (phase 8, audience B): golden batch drift
+    /// in the reactor plus both certification storylines, through their
+    /// chemicals-batch variants.
+    /// </summary>
+    [Fact]
+    public void ReactorDriftAndBothCertificationStorylinesShareTheChemicalsPlant()
+    {
+        var model = Build("golden-batch-reactor-drift", "uncertified-technician-closure", "uncertified-operator-run");
+        Assert.Equal(["R1", "D1"], model.Lines.Select(l => l.Id));
+        Assert.Single(model.Drifts);
+        var run = PlantEngine.Run(model, Anchor);
+        var tables = PlantPreview.FinalTables(run);
+
+        // 3a: the planted night-crew agitator seal failure is repaired by the technician whose certificate lapsed.
+        var planted = run.Failures.Single(f => f.Planted && f.Mode == "AG101-SEAL");
+        Assert.InRange(planted.FailedUtc, Anchor.AddDays(-3), Anchor.AddDays(-2));
+        var uncertifiedWork = tables["workcompliance"].Where(c => c["certified"] is false).ToList();
+        var ticket = tables["maintenancetickets"].Single(t => Equals(t["failure_code"], "AG101-SEAL") && Equals(t["assigned_utc"], planted.FailedUtc.AddMinutes(model.Maintenance.DetectionMinutes)));
+        Assert.Contains(uncertifiedWork, c => Equals(c["ticket_id"], ticket["ticket_id"]) && Equals(c["technician_id"], "E1008"));
+
+        // 3b: Rosa Delgado's DRUM-B runs on the drumming line, after her work instruction lapsed, reject more.
+        var runs = tables["productionruns"].ToDictionary(r => (string)r["run_id"]!);
+        var uncertifiedRuns = tables["operatorcompliance"].Where(c => c["certified"] is false).ToList();
+        Assert.True(uncertifiedRuns.Count >= 3, $"{uncertifiedRuns.Count} uncertified runs");
+        Assert.All(uncertifiedRuns, c =>
+        {
+            Assert.Equal("D1", runs[(string)c["run_id"]!]["line_id"]);
+            Assert.Equal("DRUM-B", runs[(string)c["run_id"]!]["sku"]);
+        });
+    }
+
     /// <summary>The three golden-batch storylines compose on their batch bases and carry their drifts (and 5a its cleaning PM).</summary>
     [Theory]
     [InlineData("golden-batch-reactor-drift", "chemicals-batch", "Heat", 1)]
