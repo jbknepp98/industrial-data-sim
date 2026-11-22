@@ -28,7 +28,10 @@ public static class PlantConnectSpec
         ("maintenanceticketstatus", "ticket_id", "maintenancetickets"), ("partsusage", "ticket_id", "maintenancetickets"), ("partsusage", "part_id", "parts"),
         ("lots", "production_order", "productionorders"), ("lots", "sales_order", "salesorders"),
         ("qualitysamples", "lot_id", "lots"), ("qualityresults", "sample_id", "qualitysamples"), ("qualityholds", "lot_id", "lots"),
-        ("inventorytransactions", "lot_id", "lots"), ("shipments", "sales_order", "salesorders"), ("shipments", "lot_id", "lots")
+        ("inventorytransactions", "lot_id", "lots"), ("shipments", "sales_order", "salesorders"), ("shipments", "lot_id", "lots"),
+        ("trainingrecords", "employee_id", "employees"), ("workcompliance", "ticket_id", "maintenancetickets"), ("workcompliance", "technician_id", "employees"),
+        ("workinstructions", "line_id", "lines"), ("operatorcompliance", "run_id", "productionruns"), ("operatorcompliance", "operator_id", "employees"),
+        ("operatorcompliance", "instruction_id", "workinstructions")
     ];
 
     public static object Json(PlantModel model)
@@ -89,6 +92,13 @@ public static class PlantConnectSpec
             }).Concat(model.Shipping is null ? [] : new object[]
             {
                 new { on = "Product", name = "OpenShipments", query = $"SELECT s.shipment_id, s.sales_order, s.carrier, s.quantity_cases, s.planned_utc FROM {Table("shipments")} s JOIN {Table("salesorders")} o ON o.sales_order = s.sales_order WHERE o.sku = [ProductId] AND s.status = 'Scheduled' AND NOT s.is_deleted" }
+            }).Concat(model.Maintenance.Certification is null ? [] : new object[]
+            {
+                new { on = "Person", name = "ExpiredCertifications", query = $"SELECT record_id, skill, issued_utc, expires_utc, status FROM {Table("trainingrecords")} WHERE employee_id = [PersonId] AND status = 'Expired' AND NOT is_deleted ORDER BY expires_utc DESC" },
+                new { on = "Equipment", name = "UncertifiedWork", query = $"SELECT c.ticket_id, c.technician_id, c.skill, c.reason, c.checked_utc, t.failure_code, t.completed_utc FROM {Table("workcompliance")} c JOIN {Table("maintenancetickets")} t ON t.ticket_id = c.ticket_id WHERE t.equipment_id = [EquipmentId] AND NOT c.certified AND NOT c.is_deleted ORDER BY c.checked_utc DESC" }
+            }).Concat(model.Maintenance.Certification?.Operators is null ? [] : new object[]
+            {
+                new { on = "Line", name = "UncertifiedRuns", query = $"SELECT c.run_id, c.operator_id, c.instruction_id, c.reason, r.sku, r.start_utc, r.end_utc, r.good_cases, r.reject_cases FROM {Table("operatorcompliance")} c JOIN {Table("productionruns")} r ON r.run_id = c.run_id WHERE r.line_id = [LineId] AND NOT c.certified AND NOT c.is_deleted ORDER BY r.start_utc DESC" }
             })
         };
     }

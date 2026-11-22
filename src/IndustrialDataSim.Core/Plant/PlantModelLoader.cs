@@ -82,7 +82,7 @@ public static partial class PlantModelLoader
         var maintenance = Maintenance(root, lines, technicians, parts, errors);
         var incidents = List(root, "incidents", "$", 0, MaximumIncidents, errors, (item, path) =>
         {
-            SessionDefinitionLoader.CheckProperties(item, ["failureMode", "at", "note"], path, errors);
+            SessionDefinitionLoader.CheckProperties(item, ["failureMode", "at", "note", "shift"], path, errors);
             string mode = Text(item, "failureMode", path, errors) ?? "";
             if (maintenance is not null && maintenance.FailureModes.All(f => f.Code != mode))
                 errors.Add(new("plant.unknown_failure_mode", path + ".failureMode", "Reference a failure mode code declared under maintenance.failureModes."));
@@ -90,8 +90,20 @@ public static partial class PlantModelLoader
             if (offset is null)
                 errors.Add(new("plant.invalid_incident_time", path + ".at", "Use a signed duration relative to the anchor (now), for example \"-30h\" for 30 hours ago or \"+2h\"."));
             string note = item.TryGetProperty("note", out _) ? Text(item, "note", path, errors) ?? "" : "";
-            return new PlantIncident(mode, anchorUtc + (offset ?? TimeSpan.Zero), note);
+            var at = anchorUtc + (offset ?? TimeSpan.Zero);
+            string? shift = null;
+            if (item.TryGetProperty("shift", out _))
+            {
+                shift = Text(item, "shift", path, errors);
+                var match = shifts.FirstOrDefault(s => s.Name == shift);
+                if (match is null) errors.Add(new("plant.unknown_shift", path + ".shift", "Reference a shift name declared under shifts, or leave shift out."));
+                else at = IntoShift(at, match);
+            }
+            return new PlantIncident(mode, at, note) { Shift = shift };
         }, optional: true);
+        if (maintenance is not null && root.TryGetProperty("maintenance", out var maintenanceItem) && maintenanceItem.ValueKind == JsonValueKind.Object &&
+            maintenanceItem.TryGetProperty("certification", out _))
+            maintenance = maintenance with { Certification = Certification(maintenanceItem, maintenance, lines, operators, technicians, anchorUtc, errors) };
         var quality = root.TryGetProperty("quality", out _) ? Quality(root, skus, anchorUtc, errors) : null;
         var shipping = root.TryGetProperty("shipping", out _) ? Shipping(root, errors) : null;
         if (errors.ErrorCount > 0 || simulation is null) return new(null, errors.AsReadOnly());
@@ -239,7 +251,7 @@ public static partial class PlantModelLoader
             errors.Add(new("plant.maintenance_required", path, "Supply maintenance with detectionMinutes, responseMinutes, failureModes, preventive and minorStops."));
             return null;
         }
-        SessionDefinitionLoader.CheckProperties(item, ["detectionMinutes", "responseMinutes", "failureModes", "preventive", "minorStops"], path, errors);
+        SessionDefinitionLoader.CheckProperties(item, ["detectionMinutes", "responseMinutes", "failureModes", "preventive", "minorStops", "certification"], path, errors);
         int detection = Integer(item, "detectionMinutes", path, 1, 60, errors);
         var skills = technicians.SelectMany(t => t.Skills).ToHashSet(StringComparer.Ordinal);
         void CheckUnit(string line, string equipment, string skill, string unitPath)
@@ -291,6 +303,124 @@ public static partial class PlantModelLoader
         }
         else errors.Add(new("plant.minor_stops_required", path + ".minorStops", "Supply minorStops with perRunHour (0 for none) and minutes."));
         return new(detection, Range(item, "responseMinutes", path, 0, 480, errors), modes, preventive, minor);
+    }
+
+    /// <summary>
+    /// Moves a planted incident into its shift: kept when it already falls at
+    /// least two hours before the shift ends, otherwise moved to two hours after
+    /// the shift's next start. So a story that needs a particular crew (for
+    /// example the night technician) gets it whatever the anchor's time of day.
+    /// </summary>
+    private static DateTimeOffset IntoShift(DateTimeOffset at, PlantShift shift)
+    {
+        var day = new DateTimeOffset(at.UtcDateTime.Date, TimeSpan.Zero);
+        for (int d = -1; d <= 1; d++)
+        {
+            var start = day.AddDays(d).AddHours(shift.StartHour);
+            if (at >= start && at <= start.AddHours(shift.Hours - 2)) return at;
+        }
+        var next = day.AddHours(shift.StartHour);
+        while (next <= at) next = next.AddDays(1);
+        return next.AddHours(Math.Min(2, shift.Hours / 2.0));
+    }
+
+    private static PlantCertification? Certification(JsonElement maintenance, PlantMaintenance parsed, IReadOnlyList<PlantLine> lines,
+        IReadOnlyList<PlantPerson> operators, IReadOnlyList<PlantPerson> technicians, DateTimeOffset anchor, ValidationErrors errors)
+    {
+        const string path = "$.maintenance.certification";
+        var item = maintenance.GetProperty("certification");
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            errors.Add(new("plant.object_required", path, "Supply certification as an object with validDays, issued, safetyCritical and whenNoneCertified (and optionally renewals and operators), or leave it out."));
+            return null;
+        }
+        SessionDefinitionLoader.CheckProperties(item, ["validDays", "issued", "safetyCritical", "whenNoneCertified", "renewals", "operators"], path, errors);
+        // Certificate times are whole minutes from the anchor's minute, so every record time is tidy.
+        var anchorMinute = new DateTimeOffset(anchor.UtcTicks - anchor.UtcTicks % TimeSpan.TicksPerMinute, TimeSpan.Zero);
+        DateTimeOffset When(JsonElement entry, string entryPath)
+        {
+            var offset = Signed(Text(entry, "at", entryPath, errors));
+            if (offset is null || offset.Value.Ticks % TimeSpan.TicksPerMinute != 0)
+            {
+                errors.Add(new("plant.certification_time", entryPath + ".at", "Use a signed whole-minute duration relative to the anchor (now), for example \"-300d\" for 300 days ago or \"+90m\"."));
+                return anchorMinute;
+            }
+            return anchorMinute + offset.Value;
+        }
+        PlantCertificateIssue TechnicianIssue(JsonElement entry, string entryPath)
+        {
+            SessionDefinitionLoader.CheckProperties(entry, ["technician", "skill", "at"], entryPath, errors);
+            string technician = Text(entry, "technician", entryPath, errors) ?? "", skill = Text(entry, "skill", entryPath, errors) ?? "";
+            var person = technicians.FirstOrDefault(t => t.Id == technician);
+            if (person is null)
+                errors.Add(new("plant.unknown_certification_target", entryPath + ".technician", "Reference a technician id declared under people.technicians."));
+            else if (!person.Skills.Contains(skill))
+                errors.Add(new("plant.unknown_certification_target", entryPath + ".skill", $"Technician {technician} does not have this skill. Certify one of the technician's skills: {string.Join(", ", person.Skills)}."));
+            return new PlantCertificateIssue(technician, skill, When(entry, entryPath));
+        }
+        int validDays = item.TryGetProperty("validDays", out _) ? Integer(item, "validDays", path, 1, 3650, errors) : 365;
+        var issued = List(item, "issued", path, 0, 16, errors, TechnicianIssue, optional: true);
+        var renewals = List(item, "renewals", path, 0, 16, errors, TechnicianIssue, optional: true);
+        var codes = parsed.FailureModes.Select(m => m.Code).Concat(parsed.Preventive.Select(p => p.Code)).ToHashSet(StringComparer.Ordinal);
+        var safetyCritical = List(item, "safetyCritical", path, 0, MaximumFailureModes + MaximumPreventive, errors, (code, codePath) =>
+        {
+            string value = code.ValueKind == JsonValueKind.String ? code.GetString()! : "";
+            if (!codes.Contains(value))
+                errors.Add(new("plant.unknown_certification_target", codePath, "Reference a failure mode or preventive maintenance code declared under maintenance."));
+            return value;
+        }, optional: true);
+        string policy = item.TryGetProperty("whenNoneCertified", out _) ? Text(item, "whenNoneCertified", path, errors) ?? "" : "wait";
+        if (policy is not ("wait" or "assignAnyway"))
+            errors.Add(new("plant.invalid_certification_policy", path + ".whenNoneCertified", "Use \"wait\" (the ticket waits for a certified technician) or \"assignAnyway\" (a skilled but uncertified technician takes it)."));
+        else if (policy == "assignAnyway" && safetyCritical.Count == 0)
+            errors.Add(new("plant.invalid_certification_policy", path + ".safetyCritical", "assignAnyway only applies to safety-critical work. List at least one failure or PM code under safetyCritical."));
+        PlantOperatorCertification? operatorSide = null;
+        if (item.TryGetProperty("operators", out var ops))
+        {
+            const string opsPath = path + ".operators";
+            if (ops.ValueKind != JsonValueKind.Object)
+                errors.Add(new("plant.object_required", opsPath, "Supply operators as an object with workInstructions and whenOperatorUncertified, or leave it out."));
+            else
+            {
+                SessionDefinitionLoader.CheckProperties(ops, ["workInstructions", "whenOperatorUncertified", "signoffMinutes", "rejectPercentWhenUncertified"], opsPath, errors);
+                var instructions = List(ops, "workInstructions", opsPath, 1, 12, errors, (wi, wiPath) =>
+                {
+                    SessionDefinitionLoader.CheckProperties(wi, ["id", "line", "skus", "validDays", "issued"], wiPath, errors);
+                    string line = Text(wi, "line", wiPath, errors) ?? "";
+                    var match = lines.FirstOrDefault(l => l.Id == line);
+                    if (match is null) errors.Add(new("plant.unknown_certification_target", wiPath + ".line", "Reference a line id declared under lines."));
+                    var covered = List(wi, "skus", wiPath, 1, MaximumSkus, errors, (sku, skuPath) =>
+                    {
+                        string code = sku.ValueKind == JsonValueKind.String ? sku.GetString()! : "";
+                        if (match is not null && !match.Skus.Contains(code))
+                            errors.Add(new("plant.unknown_certification_target", skuPath, "Reference a SKU this line makes (listed under the line's skus)."));
+                        return code;
+                    });
+                    string id = Id(wi, "id", wiPath, errors) ?? "";
+                    var people = List(wi, "issued", wiPath, 0, MaximumOperators * 2, errors, (entry, entryPath) =>
+                    {
+                        SessionDefinitionLoader.CheckProperties(entry, ["operator", "at"], entryPath, errors);
+                        string person = Text(entry, "operator", entryPath, errors) ?? "";
+                        if (operators.All(o => o.Id != person))
+                            errors.Add(new("plant.unknown_certification_target", entryPath + ".operator", "Reference an operator id declared under people.operators."));
+                        return new PlantCertificateIssue(person, id, When(entry, entryPath));
+                    }, optional: true);
+                    return new PlantWorkInstruction(id, line, covered, Integer(wi, "validDays", wiPath, 1, 3650, errors), people);
+                });
+                Unique(instructions.Select(w => w.Id), opsPath + ".workInstructions", "work instruction id", errors);
+                for (int a = 0; a < instructions.Count; a++)
+                    for (int b = a + 1; b < instructions.Count; b++)
+                        if (instructions[a].Line == instructions[b].Line && instructions[a].Skus.Intersect(instructions[b].Skus).Any())
+                            errors.Add(new("plant.duplicate_id", $"{opsPath}.workInstructions[{b}]", "Two work instructions cover the same line and SKU. Give each line and SKU one work instruction."));
+                string opsPolicy = Text(ops, "whenOperatorUncertified", opsPath, errors) ?? "";
+                if (opsPolicy is not ("runAnyway" or "supervisorSignoff"))
+                    errors.Add(new("plant.invalid_certification_policy", opsPath + ".whenOperatorUncertified", "Use \"runAnyway\" (the run starts anyway) or \"supervisorSignoff\" (a supervisor signs off and the run starts signoffMinutes later)."));
+                int signoff = opsPolicy == "supervisorSignoff" || ops.TryGetProperty("signoffMinutes", out _) ? Integer(ops, "signoffMinutes", opsPath, 1, 480, errors) : 0;
+                double? reject = ops.TryGetProperty("rejectPercentWhenUncertified", out _) ? Number(ops, "rejectPercentWhenUncertified", opsPath, 0, 20, errors) : null;
+                operatorSide = new PlantOperatorCertification(instructions, opsPolicy, signoff, reject);
+            }
+        }
+        return new PlantCertification(validDays, issued, renewals, safetyCritical, policy) { Operators = operatorSide };
     }
 
     private static PlantQuality? Quality(JsonElement root, IReadOnlyList<PlantSku> skus, DateTimeOffset anchor, ValidationErrors errors)

@@ -63,7 +63,51 @@ public sealed record PlantMaintenance(
     PlantRange ResponseMinutes,
     IReadOnlyList<PlantFailureMode> FailureModes,
     IReadOnlyList<PlantPreventive> Preventive,
-    PlantMinorStops MinorStops);
+    PlantMinorStops MinorStops)
+{
+    /// <summary>Optional certification compliance: certificates with expiry for technicians and operators. Null when not included.</summary>
+    public PlantCertification? Certification { get; init; }
+}
+
+/// <summary>
+/// One certificate issue: Employee holds Skill (a technician skill, or an
+/// operator's work-instruction id) from IssuedUtc for the owning section's
+/// valid days. A later issue for the same pair is a renewal.
+/// </summary>
+public sealed record PlantCertificateIssue(string Employee, string Skill, DateTimeOffset IssuedUtc);
+
+/// <summary>
+/// Certification compliance. Technicians hold a certificate per skill
+/// (Issued plus Renewals, each lasting ValidDays). A safety-critical ticket
+/// (its failure or PM code is in SafetyCritical) goes to a certified
+/// technician when one is free and on shift; otherwise it waits
+/// (WhenNoneCertified "wait") or goes to a skilled but uncertified technician
+/// ("assignAnyway"). A technician/skill pair with no issue holds no certificate.
+/// </summary>
+public sealed record PlantCertification(int ValidDays, IReadOnlyList<PlantCertificateIssue> Issued,
+    IReadOnlyList<PlantCertificateIssue> Renewals, IReadOnlyList<string> SafetyCritical, string WhenNoneCertified)
+{
+    /// <summary>Optional operator side: work instructions per line and SKU. Null when not included.</summary>
+    public PlantOperatorCertification? Operators { get; init; }
+
+    public bool AssignAnyway => WhenNoneCertified == "assignAnyway";
+}
+
+/// <summary>A work instruction for running some SKUs on one line; operators hold it for ValidDays from each issue.</summary>
+public sealed record PlantWorkInstruction(string Id, string Line, IReadOnlyList<string> Skus, int ValidDays,
+    IReadOnlyList<PlantCertificateIssue> Issued);
+
+/// <summary>
+/// When a run starts, the shift's operator must hold a current certificate for
+/// the work instruction covering that line and SKU. If not: "runAnyway" (the
+/// run starts, at RejectPercentWhenUncertified when set) or "supervisorSignoff"
+/// (a sign-off is recorded and the run starts SignoffMinutes later).
+/// </summary>
+public sealed record PlantOperatorCertification(IReadOnlyList<PlantWorkInstruction> WorkInstructions, string WhenOperatorUncertified,
+    int SignoffMinutes, double? RejectPercentWhenUncertified)
+{
+    public bool SupervisorSignoff => WhenOperatorUncertified == "supervisorSignoff";
+}
 
 /// <summary>
 /// Failures occur after an exponentially distributed amount of running time
@@ -82,8 +126,14 @@ public sealed record PlantPreventive(string Code, string Line, string Equipment,
 /// <summary>Short stops the operator clears; always shorter than the detection threshold.</summary>
 public sealed record PlantMinorStops(double PerRunHour, PlantRange Minutes);
 
-/// <summary>A planted failure at AtUtc (or at the next running moment after it).</summary>
-public sealed record PlantIncident(string FailureMode, DateTimeOffset AtUtc, string Note);
+/// <summary>
+/// A planted failure at AtUtc (or at the next running moment after it). With
+/// Shift set, the loader has already moved AtUtc into that shift.
+/// </summary>
+public sealed record PlantIncident(string FailureMode, DateTimeOffset AtUtc, string Note)
+{
+    public string? Shift { get; init; }
+}
 
 /// <summary>
 /// A measured product property. The line's in-line analyzer tag and the lab

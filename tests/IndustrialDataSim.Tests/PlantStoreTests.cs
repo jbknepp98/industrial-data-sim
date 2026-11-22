@@ -253,6 +253,41 @@ public class PlantStoreTests
         Assert.Null(store.SnapshotUtc(name)); // removal deletes the snapshot with the registration
     }
 
+    /// <summary>
+    /// A certification plant: its four extra tables are created, hold exactly the
+    /// engine's rows (including the planted uncertified closure), and removal
+    /// drops them with the rest.
+    /// </summary>
+    [Fact]
+    public void CertificationTablesAreCreatedFilledAndRemoved()
+    {
+        if (Connection is not { } connection) return;
+        string name = Unique();
+        var json = PlantCertificationTests.Json(["uncertified-technician-closure", "uncertified-operator-run"], j => j["simulation"] = name);
+        var model = PlantModelLoader.Load(json.ToJsonString(), Anchor).Model!;
+        using var store = new PlantStore(connection);
+        using var db = new NpgsqlConnection(connection);
+        db.Open();
+        long Tables()
+        {
+            using var count = new NpgsqlCommand($"SELECT count(*) FROM pg_tables WHERE tablename IN ('{model.TablePrefix}trainingrecords', '{model.TablePrefix}workcompliance', '{model.TablePrefix}workinstructions', '{model.TablePrefix}operatorcompliance')", db);
+            return (long)count.ExecuteScalar()!;
+        }
+        try
+        {
+            store.Admit(model, json.ToJsonString());
+            Assert.Equal(4L, Tables());
+            var run = PlantEngine.Run(model, Anchor.AddHours(1));
+            store.ApplyChanges(model, run.Changes, Anchor);
+            AssertTablesMatchEngine(connection, model, Anchor);
+            using var planted = new NpgsqlCommand($"SELECT count(*) FROM \"{model.TablePrefix}workcompliance\" c JOIN \"{model.TablePrefix}maintenancetickets\" t ON t.ticket_id = c.ticket_id WHERE NOT c.certified AND c.technician_id = 'E1008' AND t.failure_code = 'FL201-VALVE'", db);
+            Assert.True((long)planted.ExecuteScalar()! >= 1);
+            store.Remove(name);
+            Assert.Equal(0L, Tables());
+        }
+        finally { try { store.Remove(name); } catch (RuntimeFailure) { } }
+    }
+
     /// <summary>An interrupted tag batch is sent again: intent cleared, cursor kept, counted.</summary>
     [Fact]
     public void InterruptedTagBatchIsResentNotSkipped()

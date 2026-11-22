@@ -32,7 +32,8 @@ public static class PlantEngine
     /// snapshot from another version is discarded and the plant replays from its
     /// start, which is always correct, only slower.
     /// </summary>
-    public const int EngineVersion = 1;
+    /// <remarks>Version 2: the snapshot holds certificate state (maintenance.certification).</remarks>
+    public const int EngineVersion = 2;
 
     public static PlantRun Run(PlantModel model, DateTimeOffset endUtc) => Run(model, endUtc, null, null).Run;
 
@@ -60,7 +61,9 @@ public static class PlantEngine
     // Calendar events keep the order they had when everything was scheduled up
     // front: below every dynamic event (order ≥ 0), grouped as demand, shift
     // starts, preventive maintenance, incidents, then the initial dispatches.
-    private const int DemandGroup = 0, ShiftGroup = 1, PreventiveGroup = 2, IncidentGroup = 3, DispatchGroup = 4;
+    // Certificate issues and expiries come last, so plants without them keep
+    // exactly their original order.
+    private const int DemandGroup = 0, ShiftGroup = 1, PreventiveGroup = 2, IncidentGroup = 3, DispatchGroup = 4, CertificationGroup = 5;
 
     private static long CalendarOrder(int group, long major, long minor) =>
         long.MinValue + ((long)group << 58) + (major << 20) + minor;
@@ -68,7 +71,8 @@ public static class PlantEngine
     private enum Kind
     {
         Dispatch, Incident, Order, ShiftStart, PreventiveDue, ChangeoverEnd, RunStop, MinorStopEnd,
-        LabResult, HoldRelease, Ship, Detect, TechnicianArrives, TicketComplete
+        LabResult, HoldRelease, Ship, Detect, TechnicianArrives, TicketComplete,
+        CertificateIssue, CertificateExpiry, SignoffEnd
     }
 
     /// <summary>A pending event as data. Which fields are used depends on Kind.</summary>
@@ -92,6 +96,9 @@ public static class PlantEngine
         public double Rejected { get; set; }
         public DateTimeOffset? Started { get; set; }
         public string? Run { get; set; }
+        public string? Operator { get; set; }        // with operator certification: the operator checked at run start
+        public bool Checked { get; set; }            // the operator certification check has been made
+        public bool Uncertified { get; set; }        // ran anyway without a current certificate
 
         public OrderRef Ref() => new(Id, SalesOrder, Sku, Due);
     }
@@ -143,13 +150,14 @@ public static class PlantEngine
         public int Completed;
     }
 
-    // ---------------- snapshot layout (EngineVersion 1) ----------------
+    // ---------------- snapshot layout (EngineVersion 2) ----------------
 
     private sealed record StateDto(
         long EventOrder, long ChangeSequence, long FailureCount, double Stock, DateTimeOffset CalendarUntil,
         DateTime[] PreventiveNextDue, int[] PreventiveDueIndex, ulong FailureDraws, ulong MinorDraws,
         Dictionary<string, int> Counters, List<LineDto> Lines, List<TechnicianDto> Technicians,
-        List<Ticket> OpenTickets, List<FailureDto> Failures, List<EventDto> Events);
+        List<Ticket> OpenTickets, List<FailureDto> Failures, List<EventDto> Events,
+        Dictionary<string, CertificateDto>? Certificates = null); // null for plants without certification
 
     private sealed record LineDto(string Id, string State, DateTimeOffset StateStart, string? Sku, string? Reason, string? Unit,
         ProductionOrder? Current, List<ProductionOrder> Queue, int Version, DateTimeOffset RunningSince, double Rate, double Reject,
@@ -159,6 +167,9 @@ public static class PlantEngine
     private sealed record TechnicianDto(string Id, bool Busy, int Completed);
 
     private sealed record FailureDto(long Number, PlantFailure Failure);
+
+    /// <summary>The current certificate of one employee and skill (or work instruction): its training record and validity.</summary>
+    private sealed record CertificateDto(string Record, DateTimeOffset Issued, DateTimeOffset Expires);
 
     private sealed record EventDto(long Ticks, int Priority, long Order, Event Event);
 
@@ -192,6 +203,9 @@ public static class PlantEngine
         private DateTime[] preventiveNextDue;
         private int[] preventiveDueIndex;
         private bool fresh = true;
+        private readonly PlantCertification? certification;
+        private readonly List<(PlantCertificateIssue Issue, int ValidDays)> certificateIssues = [];
+        private Dictionary<string, CertificateDto> certificates = new(StringComparer.Ordinal);
 
         public Simulation(PlantModel model, DateTimeOffset end)
         {
@@ -211,6 +225,15 @@ public static class PlantEngine
                 return first;
             }).ToArray();
             preventiveDueIndex = new int[model.Maintenance.Preventive.Count];
+            certification = model.Maintenance.Certification;
+            if (certification is not null)
+            {
+                // Every certificate issue (first issues, renewals, work instructions) in time order;
+                // the index orders their calendar events.
+                var all = certification.Issued.Concat(certification.Renewals).Select(i => (i, certification.ValidDays))
+                    .Concat((certification.Operators?.WorkInstructions ?? []).SelectMany(w => w.Issued.Select(i => (i, w.ValidDays))));
+                certificateIssues = all.OrderBy(i => i.i.IssuedUtc).ToList();
+            }
         }
 
         private Simulation(PlantModel model, DateTimeOffset end, DateTimeOffset at, PlantRunBase runBase) : this(model, end)
@@ -228,7 +251,8 @@ public static class PlantEngine
             try { state = JsonSerializer.Deserialize<StateDto>(snapshot.State, SnapshotJson) ?? throw new JsonException("empty"); }
             catch (JsonException) { throw new PlantSnapshotException("The snapshot state is not valid snapshot JSON."); }
             if (state.ChangeSequence != snapshot.ChangeSequence || state.Lines.Count != model.Lines.Count ||
-                state.PreventiveNextDue.Length != model.Maintenance.Preventive.Count || state.Technicians.Count != model.Technicians.Count)
+                state.PreventiveNextDue.Length != model.Maintenance.Preventive.Count || state.Technicians.Count != model.Technicians.Count ||
+                (state.Certificates is null) != (model.Maintenance.Certification is null))
                 throw new PlantSnapshotException("The snapshot does not match this plant model.");
 
             var runBase = new PlantRunBase(state.Lines.ToDictionary(l => l.Id, l => l.GoodTotal, StringComparer.Ordinal),
@@ -281,6 +305,7 @@ public static class PlantEngine
                 technician.Busy = dto.Busy;
                 technician.Completed = dto.Completed;
             }
+            if (state.Certificates is not null) certificates = new Dictionary<string, CertificateDto>(state.Certificates, StringComparer.Ordinal);
             foreach (var failure in state.Failures) failures.Add((failure.Number, failure.Failure));
             foreach (var pending in state.Events) events.Enqueue(pending.Event, (pending.Ticks, pending.Priority, pending.Order));
         }
@@ -301,7 +326,8 @@ public static class PlantEngine
                 failures.Where(f => f.Failure.RepairedUtc is null || f.Failure.RepairedUtc >= at)
                     .Select(f => new FailureDto(f.Number, f.Failure)).ToList(),
                 events.UnorderedItems.Select(e => new EventDto(e.Priority.Ticks, e.Priority.Priority, e.Priority.Order, e.Element))
-                    .OrderBy(e => e.Ticks).ThenBy(e => e.Priority).ThenBy(e => e.Order).ToList());
+                    .OrderBy(e => e.Ticks).ThenBy(e => e.Priority).ThenBy(e => e.Order).ToList(),
+                certification is null ? null : new Dictionary<string, CertificateDto>(certificates, StringComparer.Ordinal));
             return new PlantSnapshot(EngineVersion, at, changeSequence, JsonSerializer.Serialize(state, SnapshotJson));
         }
 
@@ -310,6 +336,7 @@ public static class PlantEngine
             if (fresh)
             {
                 WriteReferenceData();
+                if (certification is not null) StartCertificates();
                 foreach (var runtime in lines.Values)
                 {
                     // Draw each failure mode's first time-to-failure in declaration order.
@@ -393,6 +420,14 @@ public static class PlantEngine
                     break;
                 }
                 case Kind.TicketComplete: CompleteTicket(OpenTicketById(e.Id!), technicians.First(t => t.Person.Id == e.Ref)); break;
+                case Kind.CertificateIssue: IssueCertificate(e.Index); break;
+                case Kind.CertificateExpiry: ExpireCertificate(e.Index, e.Id!); break;
+                case Kind.SignoffEnd:
+                {
+                    var line = lines[e.Line!];
+                    if (line.Version == e.Version) StartRunning(line);
+                    break;
+                }
                 default: throw new InvalidOperationException("Unknown plant event.");
             }
         }
@@ -463,7 +498,66 @@ public static class PlantEngine
                 }
             foreach (var mode in model.Maintenance.FailureModes)
                 Record("failurecodes", mode.Code, "insert", new() { ["failure_code"] = mode.Code, ["equipment_id"] = mode.Line + "." + mode.Equipment, ["description"] = mode.Description, ["skill"] = mode.Skill, ["priority"] = mode.Priority });
+            foreach (var instruction in certification?.Operators?.WorkInstructions ?? [])
+                Record("workinstructions", instruction.Id, "insert", new() { ["instruction_id"] = instruction.Id, ["line_id"] = instruction.Line, ["skus"] = string.Join(",", instruction.Skus), ["valid_days"] = instruction.ValidDays });
         }
+
+        // ---------------- certificates ----------------
+
+        private static string CertificateKey(string employee, string skill) => employee + "|" + skill;
+
+        /// <summary>
+        /// At the plant start, each employee and skill holds the certificate from
+        /// its latest issue so far (recorded with its true issue time). Later
+        /// issues and every expiry are calendar events at their own times.
+        /// </summary>
+        private void StartCertificates()
+        {
+            var latest = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < certificateIssues.Count; i++)
+            {
+                var issue = certificateIssues[i].Issue;
+                if (issue.IssuedUtc <= model.StartUtc) latest[CertificateKey(issue.Employee, issue.Skill)] = i;
+                else Calendar(issue.IssuedUtc, FinishPriority, CalendarOrder(CertificationGroup, 0, i), new Event(Kind.CertificateIssue, Index: i));
+            }
+            foreach (var index in latest.Values.Order()) IssueCertificate(index);
+        }
+
+        private void IssueCertificate(int index)
+        {
+            var (issue, validDays) = certificateIssues[index];
+            string key = CertificateKey(issue.Employee, issue.Skill);
+            var expires = issue.IssuedUtc.AddDays(validDays);
+            if (certificates.TryGetValue(key, out var previous) && previous.Expires > now)
+                Record("trainingrecords", previous.Record, "update", new() { ["status"] = "Renewed" });
+            string record = NextId("TR");
+            Record("trainingrecords", record, "insert", new()
+            {
+                ["record_id"] = record, ["employee_id"] = issue.Employee, ["skill"] = issue.Skill,
+                ["issued_utc"] = issue.IssuedUtc, ["expires_utc"] = expires, ["status"] = expires > now ? "Current" : "Expired"
+            });
+            certificates[key] = new CertificateDto(record, issue.IssuedUtc, expires);
+            if (expires > now)
+                Calendar(expires, FinishPriority, CalendarOrder(CertificationGroup, 1, index), new Event(Kind.CertificateExpiry, Index: index, Id: record));
+            if (now > model.StartUtc) TryAssign(); // a renewed technician may take a waiting ticket
+        }
+
+        private void ExpireCertificate(int index, string record)
+        {
+            var issue = certificateIssues[index].Issue;
+            if (certificates.TryGetValue(CertificateKey(issue.Employee, issue.Skill), out var current) && current.Record == record)
+                Record("trainingrecords", record, "update", new() { ["status"] = "Expired" });
+        }
+
+        private bool Certified(string employee, string skill) =>
+            certificates.TryGetValue(CertificateKey(employee, skill), out var c) && c.Issued <= now && now < c.Expires;
+
+        private string CertificateReason(string employee, string skill) =>
+            certificates.TryGetValue(CertificateKey(employee, skill), out var c)
+                ? now < c.Expires
+                    ? FormattableString.Invariant($"certificate valid until {c.Expires:yyyy-MM-dd}")
+                    : FormattableString.Invariant($"certificate expired {c.Expires:yyyy-MM-dd}")
+                : $"no certificate for {skill}";
 
         // ---------------- the calendar, one day at a time ----------------
 
@@ -601,17 +695,42 @@ public static class PlantEngine
             var order = line.Current!;
             var sku = skus[order.Sku];
             line.Sku = order.Sku;
+            (string Instruction, bool Certified, string Reason)? compliance = null;
+            if (order.Started is null && !order.Checked && certification?.Operators is { } operatorRules)
+            {
+                // The shift's operator must hold the work instruction for this line and SKU.
+                order.Checked = true;
+                order.Operator = model.Operators.FirstOrDefault(o => o.Line == line.Line.Id && o.Shift == ShiftAt(now).Name)?.Id;
+                var instruction = operatorRules.WorkInstructions.FirstOrDefault(w => w.Line == line.Line.Id && w.Skus.Contains(order.Sku));
+                if (instruction is not null && order.Operator is not null)
+                {
+                    bool certified = Certified(order.Operator, instruction.Id);
+                    string reason = CertificateReason(order.Operator, instruction.Id);
+                    if (!certified && operatorRules.SupervisorSignoff)
+                    {
+                        order.Run = NextId("RUN");
+                        var signedOff = now.AddMinutes(operatorRules.SignoffMinutes);
+                        OperatorCompliance(order, instruction.Id, false, reason, signedOff);
+                        SetState(line, "Signoff", $"Awaiting supervisor sign-off ({reason})");
+                        At(signedOff, StatePriority, new Event(Kind.SignoffEnd, Line: line.Line.Id, Version: line.Version));
+                        return;
+                    }
+                    order.Uncertified = !certified;
+                    compliance = (instruction.Id, certified, reason);
+                }
+            }
             if (order.Started is null)
             {
                 order.Started = now;
-                order.Run = NextId("RUN");
-                string? operatorId = model.Operators.FirstOrDefault(o => o.Line == line.Line.Id && o.Shift == ShiftAt(now).Name)?.Id;
+                order.Run ??= NextId("RUN");
+                string? operatorId = order.Operator ?? model.Operators.FirstOrDefault(o => o.Line == line.Line.Id && o.Shift == ShiftAt(now).Name)?.Id;
                 Record("productionruns", order.Run, "insert", new() { ["run_id"] = order.Run, ["production_order"] = order.Id, ["line_id"] = line.Line.Id, ["sku"] = order.Sku, ["operator_id"] = operatorId, ["start_utc"] = now, ["end_utc"] = null, ["good_cases"] = null, ["reject_cases"] = null });
                 Record("productionorders", order.Id, "update", new() { ["status"] = "Running", ["started_utc"] = now });
                 Record("salesorders", order.SalesOrder, "update", new() { ["status"] = "In Production" });
+                if (compliance is { } check) OperatorCompliance(order, check.Instruction, check.Certified, check.Reason, null);
             }
             line.Rate = sku.CasesPerMinute;
-            line.Reject = sku.RejectPercent;
+            line.Reject = order.Uncertified && certification!.Operators!.RejectPercentWhenUncertified is { } uplift ? uplift : sku.RejectPercent;
             SetState(line, "Running", null, null);
             line.RunningSince = now;
 
@@ -631,6 +750,16 @@ public static class PlantEngine
             if (line.PlantedFailures.Count > 0 && 1 < minutes) { minutes = 1; stop = "planted"; }
             At(now.AddMinutes(minutes), stop == "complete" ? FinishPriority : FailurePriority,
                 new Event(Kind.RunStop, Line: line.Line.Id, Version: line.Version, Id: stop, Ref: failing?.Code));
+        }
+
+        private void OperatorCompliance(ProductionOrder order, string instruction, bool certified, string reason, DateTimeOffset? signedOff)
+        {
+            string id = NextId("OC");
+            Record("operatorcompliance", id, "insert", new()
+            {
+                ["compliance_id"] = id, ["run_id"] = order.Run, ["operator_id"] = order.Operator, ["instruction_id"] = instruction,
+                ["certified"] = certified, ["reason"] = reason, ["checked_utc"] = now, ["signoff_utc"] = signedOff
+            });
         }
 
         private void RunStop(LineRuntime line, int version, string stop, string? failingCode)
@@ -871,13 +1000,34 @@ public static class PlantEngine
             foreach (var ticket in openTickets.Where(t => t.Ready && t.Technician is null)
                          .OrderByDescending(t => PriorityRank(t.Priority)).ThenBy(t => t.Created).ThenBy(t => t.Id, StringComparer.Ordinal).ToList())
             {
-                var technician = technicians.Where(t => !t.Busy && t.Person.Shift == shift && t.Person.Skills.Contains(ticket.Skill))
-                    .OrderBy(t => t.Completed).ThenBy(t => t.Person.Id, StringComparer.Ordinal).FirstOrDefault();
+                var skilled = technicians.Where(t => !t.Busy && t.Person.Shift == shift && t.Person.Skills.Contains(ticket.Skill))
+                    .OrderBy(t => t.Completed).ThenBy(t => t.Person.Id, StringComparer.Ordinal);
+                bool critical = certification is not null && certification.SafetyCritical.Contains(ticket.Code);
+                bool certified = true;
+                TechnicianRuntime? technician;
+                if (!critical) technician = skilled.FirstOrDefault();
+                else
+                {
+                    // Safety-critical work: a certified technician first; otherwise wait,
+                    // or (assignAnyway) a skilled technician without a current certificate.
+                    technician = skilled.FirstOrDefault(t => Certified(t.Person.Id, ticket.Skill));
+                    if (technician is null && certification!.AssignAnyway && (technician = skilled.FirstOrDefault()) is not null) certified = false;
+                }
                 if (technician is null) continue;
                 technician.Busy = true;
                 ticket.Technician = technician.Person.Id;
                 Record("maintenancetickets", ticket.Id, "update", new() { ["status"] = "Assigned", ["technician_id"] = ticket.Technician, ["assigned_utc"] = now });
-                StatusHistory(ticket, "Assigned", "Assigned to technician");
+                string reason = critical ? CertificateReason(technician.Person.Id, ticket.Skill) : "";
+                StatusHistory(ticket, "Assigned", certified ? "Assigned to technician" : $"Assigned without a current certificate ({reason})");
+                if (critical)
+                {
+                    string compliance = NextId("WC");
+                    Record("workcompliance", compliance, "insert", new()
+                    {
+                        ["compliance_id"] = compliance, ["ticket_id"] = ticket.Id, ["technician_id"] = ticket.Technician, ["skill"] = ticket.Skill,
+                        ["safety_critical"] = true, ["certified"] = certified, ["reason"] = reason, ["checked_utc"] = now
+                    });
+                }
                 var random = new PlantRandom(model.Seed, "ticket:" + ticket.Id);
                 double response = random.Uniform(model.Maintenance.ResponseMinutes);
                 double work = ticket.ModeCode is { } code ? random.Uniform(Mode(code).RepairMinutes) : model.Maintenance.Preventive[ticket.PreventiveIndex].DurationMinutes;

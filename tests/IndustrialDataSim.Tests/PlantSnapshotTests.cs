@@ -25,6 +25,27 @@ public class PlantSnapshotTests
         return result.Model!;
     }
 
+    /// <summary>
+    /// "areas" and "core" are Bluebird with and without Quality and Shipping;
+    /// "certification" is the beverage base with both certification storylines,
+    /// supervisor sign-off and renewals inside the run, so resumes cover
+    /// certificate state, pending certificate events and sign-off waits.
+    /// </summary>
+    private static PlantModel Model(string variant) => variant switch
+    {
+        "areas" => Model(true),
+        "core" => Model(false),
+        _ => PlantCertificationTests.Model(["uncertified-technician-closure", "uncertified-operator-run"], json =>
+        {
+            var certification = json["maintenance"]!["certification"]!;
+            certification["operators"]!["whenOperatorUncertified"] = "supervisorSignoff";
+            certification["operators"]!["signoffMinutes"] = 40;
+            certification["renewals"] = new JsonArray(
+                new JsonObject { ["technician"] = "E1008", ["skill"] = "mechanical", ["at"] = "-2d" },
+                new JsonObject { ["technician"] = "E1007", ["skill"] = "mechanical", ["at"] = "+1d" });
+        })
+    };
+
     private static string Json(object value) => JsonSerializer.Serialize(value);
 
     private static string Hash(PlantRun run) =>
@@ -44,18 +65,19 @@ public class PlantSnapshotTests
     public void EngineOutputIsUnchangedForPlantsAlreadyRunning(bool areas, int hours, string expected) =>
         Assert.Equal(expected, Hash(PlantEngine.Run(Model(areas), Anchor.AddHours(hours))));
 
-    public static TheoryData<bool, double> Instants() => new()
+    public static TheoryData<string, double> Instants() => new()
     {
-        { true, 0.5 }, { true, 13.25 }, { true, 101 }, { true, 333.0167 }, { true, 480 },
-        { false, 7 }, { false, 250.5 }, { false, 470 }
+        { "areas", 0.5 }, { "areas", 13.25 }, { "areas", 101 }, { "areas", 333.0167 }, { "areas", 480 },
+        { "core", 7 }, { "core", 250.5 }, { "core", 470 },
+        { "certification", 0.25 }, { "certification", 50.5 }, { "certification", 98 }, { "certification", 120.75 }, { "certification", 200 }
     };
 
-    /// <summary>Hours after the plant start (14 days before the anchor) at which a snapshot is taken.</summary>
+    /// <summary>Hours after the plant start (14 days before the anchor for Bluebird, 6 for the beverage base) at which a snapshot is taken.</summary>
     [Theory]
     [MemberData(nameof(Instants))]
-    public void ResumingFromASnapshotReproducesTheFullRunExactly(bool areas, double hoursAfterStart)
+    public void ResumingFromASnapshotReproducesTheFullRunExactly(string variant, double hoursAfterStart)
     {
-        var model = Model(areas);
+        var model = Model(variant);
         var end = Anchor.AddDays(7);
         var at = model.StartUtc.AddHours(hoursAfterStart);
         at = new DateTimeOffset(at.UtcTicks - at.UtcTicks % TimeSpan.TicksPerSecond, TimeSpan.Zero);
@@ -107,11 +129,20 @@ public class PlantSnapshotTests
     {
         var model = Model(true);
         var snapshot = PlantEngine.Run(model, Anchor, null, model.StartUtc.AddDays(2)).Snapshot!;
+        Assert.Equal(2, snapshot.EngineVersion);
+        Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { EngineVersion = 1 }, null)); // stored before certification
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { EngineVersion = PlantEngine.EngineVersion + 1 }, null));
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { State = "{not json" }, null));
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { ChangeSequence = snapshot.ChangeSequence + 1 }, null));
         var otherPlant = Model(false);
         Assert.ThrowsAny<Exception>(() => PlantEngine.Run(otherPlant, Anchor, snapshot, null));
+        // A certification plant's snapshot does not fit the same plant without the section, and vice versa.
+        var certified = Model("certification");
+        var certifiedSnapshot = PlantEngine.Run(certified, Anchor, null, certified.StartUtc.AddDays(2)).Snapshot!;
+        var withoutSection = PlantCertificationTests.Model([]);
+        Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(withoutSection, Anchor, certifiedSnapshot, null));
+        var plainSnapshot = PlantEngine.Run(withoutSection, Anchor, null, withoutSection.StartUtc.AddDays(2)).Snapshot!;
+        Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(certified, Anchor, plainSnapshot, null));
     }
 
     [Fact]

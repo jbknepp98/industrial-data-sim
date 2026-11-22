@@ -276,14 +276,94 @@
         "training records",
         "CMMS work orders"
       ],
-      "engine": "planned",
+      "engine": "available",
       "requires": [
         "certification"
       ],
-      "closest": "labeler-jams-late-orders",
-      "base": null,
-      "fragment": null,
-      "talkTrack": []
+      "closest": null,
+      "base": "beverage-2-line",
+      "fragment": {
+        "maintenance": {
+          "certification": {
+            "validDays": 365,
+            "issued": [
+              {
+                "technician": "E1007",
+                "skill": "mechanical",
+                "at": "-120d"
+              },
+              {
+                "technician": "E1008",
+                "skill": "mechanical",
+                "at": "-375d"
+              },
+              {
+                "technician": "E1008",
+                "skill": "electrical",
+                "at": "-200d"
+              }
+            ],
+            "safetyCritical": [
+              "FL201-VALVE",
+              "FL211-VALVE",
+              "MX101-MOTOR"
+            ],
+            "whenNoneCertified": "assignAnyway"
+          }
+        },
+        "incidents": [
+          {
+            "failureMode": "FL201-VALVE",
+            "at": "-3d",
+            "shift": "CrewB",
+            "note": "Storyline: safety-critical filler valve leak on the night crew. The only mechanic on site, Lena Fischer, let her mechanical certificate lapse 10 days ago."
+          }
+        ]
+      },
+      "talkTrack": [
+        {
+          "tool": "Gage",
+          "tags": [],
+          "tables": [
+            "{prefix}workcompliance",
+            "{prefix}maintenancetickets",
+            "{prefix}trainingrecords"
+          ],
+          "ask": "Which safety-critical work orders were closed by technicians whose certificate had expired?",
+          "expect": "The Filler 201 valve repair three nights ago, closed by Lena Fischer, whose mechanical certificate expired 10 days before."
+        },
+        {
+          "tool": "Connect",
+          "tags": [],
+          "tables": [
+            "{prefix}workcompliance",
+            "{prefix}trainingrecords"
+          ],
+          "ask": "Show the compliance check for that ticket and the technician's training record.",
+          "expect": "certified = false with the reason \"certificate expired\" and its date; the training record's status is Expired."
+        },
+        {
+          "tool": "Explorer",
+          "tags": [
+            "{TagRoot}.L1.FL-201.Status",
+            "{TagRoot}.L1.FL-201.Vibration",
+            "{TagRoot}.L1.State"
+          ],
+          "tables": [],
+          "ask": "Trend Filler 201 status and vibration around that repair.",
+          "expect": "Vibration climbs, the filler faults, and it is back running after the uncertified repair: real work on real equipment."
+        },
+        {
+          "tool": "Atlas",
+          "tags": [],
+          "tables": [
+            "{prefix}trainingrecords",
+            "{prefix}workcompliance"
+          ],
+          "ask": "Open Lena Fischer's ExpiredCertifications and Filler 201's UncertifiedWork.",
+          "expect": "The same answer from the model: the person, the lapsed certificate and the equipment it touched."
+        }
+      ]
     },
     {
       "id": "uncertified-operator-run",
@@ -309,14 +389,104 @@
         "training records",
         "MES production runs"
       ],
-      "engine": "planned",
+      "engine": "available",
       "requires": [
         "certification"
       ],
-      "closest": "quality-hold-traced",
-      "base": null,
-      "fragment": null,
-      "talkTrack": []
+      "closest": null,
+      "base": "beverage-2-line",
+      "fragment": {
+        "maintenance": {
+          "certification": {
+            "operators": {
+              "workInstructions": [
+                {
+                  "id": "WI-L1-BERRY",
+                  "line": "L1",
+                  "skus": [
+                    "BB-BR-20"
+                  ],
+                  "validDays": 180,
+                  "issued": [
+                    {
+                      "operator": "E1001",
+                      "at": "-60d"
+                    },
+                    {
+                      "operator": "E1002",
+                      "at": "-95d"
+                    }
+                  ]
+                },
+                {
+                  "id": "WI-L2-BERRY",
+                  "line": "L2",
+                  "skus": [
+                    "BB-BR-20"
+                  ],
+                  "validDays": 180,
+                  "issued": [
+                    {
+                      "operator": "E1009",
+                      "at": "-40d"
+                    },
+                    {
+                      "operator": "E1010",
+                      "at": "-186d"
+                    }
+                  ]
+                }
+              ],
+              "whenOperatorUncertified": "runAnyway",
+              "rejectPercentWhenUncertified": 4.5
+            }
+          }
+        }
+      },
+      "talkTrack": [
+        {
+          "tool": "Explorer",
+          "tags": [
+            "{TagRoot}.L2.RejectCount",
+            "{TagRoot}.L2.SKU",
+            "{TagRoot}.L2.State"
+          ],
+          "tables": [],
+          "ask": "Trend Line 2 RejectCount with the SKU over the last week.",
+          "expect": "RejectCount climbs much faster during some Berry runs: the ones started on the night crew."
+        },
+        {
+          "tool": "Connect",
+          "tags": [],
+          "tables": [
+            "{prefix}operatorcompliance",
+            "{prefix}productionruns"
+          ],
+          "ask": "Join operatorcompliance to productionruns and compare reject rates.",
+          "expect": "Uncertified Berry runs on Line 2 reject about 4.5% of cases; certified runs about 1.2%."
+        },
+        {
+          "tool": "Gage",
+          "tags": [],
+          "tables": [
+            "{prefix}operatorcompliance",
+            "{prefix}productionruns",
+            "{prefix}trainingrecords"
+          ],
+          "ask": "Which runs were operated without a current certification, and what was their reject rate?",
+          "expect": "Rosa Delgado's Berry runs on Line 2, after her WI-L2-BERRY certificate expired about 6 days ago, with their reject rate."
+        },
+        {
+          "tool": "Atlas",
+          "tags": [],
+          "tables": [
+            "{prefix}operatorcompliance",
+            "{prefix}trainingrecords"
+          ],
+          "ask": "Open Line 2's UncertifiedRuns and Rosa Delgado's ExpiredCertifications.",
+          "expect": "The runs, the operator and the lapsed work-instruction certificate, linked in one model."
+        }
+      ]
     },
     {
       "id": "golden-batch-reactor-drift",

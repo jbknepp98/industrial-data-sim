@@ -46,8 +46,8 @@ public class PlantStorylineTests
     {
         var library = Library();
         Assert.Equal(15, library.Storylines.Count);
-        Assert.Equal(3, library.Storylines.Count(s => s.Engine == "available"));
-        Assert.Equal(5, library.Storylines.Count(s => s.Engine == "planned"));
+        Assert.Equal(5, library.Storylines.Count(s => s.Engine == "available"));
+        Assert.Equal(3, library.Storylines.Count(s => s.Engine == "planned"));
         Assert.Equal(7, library.Storylines.Count(s => s.Engine == "later"));
         // Every storyline the engine cannot build yet names what to offer instead (two have no fit).
         Assert.Equal(2, library.Storylines.Count(s => !s.Available && s.Closest is null));
@@ -112,11 +112,48 @@ public class PlantStorylineTests
     }
 
     [Fact]
+    public void TechnicianCertificationStorylineShowsAnUncertifiedSafetyCriticalClosure()
+    {
+        var model = Build("uncertified-technician-closure");
+        var run = PlantEngine.Run(model, Anchor);
+        var tables = PlantPreview.FinalTables(run);
+        var uncertified = tables["workcompliance"].Where(c => c["certified"] is false).ToList();
+        var planted = run.Failures.Single(f => f.Planted && f.Mode == "FL201-VALVE");
+        // The planted night-shift valve leak is closed by the technician whose certificate lapsed.
+        var ticket = tables["maintenancetickets"].Single(t => Equals(t["failure_code"], "FL201-VALVE") && Equals(t["assigned_utc"], planted.FailedUtc.AddMinutes(model.Maintenance.DetectionMinutes)));
+        Assert.Equal("Complete", ticket["status"]);
+        Assert.Contains(uncertified, c => Equals(c["ticket_id"], ticket["ticket_id"]) && Equals(c["technician_id"], "E1008"));
+        Assert.InRange(planted.FailedUtc, Anchor.AddDays(-3), Anchor.AddDays(-2));
+    }
+
+    [Fact]
+    public void OperatorCertificationStorylineShowsUncertifiedBerryRunsWithMoreRejects()
+    {
+        var model = Build("uncertified-operator-run");
+        var run = PlantEngine.Run(model, Anchor);
+        var tables = PlantPreview.FinalTables(run);
+        var runs = tables["productionruns"].ToDictionary(r => (string)r["run_id"]!);
+        double Rate(IEnumerable<Dictionary<string, object?>> checks)
+        {
+            var finished = checks.Select(c => runs[(string)c["run_id"]!]).Where(r => r["good_cases"] is long).ToList();
+            return 100.0 * finished.Sum(r => (long)r["reject_cases"]!) / finished.Sum(r => (long)r["good_cases"]! + (long)r["reject_cases"]!);
+        }
+        var uncertified = tables["operatorcompliance"].Where(c => c["certified"] is false).ToList();
+        Assert.True(uncertified.Count >= 2, $"{uncertified.Count} uncertified runs");
+        Assert.All(uncertified, c => Assert.Equal("L2", runs[(string)c["run_id"]!]["line_id"]));
+        Assert.True(Rate(uncertified) > 3 * Rate(tables["operatorcompliance"].Where(c => c["certified"] is true)));
+    }
+
+    [Fact]
     public void AvailableStorylinesCombineOnTheSameBase()
     {
         var model = Build("labeler-jams-late-orders", "repeat-bearing-failure", "quality-hold-traced");
         Assert.Equal(5, model.Incidents.Count); // planted events add up
         Assert.Single(model.Quality!.Excursions);
+        var everything = Build("labeler-jams-late-orders", "repeat-bearing-failure", "quality-hold-traced", "uncertified-technician-closure", "uncertified-operator-run");
+        Assert.Equal(6, everything.Incidents.Count);
+        Assert.Equal(3, everything.Maintenance.Certification!.Issued.Count);
+        Assert.Equal(2, everything.Maintenance.Certification.Operators!.WorkInstructions.Count);
     }
 
     [Fact]

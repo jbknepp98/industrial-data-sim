@@ -8,6 +8,7 @@ It simulates a small plant on one clock:
 
 - **Production → Maintenance loop:** always on.
 - **Quality and Shipping areas:** optional.
+- **Certification compliance:** optional (`maintenance.certification`).
 
 The milestones so far:
 
@@ -17,6 +18,7 @@ The milestones so far:
 4. The interview skill.
 5. The Quality and Shipping areas.
 6. The Connect mapping spec and the Atlas starter.
+7. Certification compliance for technicians and operators (`EngineVersion` 2).
 
 ## Commands
 
@@ -135,6 +137,13 @@ Engine changes that alter its output must bump `PlantEngine.EngineVersion`:
 running plants replay their stored history and would otherwise stop with
 `plant.history_mismatch`. `PlantSnapshotTests` pins the output with hashes.
 
+**`EngineVersion` 2** (certification compliance) changed only the snapshot
+layout: it adds certificate state. Output for plants without
+`maintenance.certification` is byte-identical (the golden hashes did not
+move). A plant restarted on the new image logs `plant.snapshot_ignored` once
+(its version 1 snapshot), replays from its start to the same history, and
+saves version 2 snapshots from then on.
+
 The env file passed with `--env-file` needs the `TIMEBASE_*` settings (Historian,
 Pulse, client credentials, CA bundle and Dataset) and `FLOWSIM_PG_CONNECTION`
 (host `flow-data-sim-pg`).
@@ -172,6 +181,75 @@ present, each completed order becomes a **lot** (`lots`).
 - **Without shipping,** a sales order is Completed when produced.
 
 Specification limits per parameter and SKU are in `qualityspecs`.
+
+## Certification compliance
+
+An optional `maintenance.certification` section (storylines
+`uncertified-technician-closure` and `uncertified-operator-run`). Without it,
+nothing below happens and no extra tables exist.
+
+```json
+"certification": {
+  "validDays": 365,
+  "issued": [{ "technician": "E1008", "skill": "mechanical", "at": "-375d" }],
+  "renewals": [{ "technician": "E1008", "skill": "mechanical", "at": "-1d" }],
+  "safetyCritical": ["FL201-VALVE"],
+  "whenNoneCertified": "assignAnyway",
+  "operators": {
+    "workInstructions": [{ "id": "WI-L2-BERRY", "line": "L2", "skus": ["BB-BR-20"], "validDays": 180,
+                           "issued": [{ "operator": "E1010", "at": "-186d" }] }],
+    "whenOperatorUncertified": "runAnyway",
+    "rejectPercentWhenUncertified": 4.5
+  }
+}
+```
+
+- **Certificates:** each `issued` or `renewals` entry gives a technician a
+  certificate for one of their skills, from `at` (a signed whole-minute
+  duration from the anchor) for `validDays` (default 365). A technician and
+  skill with no entry holds no certificate. `trainingrecords` gets one row per
+  certificate: written at the plant start for certificates issued earlier
+  (with their true issue time), or at the issue time. Its `status` becomes
+  `Expired` at `expires_utc`, or `Renewed` when a renewal replaces it first.
+- **Safety-critical work:** a ticket whose failure or PM code is in
+  `safetyCritical` goes to a certified technician who is free and on shift.
+  When there is none:
+  - `wait` (the default): the ticket waits for one, so the downtime runs
+    longer;
+  - `assignAnyway`: a skilled technician without a current certificate takes
+    it, and the status history says so.
+
+  Every safety-critical assignment writes a `workcompliance` row with
+  `certified` and the reason, for example `certificate expired 2026-11-11`.
+  Other work is assigned exactly as before.
+- **Operators (`operators`):** each work instruction covers some SKUs on one
+  line, and operators hold it for its `validDays` from each `issued` entry (a
+  later entry renews it). When a run of a covered SKU starts, the shift's
+  operator is checked and an `operatorcompliance` row is written. If the
+  certificate is not current:
+  - `runAnyway`: the run starts, at `rejectPercentWhenUncertified` when set,
+    so the run's reject cases and the line's `RejectCount` slope rise;
+  - `supervisorSignoff`: the row gets `signoff_utc`, the line waits in state
+    `Signoff` for `signoffMinutes`, then the run starts at the normal reject
+    rate.
+- **Planted incidents** may name a `shift`: the loader moves the incident into
+  that shift (it is kept when it falls at least two hours before the shift
+  ends, otherwise moved to two hours after the shift's next start). Storyline
+  3a uses it so the planted valve leak always meets the night mechanic.
+- **Tables:** `trainingrecords` and `workcompliance` with the section;
+  `workinstructions` (SKUs comma-separated) and `operatorcompliance` with
+  `operators`. No new tags: the story joins the existing unit Status,
+  Vibration and RejectCount tags at the record times.
+- **Connect spec and Atlas starter:** relationships for the new tables, and
+  the query properties `Person.ExpiredCertifications`,
+  `Equipment.UncertifiedWork` and (with operators) `Line.UncertifiedRuns`.
+- **Preview:** the summary lists `uncertifiedAssignments` and
+  `uncertifiedRuns`, and the review page shows them.
+- **Validation errors:** `plant.unknown_certification_target` (unknown
+  technician, operator, skill, line, SKU or code),
+  `plant.certification_time` (not a signed whole-minute duration) and
+  `plant.invalid_certification_policy` (unknown policy, or `assignAnyway`
+  without safety-critical codes).
 
 ## Connect mapping spec and Atlas starter (milestone 6)
 
@@ -281,7 +359,8 @@ Every tag is computed from the same run:
 Purposes are `lines`, `equipment`, `skus`, `shifts`, `customers`, `employees`,
 `certifications`, `parts`, `failurecodes`, `salesorders`, `productionorders`,
 `productionruns`, `downtimeevents`, `maintenancetickets`,
-`maintenanceticketstatus` and `partsusage`. The physical name is
+`maintenanceticketstatus` and `partsusage`, plus the optional areas' tables
+(Quality, Shipping and Certification above). The physical name is
 `simulationname_purpose` in lower case.
 
 ## Limits (owner decision: keep plants small)

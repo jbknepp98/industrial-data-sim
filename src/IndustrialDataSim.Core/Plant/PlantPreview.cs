@@ -107,7 +107,20 @@ public static class PlantPreview
             qualityHolds = Rows("qualityholds").Count,
             shipments = Rows("shipments").Count(r => (string?)r["status"] == "Shipped"),
             unplannedDowntimeMinutes = Math.Round(downtime.Where(d => (string?)d["category"] == "Unplanned").Sum(d => d["duration_minutes"] is double m ? m : 0), 1),
-            lines
+            lines,
+            // Certification compliance (null without a certification section): every
+            // safety-critical ticket assigned without a current certificate, and every
+            // run started by an operator without one.
+            uncertifiedAssignments = run.Model.Maintenance.Certification is null ? null : Rows("workcompliance").Where(r => r["certified"] is false)
+                .Select(r => new { ticket = r["ticket_id"], technician = r["technician_id"], skill = r["skill"], reason = r["reason"], assignedUtc = r["checked_utc"],
+                    failureCode = tickets.FirstOrDefault(t => Equals(t["ticket_id"], r["ticket_id"]))?["failure_code"] }).ToList(),
+            uncertifiedRuns = run.Model.Maintenance.Certification?.Operators is null ? null : Rows("operatorcompliance").Where(r => r["certified"] is false)
+                .Select(r =>
+                {
+                    var productionRun = Rows("productionruns").FirstOrDefault(p => Equals(p["run_id"], r["run_id"]));
+                    return new { run = r["run_id"], line = productionRun?["line_id"], sku = productionRun?["sku"], operatorId = r["operator_id"], instruction = r["instruction_id"],
+                        reason = r["reason"], startUtc = productionRun?["start_utc"], signoffUtc = r["signoff_utc"], goodCases = productionRun?["good_cases"], rejectCases = productionRun?["reject_cases"] };
+                }).ToList()
         };
     }
 

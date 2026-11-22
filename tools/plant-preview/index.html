@@ -96,6 +96,12 @@ ul.gaps b { color: var(--ink); font-weight: 600; }
     </div>
   </section>
 
+  <section id="cert-section" hidden>
+    <h2>Work done without a current certificate</h2>
+    <p class="note">Safety-critical tickets assigned to a technician whose certificate had lapsed, and runs started by an operator without a current work-instruction certificate.</p>
+    <div class="cols" id="cert-records"></div>
+  </section>
+
   <section>
     <h2>Tables the connector will poll</h2>
     <p>Final state of every table at the end of the preview, with its physical name in <span style="font-family:var(--mono)">flow_data_sim</span>. In the live plant each row appears and changes at its simulated time.</p>
@@ -113,7 +119,7 @@ ul.gaps b { color: var(--ink); font-weight: 600; }
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const NS = 'http://www.w3.org/2000/svg';
 const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
-const STATE = { Running: '--run', Changeover: '--change', Down: '--down', Maintenance: '--maint', MinorStop: '--minor', Idle: '--idle' };
+const STATE = { Running: '--run', Changeover: '--change', Down: '--down', Maintenance: '--maint', MinorStop: '--minor', Signoff: '--change', Idle: '--idle' };
 const PRIORITY = { Critical: '--down', High: '--down', Medium: '--change', Low: '--muted' };
 let D, START;
 const at = h => new Date(START.getTime() + h * 3600e3);
@@ -136,7 +142,8 @@ function facts() {
   if (s.qualitySamples) items.splice(6, 0, [s.qualityHolds + ' of ' + s.qualitySamples, 'Lots held by Quality']);
   if (s.shipments) items.splice(7, 0, [s.shipments, 'Shipments']);
   document.getElementById('facts').innerHTML = items.map(([b, t]) => `<div class="fact"><b>${b}</b><span>${t}</span></div>`).join('');
-  document.getElementById('legend').innerHTML = Object.entries(STATE).map(([k, v]) => `<span><i class="sw" style="background:var(${v})"></i>${k === 'MinorStop' ? 'Minor stop' : k}</span>`).join('');
+  document.getElementById('legend').innerHTML = Object.entries(STATE).filter(([k]) => k !== 'Signoff' || D.segments.some(g => g[3] === 'Signoff'))
+    .map(([k, v]) => `<span><i class="sw" style="background:var(${v})"></i>${k === 'MinorStop' ? 'Minor stop' : k === 'Signoff' ? 'Supervisor sign-off' : k}</span>`).join('');
 }
 
 function gantt() {
@@ -235,6 +242,17 @@ function show(inc) {
     : '<p>This breakdown is detected after the preview window ends.</p>';
 }
 
+function certification() {
+  const s = D.summary, a = s.uncertifiedAssignments, r = s.uncertifiedRuns;
+  if (!a && !r) return;
+  document.getElementById('cert-section').hidden = false;
+  const esc = x => x == null ? x : String(x).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const clean = rows => rows.map(row => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, esc(v)])));
+  document.getElementById('cert-records').innerHTML =
+    (a ? (a.length ? rowsTable('Uncertified safety-critical assignments', clean(a)) : '<p>No safety-critical ticket went to an uncertified technician.</p>') : '') +
+    (r ? (r.length ? rowsTable('Runs by an uncertified operator', clean(r)) : '<p>Every checked run had a certified operator.</p>') : '');
+}
+
 function tables() {
   const bar = document.getElementById('tablebar'), box = document.getElementById('tablebox');
   const names = Object.keys(D.tables);
@@ -258,7 +276,7 @@ fetch('page-data.json').then(r => r.json()).then(data => {
     document.getElementById('notes-section').hidden = false;
     document.getElementById('notes').innerHTML = D.notes.map(n => `<li>${n.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</li>`).join('');
   }
-  facts(); gantt(); tables();
+  facts(); gantt(); certification(); tables();
   const first = D.incidents.find(i => i.planted) || D.incidents[0];
   if (first) show(first); else document.getElementById('inc-title').textContent = 'No breakdowns in this window.';
 }).catch(() => { document.getElementById('inc-title').textContent = 'Preview data did not load. Reload the page.'; });

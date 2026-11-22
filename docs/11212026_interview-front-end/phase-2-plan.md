@@ -148,16 +148,26 @@ drops the new tables.
 
 <success-criteria>
 <automated-verification>
-- [ ] `dotnet build` / `dotnet test` (Release) with `FLOWSIM_TEST_PG` set, all passing
-- [ ] `PlantSnapshotTests.EngineOutputIsUnchangedForPlantsAlreadyRunning` unchanged and passing
-- [ ] Storylines 3a and 3b compose, validate and run in `PlantStorylineTests`
+- [x] `dotnet build` / `dotnet test` (Release) with `FLOWSIM_TEST_PG` set, all passing
+- [x] `PlantSnapshotTests.EngineOutputIsUnchangedForPlantsAlreadyRunning` unchanged and passing
+- [x] Storylines 3a and 3b compose, validate and run in `PlantStorylineTests`
 </automated-verification>
 
 <end-to-end-verification>
-- [ ] Build and run a `PlanTestCert…` plant (CLI, Docker dev image) with storylines 3a and 3b. `operatorcompliance` shows the uncertified Berry runs, and their RejectCount slope in Historian is steeper (verify script, 0 mismatches). Also, after `plant.live`, `SELECT * FROM <prefix>workcompliance WHERE NOT certified` returns the planted row with the expected ticket and technician
-- [ ] Restart that container: it logs `plant.snapshot_ignored` once (old layout) or `snapshot_resumed`, and the rows stay identical
+- [x] Build and run a `PlanTestCert…` plant (CLI, Docker dev image) with storylines 3a and 3b. `operatorcompliance` shows the uncertified Berry runs, and their RejectCount slope in Historian is steeper (verify script, 0 mismatches). Also, after `plant.live`, `SELECT * FROM <prefix>workcompliance WHERE NOT certified` returns the planted row with the expected ticket and technician
+- [x] Restart that container: it logs `plant.snapshot_ignored` once (old layout) or `snapshot_resumed`, and the rows stay identical
 - [ ] BluebirdBev (no certification section) restarted on the new image: it logs `plant.snapshot_ignored` (version 1 → 2), then resumes snapshots, with no `history_mismatch`, and the Historian check shows 0 mismatches
-- [ ] Remove the `PlanTestCert…` simulation
+- [x] Remove the `PlanTestCert…` simulation
+
+Results (November 22, 2026, image `flow-data-simulator:2.0.0-dev-cert`, built
+from this commit's source; `2.0.0-dev` and BluebirdBev untouched):
+`PlanTestCert220520` (anchor 05:20:30Z) went live in under a minute. The planted
+row: ticket MT-000008 (FL201-VALVE, night crew), technician E1008, "certificate
+expired 2026-11-12". One uncertified Berry run on L2 rejected 4.52% (certified
+runs about 1.2%); its RejectCount slope was 12.3/h against 3.2/h. Historian
+matched the engine on 141,687 points (0 mismatches, 0 missing). After
+`docker stop` (exit 130) and start, it logged `plant.snapshot_resumed` from a
+version 2 snapshot, and all 27 tables were identical. Removed: 27 tables dropped.
 </end-to-end-verification>
 </success-criteria>
 

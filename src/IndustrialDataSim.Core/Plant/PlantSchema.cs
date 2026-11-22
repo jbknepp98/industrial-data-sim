@@ -73,8 +73,23 @@ public static class PlantSchema
         new("shipments", "Shipments against sales orders", [Key("shipment_id"), Text("sales_order"), Text("lot_id"), Text("carrier"), Whole("quantity_cases"), Time("planned_utc"), Time("shipped_utc"), Text("status")])
     ];
 
+    /// <summary>Certification compliance (maintenance.certification): certificates and safety-critical assignments.</summary>
+    public static readonly IReadOnlyList<PlantTable> CertificationTables =
+    [
+        new("trainingrecords", "Certificates per employee and skill or work instruction, with expiry", [Key("record_id"), Text("employee_id"), Text("skill"), Time("issued_utc"), Time("expires_utc"), Text("status")]),
+        new("workcompliance", "Certificate check for each safety-critical ticket assignment", [Key("compliance_id"), Text("ticket_id"), Text("technician_id"), Text("skill"), Flag("safety_critical"), Flag("certified"), Text("reason"), Time("checked_utc")])
+    ];
+
+    /// <summary>Operator certification (maintenance.certification.operators): work instructions and run-start checks.</summary>
+    public static readonly IReadOnlyList<PlantTable> OperatorCertificationTables =
+    [
+        new("workinstructions", "Work instructions per line and SKUs (comma-separated)", [Key("instruction_id"), Text("line_id"), Text("skus"), Whole("valid_days")]),
+        new("operatorcompliance", "Operator certificate check when each run starts", [Key("compliance_id"), Text("run_id"), Text("operator_id"), Text("instruction_id"), Flag("certified"), Text("reason"), Time("checked_utc"), Time("signoff_utc")])
+    ];
+
     /// <summary>Every table purpose the simulator can create (for removal and lookups).</summary>
-    public static IEnumerable<PlantTable> AllTables => Tables.Concat(QualityTables).Append(LotsTable).Concat(ShippingTables);
+    public static IEnumerable<PlantTable> AllTables => Tables.Concat(QualityTables).Append(LotsTable).Concat(ShippingTables)
+        .Concat(CertificationTables).Concat(OperatorCertificationTables);
 
     /// <summary>The tables this plant uses: the core loop plus its enabled areas.</summary>
     public static IReadOnlyList<PlantTable> TablesFor(PlantModel model)
@@ -83,6 +98,11 @@ public static class PlantSchema
         if (model.Quality is not null || model.Shipping is not null) tables.Add(LotsTable);
         if (model.Quality is not null) tables.AddRange(QualityTables);
         if (model.Shipping is not null) tables.AddRange(ShippingTables);
+        if (model.Maintenance.Certification is { } certification)
+        {
+            tables.AddRange(CertificationTables);
+            if (certification.Operators is not null) tables.AddRange(OperatorCertificationTables);
+        }
         return tables;
     }
 
