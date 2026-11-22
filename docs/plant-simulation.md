@@ -205,6 +205,35 @@ model, validates it, and renders a preview page with
 `scripts/render_plant_preview.py` (template `tools/plant-preview/index.html`).
 It asks for approval before any build or run.
 
+## Storyline library and composing a model
+
+`examples/storylines/storylines.json` holds the demo storylines, taken from
+the customer needs analysis
+(`docs/11212026_interview-front-end/customer-needs-analysis.md`). Each one
+records:
+
+- who it is for: industries, roles and KPIs;
+- how strong the evidence is: the number of customer meetings;
+- whether the engine supports it: `available`, `planned` or `later`;
+- a model fragment for a base plant (`examples/storylines/bases/`);
+- a talk track for the demo.
+
+The interview script (`interview.md`) and the demo-guide template
+(`demo-guide.md`) sit next to it.
+
+```
+plant compose <storylines-folder> <output-model.json> <SimulationName> <storylineId>...
+```
+
+`compose` applies each fragment to the base as a JSON merge patch, then sets
+the simulation name, validates the result and writes the model file.
+
+- **Planted events add up:** the `incidents` and `quality.excursions` lists
+  combine, so storylines can be stacked.
+- **Conflicts are reported:** any other value that two storylines set
+  differently is reported as `storyline.conflict`, with both ids and the path.
+- **Unavailable storylines are refused:** `storyline.not_available`.
+
 ## How the loop works
 
 1. **Demand:** sales orders arrive at `demand.ordersPerDay`, each with a random

@@ -47,7 +47,11 @@ per storyline (15). Fields of each entry:
   Merge Patch (RFC 7386) applied to the base. It plants the story: failure
   modes, incidents with relative times, excursions, and so on. Arrays in a
   merge patch replace the base array, so a fragment that touches
-  `maintenance.failureModes` carries the full list.
+  `maintenance.failureModes` carries the full list. **Implementation note:**
+  the planted-event lists (`incidents`, `quality.excursions`) add up across
+  storylines instead of replacing each other, because otherwise no two
+  storylines could be combined. Phases 2–4 add their planted-event lists to the
+  same rule.
 - **How to show it:** `talkTrack`, 3–6 steps. Each step has a tool (Explorer,
   Connect, Atlas or Gage), what to open (tag names or tables, using `{TagRoot}`
   and `{prefix}` placeholders), the question to ask, and what the audience
@@ -150,15 +154,15 @@ query or tag, and the expected observation.
 <success-criteria>
 
 <automated-verification>
-- [ ] `dotnet build IndustrialDataSim.slnx -c Release`
-- [ ] `dotnet test IndustrialDataSim.slnx -c Release` (all, including `PlantStorylineTests` and unchanged `PlantSnapshotTests`)
-- [ ] `examples/storylines/storylines.json` contains 15 entries: 3 available, 5 planned (3a, 3b, 5a, 5b, 5c), 7 later
+- [x] `dotnet build IndustrialDataSim.slnx -c Release`
+- [x] `dotnet test IndustrialDataSim.slnx -c Release` (all, including `PlantStorylineTests` and unchanged `PlantSnapshotTests`)
+- [x] `examples/storylines/storylines.json` contains 15 entries: 3 available, 5 planned (3a, 3b, 5a, 5b, 5c), 7 later
 </automated-verification>
 
 <end-to-end-verification>
-- [ ] Compose storylines 1 + 2 into a model file; `plant validate` returns valid; `plant preview … 24` shows the planted labeler failure with its ticket
-- [ ] A fresh Claude Code session with the updated skill, given "food & beverage, plant manager and maintenance lead, worried about late orders", proposes storyline 1 first and says golden batch is "planned"
-- [ ] Every talk-track step for storyline 1 resolves to tags and tables that exist after `plant build` of a `PlanTest…` simulation (then remove it)
+- [x] Compose storylines 1 + 2 into a model file; `plant validate` returns valid; `plant preview … 24` shows the planted labeler failure with its ticket
+- [x] A fresh Claude Code session with the updated skill, given "food & beverage, plant manager and maintenance lead, worried about late orders", proposes storyline 1 first and says golden batch is "planned"
+- [x] Every talk-track step for storyline 1 resolves to tags and tables that exist after `plant build` of a `PlanTest…` simulation (then remove it)
 </end-to-end-verification>
 
 </success-criteria>

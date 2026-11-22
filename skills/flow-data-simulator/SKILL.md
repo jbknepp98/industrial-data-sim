@@ -45,41 +45,55 @@ Repository: the `industrial-data-sim` working copy (this skill lives in its
   never use `docker kill`.
 - **Never print or commit secrets.** The env files in `~/flow-data-simulator/config` are private.
 
-## 1. Interview
+## 1. Interview: need first
 
-Ask in plain language, a few questions at a time. Use the question tool when it
-is available, with a recommended default first. Skip anything the user already
-told you. Cover:
+Follow the shared script `examples/storylines/interview.md`, the same one the
+web interview uses. In short:
 
-1. **Story:** the industry and product, and what the demo must reveal. Push for
-   1–3 concrete storylines ("a labeler that keeps jamming and makes orders
-   late", "a supplier switch that causes quality holds").
-2. **Plant:**
-   - 1–2 lines, and what each line can make;
-   - 3–6 key units per line, with a class each (filler, capper, labeler, packer,
-     palletizer, conveyor, mixer, other);
-   - SKUs with rates (cases a minute), fill size and unit, and reject %;
-   - changeover minutes, including cleaning;
-   - shifts (UTC hours covering the day exactly once).
-3. **People:** operators per line and shift, and technicians with skills
-   (mechanical, electrical …), as few as the story allows. Generate realistic,
-   diverse names. Never use real people's names unless the user gives them.
-4. **Demand:** orders per day, cases per order, due-date window, and 2–4
-   customers.
-5. **Maintenance:**
-   - failure modes per unit: MTBF in run hours, repair minutes, skill, priority,
-     the hours of warning the signals give, and parts;
-   - preventive maintenance;
-   - minor stops;
-   - detection minutes.
-6. **Storylines to plant:** failure modes at specific times relative to now (`"at": "-30h"`).
-7. **Areas:** Production and Maintenance are always on. Ask whether Quality
-   (samples, specs, holds) and Shipping (lots, inventory, shipments) should be
-   included.
-8. **Timeline and output:** backfill (`"7d"`, `"14d"` …), open-ended (default)
-   or an end time; the simulation name (PascalCase, for example `AcmeNuggs`),
-   which becomes the table prefix and tag root; and the sample interval
-   (10 000 ms by default).
+1. **Audience:** roles, industry and product, and the one or two problems that
+   cost them the most, with a recent example.
+2. **Their systems:** ERP and CMMS (SAP and SAP PM are common), MES or LIMS,
+   historian and SCADA (Ignition is common).
+3. **Constraints:** sensitivity to AI and cloud; the history must fit the
+   Dataset purge age. If the demo is days away, run the plant continuously or
+   rebuild it nearer the day: its times are relative to now.
+4. **Storylines:** propose 1–3 from `examples/storylines/storylines.json`.
+   They come from 43 real customer meetings. Rank by industry, then roles,
+   then KPIs, and explain each with its `pitch`. Only `available` storylines
+   can be built. For `planned` or `later` ones, say "not in the simulator
+   yet", offer the storyline in its `closest` field, and record the request
+   in the demo guide.
+5. **Plant:** names that feel like theirs (simulation name in PascalCase, for
+   example `AcmeNuggs`; site, line and product names). Change rates or staff
+   only if the story requires it. Keep plants small.
+
+The stages are a checklist, not a strict order: follow the user's lead, but
+cover all of them before composing. The script (`interview.md`) has the details:
+evidence counts, mapping the user's words to library ids, and the `closest`
+rule.
+
+Use the question tool when it is available, with a recommended default first.
+Never use real people's names unless the user gives them.
+
+## 2. Compose and validate the model
+
+Compose the model from the library, then validate it:
+
+```bash
+dotnet run --project src/IndustrialDataSim.Cli -- plant compose examples/storylines ~/flow-data-simulator/models/<Simulation>.json <Simulation> <storylineId> [<storylineId> ...]
+docker run --rm -v ~/flow-data-simulator/models:/models:ro flow-data-simulator:2.0.0-dev plant validate /models/<Simulation>.json
+```
+
+- **Running compose in Docker:** mount the library with
+  `-v <repo>/examples/storylines:/storylines:ro` and pass `/storylines`.
+- **Adjusting the composed model:** edit the file afterwards for names, people
+  or tuning. Use `examples/plants/bluebird-bev.json` as the field reference.
+  Every field is required unless the docs say otherwise, and unknown fields
+  are rejected.
+- **Errors:** every reported error names its field path and the correction;
+  fix them all.
+- **A plant no storyline fits:** write the model by hand from the Bluebird
+  example.
 
 ### Tuning the story (do the arithmetic, then check it in the preview)
 
@@ -87,32 +101,14 @@ told you. Cover:
   A line running about 65% of the week runs about 110 hours.
 - **Line capacity in orders per day** ≈ 1440 × (share of the day available) /
   (`changeoverMinutes` + cases per order / `casesPerMinute`). Set
-  `ordersPerDay` to about 80–90% of total capacity for a busy plant. Go above
-  that only if the story wants a backlog.
-- **Late orders** need tight due dates (`dueDays` around 1–2.5). Breakdowns on a
-  line only make orders late when the other line cannot absorb the work.
+  `ordersPerDay` to about 80–90% of total capacity for a busy plant.
+- **Late orders** need tight due dates (`dueDays` around 1–2.5). Breakdowns on
+  a line only make orders late when the other line cannot absorb the work.
 - **Warning hours:** vibration (and fill volume, on fillers) drifts over this
   period before the failure. Use 6–12 h for a predictive-maintenance story, and
   0 for sudden failures.
 - **Minor stops** must be shorter than `detectionMinutes`. Anything longer is a
   breakdown and needs a failure mode.
-
-## 2. Write the model
-
-Write the plant model JSON (schemaVersion 1, kind "plant") using
-`examples/plants/bluebird-bev.json` as the template. Every field is required
-unless the docs say otherwise; unknown fields are rejected. Save it next to the
-user's other simulator files, for example
-`~/flow-data-simulator/models/<Simulation>.json`.
-
-Then validate it:
-
-```bash
-docker run --rm -v ~/flow-data-simulator/models:/models:ro flow-data-simulator:2.0.0-dev plant validate /models/<Simulation>.json
-```
-
-When working from the repository, `dotnet run --project src/IndustrialDataSim.Cli -- plant validate <file>` also works.
-Fix every reported error: each one names its field path and the correction.
 
 ## 3. Preview and approval
 
@@ -170,6 +166,11 @@ Afterwards, give the user:
   Summarize the spec, and offer to model the Atlas starter with the
   atlas-data-modeling skill. Sensors are separate nodes; tickets and other
   records are query-backed properties, not instances.
+- **The demo guide:** fill `examples/storylines/demo-guide.md` from the
+  interview's audience notes and each chosen storyline's `talkTrack`. Use the
+  real tag root and table prefix, and the times of each storyline's moment
+  from the preview. Give it to the user as a page or file. It is what makes
+  the demo mean something to the audience.
 
 ## Changing a running plant
 

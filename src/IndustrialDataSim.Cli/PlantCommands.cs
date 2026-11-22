@@ -9,7 +9,7 @@ namespace IndustrialDataSim.Cli;
 public static partial class CliApplication
 {
     private const string PlantUsage =
-        "Usage: plant validate <model> [anchorUtc]; plant preview <model> <output.json> [hoursAfterAnchor 1-720, default 24] [anchorUtc]; " +
+        "Usage: plant compose <storylines-folder> <output-model.json> <SimulationName> <storylineId>...; plant validate <model> [anchorUtc]; plant preview <model> <output.json> [hoursAfterAnchor 1-720, default 24] [anchorUtc]; " +
         "plant connect-spec <model> <output-folder> [anchorUtc]; plant build <model> [anchorUtc]; plant sync <simulation> [throughUtc]; plant status [simulation]; plant remove <simulation> --confirm; plant run <simulation>. " +
         "build, sync, status, remove and run use FLOWSIM_PG_CONNECTION; run also uses the TIMEBASE_* settings. " +
         "The anchor is \"now\" unless given (UTC ending in Z): backfill and incident times are relative to it. Preview runs offline and writes nothing else.";
@@ -24,6 +24,7 @@ public static partial class CliApplication
         string action = args.Length > 1 ? args[1] : "";
         if (action is "build" or "sync" or "status" or "remove" or "run") return RunPlantDatabaseCommand(args, output, stop);
         if (action == "connect-spec") return RunConnectSpec(args, output);
+        if (action == "compose") return RunCompose(args, output);
         bool validate = action == "validate" && args.Length is 3 or 4;
         bool preview = action == "preview" && args.Length is >= 4 and <= 6;
         if (!validate && !preview)
@@ -92,6 +93,59 @@ public static partial class CliApplication
             rows = tables.ToDictionary(t => model.TablePrefix + t.Key, t => t.Value.Count),
             breakdowns = run.Failures.Count, changes = run.Changes.Count,
             notice = "Preview written. Nothing was written to Historian or Postgres."
+        }, new("cli.output_limit", "$", "Response too large.")) ? 0 : 1;
+    }
+
+    /// <summary>
+    /// plant compose: builds a plant model from the storyline library
+    /// (storylines.json and bases/ in the given folder), the chosen storylines
+    /// and a simulation name. Offline; writes only the output model file.
+    /// </summary>
+    private static int RunCompose(string[] args, TextWriter output)
+    {
+        if (args.Length < 6)
+        {
+            WriteResult(output, [new("cli.usage", "$", PlantUsage)]);
+            return 2;
+        }
+        string folder = args[2], target = args[3], simulation = args[4];
+        var library = ReadPlainFile(Path.Combine(folder, "storylines.json"));
+        if (library.Error is not null) { WriteResult(output, [library.Error]); return library.ExitCode; }
+        var loaded = PlantStorylines.Load(library.Json!);
+        if (!loaded.IsValid) { WriteResult(output, loaded.Errors); return 1; }
+        var chosen = new List<PlantStoryline>();
+        foreach (var id in args.Skip(5))
+        {
+            if (loaded.Library!.Find(id) is { } storyline) chosen.Add(storyline);
+            else { WriteResult(output, [new("storyline.unknown", "$", $"No storyline has the id \"{id}\". Use an id from storylines.json.")]); return 1; }
+        }
+        if (chosen.FirstOrDefault(c => !c.Available) is { } waiting)
+        {
+            WriteResult(output, [new("storyline.not_available", "$", $"\"{waiting.Title}\" is {waiting.Engine}, not available yet. Choose an available storyline.")]);
+            return 1;
+        }
+        string baseId = chosen[0].Base ?? "";
+        var baseFile = ReadPlainFile(Path.Combine(folder, "bases", baseId + ".json"));
+        if (baseId.Length == 0 || baseFile.Error is not null)
+        {
+            WriteResult(output, [new("storyline.base_missing", "$", $"\"{chosen[0].Title}\" has no base plant in {folder}/bases. It may not be available yet.")]);
+            return 1;
+        }
+        var composed = PlantStorylines.Compose(baseId, baseFile.Json!, chosen, new System.Text.Json.Nodes.JsonObject { ["simulation"] = simulation });
+        if (!composed.IsValid) { WriteResult(output, composed.Errors); return 1; }
+        var check = PlantModelLoader.Load(composed.ModelJson!, DateTimeOffset.UtcNow);
+        if (!check.IsValid) { WriteResult(output, check.Errors); return 1; }
+        try { File.WriteAllText(target, composed.ModelJson + "\n"); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            WriteResult(output, [new("plant.model_unwritable", "$", "Could not write the model file. Check that its folder exists and that you have write permission.")]);
+            return 3;
+        }
+        return WriteResponse(output, new
+        {
+            schemaVersion = 1, valid = true, errors = Array.Empty<ValidationError>(), simulation, @base = baseId,
+            storylines = chosen.Select(c => c.Id), model = target,
+            notice = "Model written. Validate and preview it, then get approval before plant build."
         }, new("cli.output_limit", "$", "Response too large.")) ? 0 : 1;
     }
 

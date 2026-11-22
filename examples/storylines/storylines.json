@@ -1,0 +1,624 @@
+{
+  "schemaVersion": 1,
+  "kind": "storylines",
+  "source": "docs/11212026_interview-front-end/customer-needs-analysis.md (43 recorded customer meetings, December 2025 to November 2026)",
+  "storylines": [
+    {
+      "id": "labeler-jams-late-orders",
+      "title": "Labeler jams make orders late",
+      "pitch": "A labeler keeps jamming, orders ship late, and nobody connects the maintenance ticket to the line slowing down.",
+      "industries": [
+        "food-beverage",
+        "cpg"
+      ],
+      "roles": [
+        "plant-manager",
+        "maintenance",
+        "ci-oee"
+      ],
+      "kpis": [
+        "OEE availability",
+        "on-time delivery",
+        "MTTR"
+      ],
+      "evidence": 12,
+      "systems": [
+        "SAP PM or a CMMS for work orders",
+        "ERP sales orders",
+        "Ignition line tags"
+      ],
+      "engine": "available",
+      "requires": [
+        "shipping"
+      ],
+      "closest": null,
+      "base": "beverage-2-line",
+      "fragment": {
+        "demand": {
+          "dueDays": {
+            "minimum": 1.5,
+            "maximum": 2.5
+          }
+        },
+        "incidents": [
+          {
+            "failureMode": "LB202-JAM",
+            "at": "-30h",
+            "note": "Storyline: the jam the demo walks through; vibration climbs for 8 hours first."
+          },
+          {
+            "failureMode": "LB202-JAM",
+            "at": "-3d",
+            "note": "Storyline: an earlier jam on the same labeler."
+          }
+        ]
+      },
+      "talkTrack": [
+        {
+          "tool": "Explorer",
+          "tags": [
+            "{TagRoot}.L1.LB-202.Vibration",
+            "{TagRoot}.L1.Speed",
+            "{TagRoot}.L1.State"
+          ],
+          "tables": [],
+          "ask": "Trend labeler vibration with line speed and state over the last two days.",
+          "expect": "Vibration climbs for hours, then the line drops to Down while speed goes to zero."
+        },
+        {
+          "tool": "Connect",
+          "tags": [],
+          "tables": [
+            "{prefix}downtimeevents",
+            "{prefix}maintenancetickets"
+          ],
+          "ask": "Show the downtime event and the maintenance ticket for that stop.",
+          "expect": "The ticket opened five minutes after the stop, with the technician and repair time."
+        },
+        {
+          "tool": "Connect",
+          "tags": [],
+          "tables": [
+            "{prefix}salesorders",
+            "{prefix}shipments"
+          ],
+          "ask": "Which sales orders shipped late this week?",
+          "expect": "The late orders were in production on Line 1 when the labeler jammed."
+        },
+        {
+          "tool": "Gage",
+          "tags": [],
+          "tables": [],
+          "ask": "Why were orders late this week, and what should maintenance do about Labeler 202?",
+          "expect": "An answer that joins the jams, the tickets and the late orders, and points to the worn gripper pads."
+        }
+      ]
+    },
+    {
+      "id": "repeat-bearing-failure",
+      "title": "The same bearing keeps failing",
+      "pitch": "The mix tank agitator bearing fails three times in ten days, and each repair is treated as a one-off.",
+      "industries": [
+        "food-beverage",
+        "cpg",
+        "packaging",
+        "chemicals",
+        "discrete",
+        "metals",
+        "mining",
+        "water-energy",
+        "pharma"
+      ],
+      "roles": [
+        "reliability",
+        "maintenance",
+        "plant-manager"
+      ],
+      "kpis": [
+        "MTBF",
+        "repeat-failure rate",
+        "maintenance cost"
+      ],
+      "evidence": 5,
+      "systems": [
+        "CMMS work order history",
+        "spare parts usage",
+        "vibration tags"
+      ],
+      "engine": "available",
+      "requires": [],
+      "closest": null,
+      "base": "beverage-2-line",
+      "fragment": {
+        "incidents": [
+          {
+            "failureMode": "MX101-MOTOR",
+            "at": "-5d",
+            "note": "Storyline: first agitator trip."
+          },
+          {
+            "failureMode": "MX101-MOTOR",
+            "at": "-3d",
+            "note": "Storyline: second agitator trip, same bearing."
+          },
+          {
+            "failureMode": "MX101-MOTOR",
+            "at": "-20h",
+            "note": "Storyline: third agitator trip in under a week."
+          }
+        ]
+      },
+      "talkTrack": [
+        {
+          "tool": "Connect",
+          "tags": [],
+          "tables": [
+            "{prefix}maintenancetickets",
+            "{prefix}partsusage"
+          ],
+          "ask": "List corrective tickets on Mix Tank 101 with the parts used.",
+          "expect": "Three tickets in under a week, each replacing the agitator bearing."
+        },
+        {
+          "tool": "Explorer",
+          "tags": [
+            "{TagRoot}.L1.MX-101.Vibration",
+            "{TagRoot}.L1.MX-101.Status"
+          ],
+          "tables": [],
+          "ask": "Trend agitator vibration and status across the week.",
+          "expect": "The same vibration rise before every trip: a pattern, not bad luck."
+        },
+        {
+          "tool": "Gage",
+          "tags": [],
+          "tables": [],
+          "ask": "Which assets have repeat failures this month, and what did they cost in parts and downtime?",
+          "expect": "Mix Tank 101 at the top, with the bearing as the common part."
+        }
+      ]
+    },
+    {
+      "id": "quality-hold-traced",
+      "title": "A quality hold traced to its cause",
+      "pitch": "Lots go on hold for pH, and the analyzer trend shows exactly when the ingredient change began and ended.",
+      "industries": [
+        "food-beverage",
+        "cpg",
+        "pharma"
+      ],
+      "roles": [
+        "quality",
+        "plant-manager",
+        "process-engineer"
+      ],
+      "kpis": [
+        "quality holds",
+        "first-pass yield",
+        "lot genealogy"
+      ],
+      "evidence": 4,
+      "systems": [
+        "LIMS results",
+        "quality holds",
+        "in-line analyzer tags"
+      ],
+      "engine": "available",
+      "requires": [
+        "quality"
+      ],
+      "closest": null,
+      "base": "beverage-2-line",
+      "fragment": {
+        "quality": {
+          "excursions": [
+            {
+              "parameter": "pH",
+              "from": "-5d",
+              "until": "-3d",
+              "shift": 0.27,
+              "note": "Storyline: citric acid supplier switched to a conditionally approved source."
+            }
+          ]
+        }
+      },
+      "talkTrack": [
+        {
+          "tool": "Connect",
+          "tags": [],
+          "tables": [
+            "{prefix}qualityholds",
+            "{prefix}lots"
+          ],
+          "ask": "Show this week's quality holds with their lots.",
+          "expect": "A cluster of pH holds over two days, on both lines."
+        },
+        {
+          "tool": "Explorer",
+          "tags": [
+            "{TagRoot}.L1.Quality.pH",
+            "{TagRoot}.L2.Quality.pH"
+          ],
+          "tables": [],
+          "ask": "Trend the pH analyzers on both lines.",
+          "expect": "pH steps up on both lines at the same time and steps back down two days later: an ingredient, not a line."
+        },
+        {
+          "tool": "Gage",
+          "tags": [],
+          "tables": [],
+          "ask": "What caused the pH holds this week, and which shipments were delayed?",
+          "expect": "The supplier change window, the held lots and the late shipments."
+        }
+      ]
+    },
+    {
+      "id": "uncertified-technician-closure",
+      "title": "An uncertified technician closed a safety-critical work order",
+      "pitch": "A technician whose certificate had lapsed closed a safety-critical repair, and nobody noticed until the audit.",
+      "industries": [
+        "chemicals",
+        "discrete",
+        "cpg",
+        "food-beverage"
+      ],
+      "roles": [
+        "ehs",
+        "quality",
+        "maintenance",
+        "executive"
+      ],
+      "kpis": [
+        "certification compliance"
+      ],
+      "evidence": 5,
+      "systems": [
+        "training records",
+        "CMMS work orders"
+      ],
+      "engine": "planned",
+      "requires": [
+        "certification"
+      ],
+      "closest": "labeler-jams-late-orders",
+      "base": null,
+      "fragment": null,
+      "talkTrack": []
+    },
+    {
+      "id": "uncertified-operator-run",
+      "title": "An operator ran a product without a current certification",
+      "pitch": "An operator's work-instruction certificate expired, they kept running that product, and rejects went up.",
+      "industries": [
+        "chemicals",
+        "discrete",
+        "cpg"
+      ],
+      "roles": [
+        "ehs",
+        "quality",
+        "plant-manager",
+        "executive"
+      ],
+      "kpis": [
+        "certification compliance",
+        "first-pass yield"
+      ],
+      "evidence": 3,
+      "systems": [
+        "training records",
+        "MES production runs"
+      ],
+      "engine": "planned",
+      "requires": [
+        "certification"
+      ],
+      "closest": "quality-hold-traced",
+      "base": null,
+      "fragment": null,
+      "talkTrack": []
+    },
+    {
+      "id": "golden-batch-reactor-drift",
+      "title": "Golden batch drift in a reactor",
+      "pitch": "Jacket fouling slowly stretches the heat phase, cycle times grow and yield drops until the jacket is cleaned.",
+      "industries": [
+        "chemicals"
+      ],
+      "roles": [
+        "process-engineer",
+        "plant-manager"
+      ],
+      "kpis": [
+        "cycle time",
+        "yield",
+        "first-pass yield"
+      ],
+      "evidence": 5,
+      "systems": [
+        "batch records",
+        "LIMS results",
+        "reactor tags"
+      ],
+      "engine": "planned",
+      "requires": [
+        "batch"
+      ],
+      "closest": "quality-hold-traced",
+      "base": null,
+      "fragment": null,
+      "talkTrack": []
+    },
+    {
+      "id": "golden-batch-syrup-holds",
+      "title": "Syrup batches drift and holds follow at the filler",
+      "pitch": "Syrup batches take longer and come out low on Brix, and the filler lots made from them go on hold.",
+      "industries": [
+        "food-beverage"
+      ],
+      "roles": [
+        "process-engineer",
+        "quality",
+        "plant-manager"
+      ],
+      "kpis": [
+        "cycle time",
+        "first-pass yield",
+        "quality holds",
+        "lot genealogy"
+      ],
+      "evidence": 5,
+      "systems": [
+        "batch records",
+        "LIMS results",
+        "lot genealogy"
+      ],
+      "engine": "planned",
+      "requires": [
+        "batch",
+        "quality"
+      ],
+      "closest": "quality-hold-traced",
+      "base": null,
+      "fragment": null,
+      "talkTrack": []
+    },
+    {
+      "id": "golden-batch-pharma-deviation",
+      "title": "Golden batch deviations under GxP",
+      "pitch": "Batches drift off the golden profile, each needs a deviation and QA approval, and the audit trail shows who released what.",
+      "industries": [
+        "pharma"
+      ],
+      "roles": [
+        "process-engineer",
+        "quality"
+      ],
+      "kpis": [
+        "yield",
+        "deviations",
+        "right-first-time"
+      ],
+      "evidence": 3,
+      "systems": [
+        "electronic batch records",
+        "deviation records",
+        "LIMS results"
+      ],
+      "engine": "planned",
+      "requires": [
+        "batch",
+        "quality"
+      ],
+      "closest": "quality-hold-traced",
+      "base": null,
+      "fragment": null,
+      "talkTrack": []
+    },
+    {
+      "id": "changeover-startup-waste",
+      "title": "Startup waste after changeovers",
+      "pitch": "Every product change costs an hour and a pile of scrap before the line runs right.",
+      "industries": [
+        "packaging",
+        "food-beverage",
+        "cpg"
+      ],
+      "roles": [
+        "ci-oee",
+        "plant-manager"
+      ],
+      "kpis": [
+        "scrap",
+        "changeover time"
+      ],
+      "evidence": 5,
+      "systems": [
+        "MES scrap log",
+        "line state tags"
+      ],
+      "engine": "later",
+      "requires": [],
+      "closest": "labeler-jams-late-orders",
+      "base": null,
+      "fragment": null,
+      "talkTrack": []
+    },
+    {
+      "id": "mcc-trip-impact",
+      "title": "A motor control center trips",
+      "pitch": "One electrical panel trips, and the question is which lines go down and which orders are at risk.",
+      "industries": [
+        "food-beverage",
+        "cpg",
+        "packaging",
+        "chemicals",
+        "discrete",
+        "metals",
+        "mining",
+        "water-energy",
+        "pharma"
+      ],
+      "roles": [
+        "plant-manager",
+        "maintenance"
+      ],
+      "kpis": [
+        "downtime cost"
+      ],
+      "evidence": 2,
+      "systems": [
+        "electrical single-line relationships",
+        "line states"
+      ],
+      "engine": "later",
+      "requires": [],
+      "closest": "labeler-jams-late-orders",
+      "base": null,
+      "fragment": null,
+      "talkTrack": []
+    },
+    {
+      "id": "manual-downtime-reasons",
+      "title": "Hand-logged downtime reasons are wrong",
+      "pitch": "Operators log downtime by hand, so the top-loss chart blames the wrong machine.",
+      "industries": [
+        "cpg",
+        "pharma",
+        "food-beverage"
+      ],
+      "roles": [
+        "ci-oee",
+        "plant-manager"
+      ],
+      "kpis": [
+        "OEE",
+        "top losses"
+      ],
+      "evidence": 6,
+      "systems": [
+        "operator downtime entries",
+        "machine state tags"
+      ],
+      "engine": "later",
+      "requires": [],
+      "closest": "labeler-jams-late-orders",
+      "base": null,
+      "fragment": null,
+      "talkTrack": []
+    },
+    {
+      "id": "upstream-downstream-imbalance",
+      "title": "Upstream and downstream speeds out of balance",
+      "pitch": "One machine runs faster than the next, the buffer overfills, and defects follow.",
+      "industries": [
+        "packaging",
+        "metals"
+      ],
+      "roles": [
+        "process-engineer",
+        "ci-oee"
+      ],
+      "kpis": [
+        "throughput",
+        "defect rate"
+      ],
+      "evidence": 1,
+      "systems": [
+        "defect log",
+        "machine speed and buffer tags"
+      ],
+      "engine": "later",
+      "requires": [],
+      "closest": "labeler-jams-late-orders",
+      "base": null,
+      "fragment": null,
+      "talkTrack": []
+    },
+    {
+      "id": "costly-event-root-cause",
+      "title": "Root cause of a costly event in minutes",
+      "pitch": "A break or breakout costs a fortune, and finding the cause takes hours of digging through systems.",
+      "industries": [
+        "metals",
+        "packaging"
+      ],
+      "roles": [
+        "executive",
+        "process-engineer",
+        "plant-manager"
+      ],
+      "kpis": [
+        "event cost",
+        "time to root cause"
+      ],
+      "evidence": 2,
+      "systems": [
+        "event log",
+        "high-speed process tags",
+        "maintenance tickets"
+      ],
+      "engine": "later",
+      "requires": [],
+      "closest": "repeat-bearing-failure",
+      "base": null,
+      "fragment": null,
+      "talkTrack": []
+    },
+    {
+      "id": "energy-per-unit-spike",
+      "title": "Energy per unit spikes on one line",
+      "pitch": "One line uses far more energy per case than its twin, and CIP cycles are the reason.",
+      "industries": [
+        "food-beverage",
+        "cpg"
+      ],
+      "roles": [
+        "plant-manager",
+        "ci-oee"
+      ],
+      "kpis": [
+        "energy per unit",
+        "CIP time"
+      ],
+      "evidence": 2,
+      "systems": [
+        "energy meters",
+        "CIP records"
+      ],
+      "engine": "later",
+      "requires": [],
+      "closest": null,
+      "base": null,
+      "fragment": null,
+      "talkTrack": []
+    },
+    {
+      "id": "mine-fleet-disconnect",
+      "title": "Mine fleet and plant cut off from each other",
+      "pitch": "Haul trucks and the crusher are run from different systems, so nobody sees why throughput drops.",
+      "industries": [
+        "mining"
+      ],
+      "roles": [
+        "plant-manager",
+        "executive"
+      ],
+      "kpis": [
+        "throughput",
+        "availability"
+      ],
+      "evidence": 3,
+      "systems": [
+        "fleet management",
+        "crusher tags"
+      ],
+      "engine": "later",
+      "requires": [],
+      "closest": null,
+      "base": null,
+      "fragment": null,
+      "talkTrack": []
+    }
+  ]
+}
