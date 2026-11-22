@@ -110,6 +110,15 @@ The env file passed with `--env-file` needs the `TIMEBASE_*` settings (Historian
 Pulse, client credentials, CA bundle and Dataset) and `FLOWSIM_PG_CONNECTION`
 (host `flow-data-sim-pg`).
 
+**Live acceptance (November 21–22, 2026).** A 6-hour smoke plant reached
+`plant.live` in about 5 seconds. A planted labeler jam then failed in real time
+at 00:36:33 UTC. The detector wrote the downtime event and an assigned High
+maintenance ticket at 00:41:33, exactly `detectionMinutes` later, while it
+happened. Historian matched the engine on all 6,636 changed values (0
+mismatches, 0 missing). `docker stop` exited 130 with 0 uncertain batches, and
+`plant remove` dropped the smoke plant's 16 tables. BluebirdBev (6-day backfill)
+went live in about a minute and matched on 139,305 checked points.
+
 ## Quality and Shipping areas (milestone 5)
 
 Both are optional model sections; see the Bluebird example. When either is
