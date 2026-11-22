@@ -218,7 +218,13 @@
                   "end": 0
                 }
               }
-            ]
+            ],
+            "golden": {
+              "yieldPercent": {
+                "target": 98.5,
+                "sigma": 0.4
+              }
+            }
           },
           {
             "id": "RCP-LIS-GRAN",
@@ -349,7 +355,13 @@
                   "end": 0
                 }
               }
-            ]
+            ],
+            "golden": {
+              "yieldPercent": {
+                "target": 98.5,
+                "sigma": 0.4
+              }
+            }
           }
         ]
       }
@@ -624,7 +636,22 @@
       "minimum": 1440,
       "maximum": 4320
     },
-    "excursions": []
+    "excursions": [],
+    "batchRelease": {
+      "labMinutes": {
+        "minimum": 60,
+        "maximum": 180
+      },
+      "parameters": [
+        {
+          "name": "Assay",
+          "yieldSensitivity": 0.4
+        },
+        {
+          "name": "Moisture"
+        }
+      ]
+    }
   },
   "shipping": {
     "delayHours": {

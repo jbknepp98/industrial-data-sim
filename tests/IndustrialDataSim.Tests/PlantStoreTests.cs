@@ -33,7 +33,7 @@ public class PlantStoreTests
         var run = PlantEngine.Run(Example().Model, Anchor.AddHours(24));
         foreach (var change in run.Changes)
         {
-            var table = PlantSchema.Table(change.Table);
+            var table = PlantSchema.Table(run.Model, change.Table);
             var columns = table.Columns.ToDictionary(c => c.Name, c => c.Type);
             if (change.Operation == "insert") Assert.Equal(columns.Keys.OrderBy(k => k), change.Columns.Keys.OrderBy(k => k));
             foreach (var (name, value) in change.Columns)

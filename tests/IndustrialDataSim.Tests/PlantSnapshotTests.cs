@@ -36,6 +36,7 @@ public class PlantSnapshotTests
         "areas" => Model(true),
         "core" => Model(false),
         _ when PlantBatchTests.BatchBases.Contains(variant) => PlantBatchTests.Model(variant),
+        _ when variant.StartsWith("golden-batch-", StringComparison.Ordinal) => PlantStorylineTests.Build(variant),
         _ => PlantCertificationTests.Model(["uncertified-technician-closure", "uncertified-operator-run"], json =>
         {
             var certification = json["maintenance"]!["certification"]!;
@@ -73,7 +74,15 @@ public class PlantSnapshotTests
         { "certification", 0.25 }, { "certification", 50.5 }, { "certification", 98 }, { "certification", 120.75 }, { "certification", 200 },
         { "chemicals-batch", 0.5 }, { "chemicals-batch", 37.4 }, { "chemicals-batch", 121 }, { "chemicals-batch", 250.25 },
         { "beverage-syrup-batch", 3.1 }, { "beverage-syrup-batch", 77.75 }, { "beverage-syrup-batch", 190 },
-        { "pharma-batch", 11.6 }, { "pharma-batch", 140.2 }
+        { "pharma-batch", 11.6 }, { "pharma-batch", 140.2 },
+        // Golden batch storylines: 5a starts 14 days before the anchor and drifts from day 5
+        // (ramping in until day 10, cleaned about day 12); 5b and 5c start 10 days before and
+        // drift from day 3 and day 2. Instants fall inside the ramps, at full strength, and
+        // around the end, so resumes cover drift state, quarantined batches, open
+        // deviations and lots waiting for their batches.
+        { "golden-batch-reactor-drift", 150.5 }, { "golden-batch-reactor-drift", 190.25 }, { "golden-batch-reactor-drift", 290 },
+        { "golden-batch-syrup-holds", 85.4 }, { "golden-batch-syrup-holds", 140 },
+        { "golden-batch-pharma-deviation", 62.7 }, { "golden-batch-pharma-deviation", 130.5 }
     };
 
     /// <summary>
@@ -105,7 +114,7 @@ public class PlantSnapshotTests
         foreach (var at in instants)
         {
             var snapshot = PlantEngine.Run(model, end, null, at).Snapshot!;
-            Assert.Equal(3, snapshot.EngineVersion);
+            Assert.Equal(4, snapshot.EngineVersion);
             AssertContinues(full, PlantEngine.Run(model, end, snapshot, null).Run, at);
         }
     }
@@ -162,14 +171,45 @@ public class PlantSnapshotTests
         Assert.True(compared > 1000, $"{compared} comparisons from {at:O}");
     }
 
+    /// <summary>
+    /// A snapshot taken during a drift ramp, while a deviation is open and while a
+    /// batch waits in quarantine resumes exactly: drift strength, pending release
+    /// decisions and the reheating temperature all carry over.
+    /// </summary>
+    [Fact]
+    public void ResumingDuringADriftRampWithOpenDeviationsReproducesTheFullRun()
+    {
+        var model = Model("golden-batch-pharma-deviation");
+        var end = Anchor.AddDays(2);
+        var full = PlantEngine.Run(model, end);
+        var drift = model.Drifts.Single();
+        var tables = PlantPreview.FinalTables(full);
+        // Inside the ramp: after the drift began, before it reaches full strength, with a deviation open.
+        var open = tables["deviations"].First(d => (DateTimeOffset)d["opened_utc"]! < drift.FromUtc.AddDays(drift.RampDays) || (DateTimeOffset)d["opened_utc"]! < drift.UntilUtc);
+        var opened = (DateTimeOffset)open["opened_utc"]!;
+        var instants = new[] { drift.FromUtc.AddHours(drift.RampDays * 12).AddSeconds(7), opened.AddMinutes(30), opened.AddSeconds(1) };
+        foreach (var at in instants)
+        {
+            var snapshot = PlantEngine.Run(model, end, null, at).Snapshot!;
+            Assert.Contains("\"PendingBatches\"", snapshot.State);
+            Assert.Contains("\"DriftEnded\"", snapshot.State);
+            AssertContinues(full, PlantEngine.Run(model, end, snapshot, null).Run, at);
+        }
+        // A plant with drifts does not accept a snapshot of the same plant without them.
+        var plain = PlantBatchTests.Model("pharma-batch");
+        var plainSnapshot = PlantEngine.Run(plain, end, null, plain.StartUtc.AddDays(1)).Snapshot!;
+        Assert.ThrowsAny<Exception>(() => PlantEngine.Run(model, end, plainSnapshot, null));
+    }
+
     [Fact]
     public void SnapshotsFromAnotherEngineVersionOrDamagedStateAreRefused()
     {
         var model = Model(true);
         var snapshot = PlantEngine.Run(model, Anchor, null, model.StartUtc.AddDays(2)).Snapshot!;
-        Assert.Equal(3, snapshot.EngineVersion);
+        Assert.Equal(4, snapshot.EngineVersion);
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { EngineVersion = 1 }, null)); // stored before certification
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { EngineVersion = 2 }, null)); // stored before batch units
+        Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { EngineVersion = 3 }, null)); // stored before golden batch
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { EngineVersion = PlantEngine.EngineVersion + 1 }, null));
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { State = "{not json" }, null));
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { ChangeSequence = snapshot.ChangeSequence + 1 }, null));

@@ -36,8 +36,12 @@ public static class PlantEngine
     /// Version 2: the snapshot holds certificate state (maintenance.certification).
     /// Version 3: the snapshot holds batch state (the running batch and phase, released
     /// intermediate stock and incoming batch quantity).
+    /// Version 4: golden batch drift and batch quality. Batches carry drift effects,
+    /// yield and deviation; lines carry the process temperature (repairs reheat
+    /// gradually) and the BatchDeviation value; the snapshot holds drift ends,
+    /// batches waiting for release, and lots waiting for their batches.
     /// </remarks>
-    public const int EngineVersion = 3;
+    public const int EngineVersion = 4;
 
     public static PlantRun Run(PlantModel model, DateTimeOffset endUtc) => Run(model, endUtc, null, null).Run;
 
@@ -76,7 +80,7 @@ public static class PlantEngine
     {
         Dispatch, Incident, Order, ShiftStart, PreventiveDue, ChangeoverEnd, RunStop, MinorStopEnd,
         LabResult, HoldRelease, Ship, Detect, TechnicianArrives, TicketComplete,
-        CertificateIssue, CertificateExpiry, SignoffEnd
+        CertificateIssue, CertificateExpiry, SignoffEnd, BatchLabResult, BatchHoldRelease, DeviationClose
     }
 
     /// <summary>A pending event as data. Which fields are used depends on Kind.</summary>
@@ -85,7 +89,8 @@ public static class PlantEngine
         OrderRef? Order = null);
 
     /// <summary>What a lot, lab result or shipment needs to know about its finished production order.</summary>
-    private sealed record OrderRef(string Id, string SalesOrder, string Sku, DateTimeOffset Due);
+    /// <remarks>QualityShift: what a fed order inherited from the batches it consumed (null when nothing).</remarks>
+    private sealed record OrderRef(string Id, string SalesOrder, string Sku, DateTimeOffset Due, Dictionary<string, double>? QualityShift = null);
 
     private sealed class ProductionOrder
     {
@@ -103,8 +108,9 @@ public static class PlantEngine
         public string? Operator { get; set; }        // with operator certification: the operator checked at run start
         public bool Checked { get; set; }            // the operator certification check has been made
         public bool Uncertified { get; set; }        // ran anyway without a current certificate
+        public Dictionary<string, double>? QualityShift { get; set; } // fed orders: quality inherited from the consumed batches
 
-        public OrderRef Ref() => new(Id, SalesOrder!, Sku, Due);
+        public OrderRef Ref() => new(Id, SalesOrder!, Sku, Due, QualityShift);
     }
 
     private sealed class Ticket
@@ -147,6 +153,10 @@ public static class PlantEngine
         public double GoodTotal, RejectTotal;      // over closed segments, for the count signals
         public BatchState? CurrentBatch;           // batch lines: the batch in progress
         public PlantBatchSegment? SegmentBatch;    // batch lines: the batch phase of the open segment, from its start
+        public double TemperatureC = PlantBatchThermal.AmbientC; // batch lines: process temperature at the last segment boundary (no noise)
+        public double Deviation;                   // batch lines: the BatchDeviation value, updated at the end of each phase
+        public double? SegmentDeviation;           // batch lines: Deviation as of the open segment's start
+        public Dictionary<string, double>? SegmentShift; // the open segment's order quality shift, from its start
     }
 
     /// <summary>
@@ -165,6 +175,9 @@ public static class PlantEngine
         public DateTimeOffset PhaseStart { get; set; }
         public long Remaining { get; set; }
         public bool Interrupted { get; set; }
+        public double[] Lag { get; init; } = [];   // per phase: how far the temperature trails the setpoint at mid-phase (°C)
+        public double Yield { get; init; }         // percent, drawn at the start
+        public double Deviation { get; set; }      // the worst phase score so far
     }
 
     /// <summary>A released batch of an intermediate in stock for a fed line, with the quantity not yet consumed.</summary>
@@ -172,7 +185,27 @@ public static class PlantEngine
     {
         public required string Id { get; init; }
         public double Remaining { get; set; }
+        public Dictionary<string, double>? Shift { get; init; } // quality the batch passes on to what is made from it
     }
+
+    /// <summary>A discharged batch in quarantine, waiting for its lab result and, when it has one, its deviation's closure.</summary>
+    private sealed class PendingBatch
+    {
+        public required string Id { get; init; }
+        public required string Order { get; init; }
+        public required string Line { get; init; }
+        public required string Sku { get; init; }
+        public required string Recipe { get; init; }
+        public double Size { get; init; }
+        public double Yield { get; init; }
+        public bool Intermediate { get; init; }
+        public Dictionary<string, double>? Shift { get; init; }
+        public bool LabPending { get; set; }
+        public bool DeviationOpen { get; set; }
+    }
+
+    /// <summary>A finished batch-unit lot waiting for its last batches to be released.</summary>
+    private sealed record WaitingLot(string Lot, OrderRef Order, long Cases);
 
     private sealed class TechnicianRuntime(PlantPerson person)
     {
@@ -181,7 +214,7 @@ public static class PlantEngine
         public int Completed;
     }
 
-    // ---------------- snapshot layout (EngineVersion 3) ----------------
+    // ---------------- snapshot layout (EngineVersion 4) ----------------
 
     private sealed record StateDto(
         long EventOrder, long ChangeSequence, long FailureCount, double Stock, DateTimeOffset CalendarUntil,
@@ -190,13 +223,18 @@ public static class PlantEngine
         List<Ticket> OpenTickets, List<FailureDto> Failures, List<EventDto> Events,
         Dictionary<string, CertificateDto>? Certificates = null, // null for plants without certification
         Dictionary<string, List<StockBatch>>? IntermediateStock = null, // null for plants without batch.feeds
-        Dictionary<string, double>? IntermediateIncoming = null);
+        Dictionary<string, double>? IntermediateIncoming = null,
+        Dictionary<int, DateTimeOffset>? DriftEnded = null,      // null for plants without drifts
+        List<PendingBatch>? PendingBatches = null,              // null unless batches wait for release (quality.batchRelease)
+        Dictionary<string, int>? Unreleased = null,
+        Dictionary<string, WaitingLot>? WaitingLots = null);
 
     private sealed record LineDto(string Id, string State, DateTimeOffset StateStart, string? Sku, string? Reason, string? Unit,
         ProductionOrder? Current, List<ProductionOrder> Queue, int Version, DateTimeOffset RunningSince, double Rate, double Reject,
         Dictionary<string, double> HoursToFailure, double HoursToMinorStop, List<string> PlantedFailures,
         string? PendingPreventive, string? ChangeoverDowntime, double GoodTotal, double RejectTotal,
-        BatchState? CurrentBatch = null, PlantBatchSegment? SegmentBatch = null);
+        BatchState? CurrentBatch = null, PlantBatchSegment? SegmentBatch = null,
+        double TemperatureC = PlantBatchThermal.AmbientC, double Deviation = 0, double? SegmentDeviation = null, Dictionary<string, double>? SegmentShift = null);
 
     private sealed record TechnicianDto(string Id, bool Busy, int Completed);
 
@@ -246,6 +284,13 @@ public static class PlantEngine
         private Dictionary<string, List<StockBatch>> intermediateStock = new(StringComparer.Ordinal);
         private Dictionary<string, double> intermediateIncoming = new(StringComparer.Ordinal);
         private readonly IReadOnlyList<PlantSku> orderable;
+        // Golden batch: when each drift ended early (its cleaning PM completed), batches
+        // in quarantine, unreleased batches per direct-sale order, and lots waiting for them.
+        private Dictionary<int, DateTimeOffset> driftEnded = new();
+        private readonly bool gated, batchPlant;
+        private Dictionary<string, PendingBatch> pendingBatches = new(StringComparer.Ordinal);
+        private Dictionary<string, int> unreleased = new(StringComparer.Ordinal);
+        private Dictionary<string, WaitingLot> waitingLots = new(StringComparer.Ordinal);
 
         public Simulation(PlantModel model, DateTimeOffset end)
         {
@@ -283,6 +328,8 @@ public static class PlantEngine
             // Intermediates are consumed by a fed line, never ordered by customers.
             var intermediates = model.Lines.SelectMany(l => l.Batch?.Feeds?.Consumption ?? []).Select(c => c.Intermediate).ToHashSet(StringComparer.Ordinal);
             orderable = intermediates.Count == 0 ? model.Skus : model.Skus.Where(s => !intermediates.Contains(s.Code)).ToList();
+            gated = model.Quality?.GatesBatches == true;
+            batchPlant = model.Lines.Any(l => l.Batch is not null);
         }
 
         private Simulation(PlantModel model, DateTimeOffset end, DateTimeOffset at, PlantRunBase runBase) : this(model, end)
@@ -303,7 +350,8 @@ public static class PlantEngine
                 state.PreventiveNextDue.Length != model.Maintenance.Preventive.Count || state.Technicians.Count != model.Technicians.Count ||
                 (state.Certificates is null) != (model.Maintenance.Certification is null) ||
                 (state.IntermediateStock is null) != model.Lines.All(l => l.Batch?.Feeds is null) ||
-                state.Lines.Any(l => l.CurrentBatch is not null && model.Lines.FirstOrDefault(m => m.Id == l.Id)?.Batch is null))
+                state.Lines.Any(l => l.CurrentBatch is not null && model.Lines.FirstOrDefault(m => m.Id == l.Id)?.Batch is null) ||
+                (state.DriftEnded is null) != (model.Drifts.Count == 0) || (state.PendingBatches is null) != (model.Quality?.GatesBatches != true))
                 throw new PlantSnapshotException("The snapshot does not match this plant model.");
 
             var runBase = new PlantRunBase(state.Lines.ToDictionary(l => l.Id, l => l.GoodTotal, StringComparer.Ordinal),
@@ -351,6 +399,10 @@ public static class PlantEngine
                 line.RejectTotal = dto.RejectTotal;
                 line.CurrentBatch = dto.CurrentBatch;
                 line.SegmentBatch = dto.SegmentBatch;
+                line.TemperatureC = dto.TemperatureC;
+                line.Deviation = dto.Deviation;
+                line.SegmentDeviation = dto.SegmentDeviation;
+                line.SegmentShift = dto.SegmentShift;
             }
             foreach (var (technician, dto) in technicians.Zip(state.Technicians))
             {
@@ -364,6 +416,13 @@ public static class PlantEngine
                 intermediateStock = new Dictionary<string, List<StockBatch>>(state.IntermediateStock, StringComparer.Ordinal);
                 intermediateIncoming = new Dictionary<string, double>(state.IntermediateIncoming!, StringComparer.Ordinal);
             }
+            if (state.DriftEnded is not null) driftEnded = new Dictionary<int, DateTimeOffset>(state.DriftEnded);
+            if (state.PendingBatches is not null)
+            {
+                pendingBatches = state.PendingBatches.ToDictionary(b => b.Id, StringComparer.Ordinal);
+                unreleased = new Dictionary<string, int>(state.Unreleased!, StringComparer.Ordinal);
+                waitingLots = new Dictionary<string, WaitingLot>(state.WaitingLots!, StringComparer.Ordinal);
+            }
             foreach (var failure in state.Failures) failures.Add((failure.Number, failure.Failure));
             foreach (var pending in state.Events) events.Enqueue(pending.Event, (pending.Ticks, pending.Priority, pending.Order));
         }
@@ -376,7 +435,8 @@ public static class PlantEngine
                 new Dictionary<string, int>(counters, StringComparer.Ordinal),
                 lines.Values.Select(l => new LineDto(l.Line.Id, l.State, l.StateStart, l.Sku, l.Reason, l.Unit, l.Current, l.Queue,
                     l.Version, l.RunningSince, l.Rate, l.Reject, l.HoursToFailure, l.HoursToMinorStop, l.PlantedFailures.ToList(),
-                    l.PendingPreventive?.Id, l.ChangeoverDowntime, l.GoodTotal, l.RejectTotal, l.CurrentBatch, l.SegmentBatch)).ToList(),
+                    l.PendingPreventive?.Id, l.ChangeoverDowntime, l.GoodTotal, l.RejectTotal, l.CurrentBatch, l.SegmentBatch,
+                    l.TemperatureC, l.Deviation, l.SegmentDeviation, l.SegmentShift)).ToList(),
                 technicians.Select(t => new TechnicianDto(t.Person.Id, t.Busy, t.Completed)).ToList(),
                 openTickets,
                 // Failures repaired before the snapshot no longer affect any signal
@@ -386,8 +446,12 @@ public static class PlantEngine
                 events.UnorderedItems.Select(e => new EventDto(e.Priority.Ticks, e.Priority.Priority, e.Priority.Order, e.Element))
                     .OrderBy(e => e.Ticks).ThenBy(e => e.Priority).ThenBy(e => e.Order).ToList(),
                 certification is null ? null : new Dictionary<string, CertificateDto>(certificates, StringComparer.Ordinal),
-                feeds ? intermediateStock.ToDictionary(p => p.Key, p => p.Value.Select(b => new StockBatch { Id = b.Id, Remaining = b.Remaining }).ToList(), StringComparer.Ordinal) : null,
-                feeds ? new Dictionary<string, double>(intermediateIncoming, StringComparer.Ordinal) : null);
+                feeds ? intermediateStock.ToDictionary(p => p.Key, p => p.Value.Select(b => new StockBatch { Id = b.Id, Remaining = b.Remaining, Shift = b.Shift }).ToList(), StringComparer.Ordinal) : null,
+                feeds ? new Dictionary<string, double>(intermediateIncoming, StringComparer.Ordinal) : null,
+                model.Drifts.Count == 0 ? null : new Dictionary<int, DateTimeOffset>(driftEnded),
+                gated ? pendingBatches.Values.OrderBy(b => b.Id, StringComparer.Ordinal).ToList() : null,
+                gated ? new Dictionary<string, int>(unreleased, StringComparer.Ordinal) : null,
+                gated ? new Dictionary<string, WaitingLot>(waitingLots, StringComparer.Ordinal) : null);
             return new PlantSnapshot(EngineVersion, at, changeSequence, JsonSerializer.Serialize(state, SnapshotJson));
         }
 
@@ -489,6 +553,17 @@ public static class PlantEngine
                     if (line.Version == e.Version) StartRunning(line);
                     break;
                 }
+                case Kind.BatchLabResult: BatchLabResult(e.Id!, e.Ref!); break;
+                case Kind.BatchHoldRelease:
+                {
+                    Record("qualityholds", e.Id!, "update", new() { ["released_utc"] = now, ["disposition"] = "Released after investigation and retest" });
+                    var batch = pendingBatches[e.Ref!];
+                    batch.LabPending = false;
+                    if (batch.DeviationOpen) Record("batches", batch.Id, "update", new() { ["status"] = "Quarantine" });
+                    TryReleaseBatch(batch);
+                    break;
+                }
+                case Kind.DeviationClose: CloseDeviation(e.Id!, e.Ref!); break;
                 default: throw new InvalidOperationException("Unknown plant event.");
             }
         }
@@ -549,6 +624,8 @@ public static class PlantEngine
                 foreach (var skill in person.Skills)
                     Record("certifications", person.Id + "." + skill, "insert", new() { ["certification_id"] = person.Id + "." + skill, ["employee_id"] = person.Id, ["skill"] = skill });
             }
+            foreach (var person in model.QualityStaff)
+                Record("employees", person.Id, "insert", new() { ["employee_id"] = person.Id, ["employee_name"] = person.Name, ["role"] = "QA", ["shift_name"] = person.Shift, ["line_id"] = null });
             foreach (var part in model.Parts)
                 Record("parts", part.Id, "insert", new() { ["part_id"] = part.Id, ["description"] = part.Description, ["unit_cost"] = part.UnitCost });
             foreach (var parameter in model.Quality?.Parameters ?? [])
@@ -576,6 +653,7 @@ public static class PlantEngine
                         levelPercent = new { start = phase.LevelPercent.Start, end = phase.LevelPercent.End }
                     });
                     Record("recipephases", key, "insert", new() { ["recipe_phase_id"] = key, ["recipe_id"] = recipe.Id, ["sequence"] = i + 1, ["phase"] = phase.Name, ["minutes_min"] = phase.Minutes.Minimum, ["minutes_max"] = phase.Minutes.Maximum, ["setpoints_json"] = setpoints });
+                    Record("goldenprofiles", key, "insert", new() { ["profile_id"] = key, ["recipe_id"] = recipe.Id, ["sequence"] = i + 1, ["phase"] = phase.Name, ["golden_minutes"] = recipe.Golden.PhaseMinutes[i], ["setpoints_json"] = setpoints, ["golden_yield_percent"] = recipe.Golden.YieldTarget });
                 }
             }
         }
@@ -757,10 +835,19 @@ public static class PlantEngine
         {
             double need = Need(order, use);
             var stock = intermediateStock[use.Intermediate];
+            Dictionary<string, double>? shift = null;
+            double total = 0;
             while (need > 1e-6 && stock.Count > 0)
             {
                 var batch = stock[0];
                 double quantity = Math.Round(Math.Min(batch.Remaining, need), 3);
+                // The product inherits each batch's quality in proportion to what it took.
+                total += quantity;
+                foreach (var (parameter, value) in batch.Shift ?? [])
+                {
+                    shift ??= new Dictionary<string, double>(StringComparer.Ordinal);
+                    shift[parameter] = shift.GetValueOrDefault(parameter) + value * quantity;
+                }
                 string id = NextId("BC");
                 Record("batchconsumption", id, "insert", new() { ["consumption_id"] = id, ["batch_id"] = batch.Id, ["production_order"] = order.Id, ["quantity"] = quantity, ["consumed_utc"] = now });
                 batch.Remaining = Math.Round(batch.Remaining - quantity, 3);
@@ -771,6 +858,8 @@ public static class PlantEngine
                     Record("batches", batch.Id, "update", new() { ["status"] = "Consumed" });
                 }
             }
+            if (shift is not null && total > 0)
+                order.QualityShift = shift.ToDictionary(p => p.Key, p => Math.Round(p.Value / total, 4), StringComparer.Ordinal);
         }
 
         // ---------------- line states ----------------
@@ -787,9 +876,15 @@ public static class PlantEngine
             {
                 var phase = line.Line.Batch!.Recipes.First(r => r.Id == batch.Recipe).Phases[batch.Phase];
                 double progress = 1 - (double)batch.Remaining / batch.Planned[batch.Phase];
-                line.SegmentBatch = new PlantBatchSegment(batch.Id, batch.Recipe, batch.Phase + 1, phase.Name, batch.Planned[batch.Phase], progress, progress);
+                line.SegmentBatch = new PlantBatchSegment(batch.Id, batch.Recipe, batch.Phase + 1, phase.Name, batch.Planned[batch.Phase], progress, progress)
+                {
+                    LagC = batch.Lag.Length > batch.Phase ? batch.Lag[batch.Phase] : 0,
+                    StartC = line.TemperatureC
+                };
             }
             else line.SegmentBatch = null;
+            line.SegmentDeviation = line.Line.Batch is null ? null : line.Deviation;
+            line.SegmentShift = line.Current?.QualityShift;
         }
 
         private void CloseSegment(LineRuntime line)
@@ -802,9 +897,16 @@ public static class PlantEngine
                 // A batch phase advances only while running; a Down interval holds it where it stopped.
                 Batch = line.SegmentBatch is { } phase
                     ? phase with { To = running ? Math.Min(1, phase.From + (now - line.StateStart).TotalSeconds / phase.PlannedSeconds) : phase.From }
-                    : null
+                    : null,
+                Deviation = line.SegmentDeviation,
+                QualityShift = line.SegmentShift
             };
             segments.Add(segment);
+            if (line.Line.Batch is { } unit)
+                // Where the process temperature ended up, so the next segment starts from it (cooling while Down, reheating after).
+                line.TemperatureC = segment.Batch is { } b
+                    ? PlantBatchThermal.Temperature(unit.Recipes.First(r => r.Id == b.Recipe).Phases[b.Sequence - 1], b, segment.State, (segment.End - segment.Start).TotalMinutes, b.To)
+                    : PlantBatchThermal.AmbientC;
             // The same arithmetic, in the same order, as PlantSignals' cumulative
             // counts, so a resumed run's base totals are bit-identical.
             double gross = segment.CasesPerMinute * (segment.End - segment.Start).TotalMinutes;
@@ -968,11 +1070,59 @@ public static class PlantEngine
             var recipe = unit.RecipeFor(order.Sku);
             string id = NextId("BATCH");
             var random = new PlantRandom(model.Seed, "batch:" + id);
-            var planned = recipe.Phases.Select(p => Math.Max(60, (int)Math.Round(random.Uniform(p.Minutes) * 60))).ToArray();
+            var (factors, lags, yieldDelta) = DriftEffects(line.Line.Id, recipe);
+            var planned = recipe.Phases.Select((p, i) => Math.Max(60, (int)Math.Round(random.Uniform(p.Minutes) * 60 * factors[i]))).ToArray();
+            double yield = Math.Round(Math.Clamp(recipe.Golden.YieldTarget + yieldDelta + recipe.Golden.YieldSigma * random.Gaussian(), 0, 100), 2);
             double size = Math.Round(Math.Min(unit.Capacity, order.GoodTarget - order.Good), 3);
-            line.CurrentBatch = new BatchState { Id = id, Recipe = recipe.Id, Size = size, Planned = planned, Phase = 0, PhaseStart = now, Remaining = planned[0] };
-            Record("batches", id, "insert", new() { ["batch_id"] = id, ["production_order"] = order.Id, ["recipe_id"] = recipe.Id, ["line_id"] = line.Line.Id, ["start_utc"] = now, ["end_utc"] = null, ["size"] = size, ["status"] = "Running" });
+            line.CurrentBatch = new BatchState { Id = id, Recipe = recipe.Id, Size = size, Planned = planned, Phase = 0, PhaseStart = now, Remaining = planned[0], Lag = lags, Yield = yield };
+            Record("batches", id, "insert", new() { ["batch_id"] = id, ["production_order"] = order.Id, ["recipe_id"] = recipe.Id, ["line_id"] = line.Line.Id, ["start_utc"] = now, ["end_utc"] = null, ["size"] = size, ["status"] = "Running", ["yield_percent"] = null, ["deviation_score"] = null, ["golden"] = null, ["released_utc"] = null });
             BeginPhaseRecord(line.CurrentBatch, recipe);
+        }
+
+        /// <summary>
+        /// The drifts acting on a batch of this recipe starting now: per phase, the
+        /// running-time factor and temperature lag; and the yield change. Each drift
+        /// counts at its current strength (0 before from and after it ended, ramping
+        /// linearly to 1 over rampDays).
+        /// </summary>
+        private (double[] Factors, double[] Lags, double YieldDelta) DriftEffects(string lineId, PlantRecipe recipe)
+        {
+            var factors = Enumerable.Repeat(1.0, recipe.Phases.Count).ToArray();
+            var lags = new double[recipe.Phases.Count];
+            double yieldDelta = 0;
+            for (int i = 0; i < model.Drifts.Count; i++)
+            {
+                var drift = model.Drifts[i];
+                int phase = recipe.Phases.ToList().FindIndex(p => p.Name == drift.Phase);
+                if (drift.Line != lineId || (drift.Recipe is not null && drift.Recipe != recipe.Id) || phase < 0) continue;
+                double strength = DriftStrength(i);
+                if (strength <= 0) continue;
+                factors[phase] *= 1 + (drift.PhaseMinutesFactor - 1) * strength;
+                lags[phase] = Math.Round(lags[phase] + drift.TemperatureLagC * strength, 3);
+                yieldDelta += drift.YieldDelta * strength;
+            }
+            return (factors, lags, yieldDelta);
+        }
+
+        private double DriftStrength(int index)
+        {
+            var drift = model.Drifts[index];
+            if (now < drift.FromUtc || (drift.UntilUtc is { } until && now >= until) || driftEnded.ContainsKey(index)) return 0;
+            return drift.RampDays <= 0 ? 1 : Math.Min(1, (now - drift.FromUtc).TotalDays / drift.RampDays);
+        }
+
+        /// <summary>
+        /// How far one phase ran from the golden profile: its running minutes away from
+        /// the golden minutes, in half-widths of the phase's normal range (so 1 is the
+        /// edge of normal), or its temperature lag in units of LagScaleC, whichever is larger.
+        /// </summary>
+        private static double PhaseScore(PlantRecipe recipe, BatchState batch, int phase)
+        {
+            var range = recipe.Phases[phase].Minutes;
+            double half = Math.Max(0.5, (range.Maximum - range.Minimum) / 2);
+            double minutes = Math.Abs(batch.Planned[phase] / 60.0 - recipe.Golden.PhaseMinutes[phase]) / half;
+            double lag = batch.Lag.Length > phase ? batch.Lag[phase] / PlantBatchThermal.LagScaleC : 0;
+            return Math.Max(minutes, lag);
         }
 
         private void BeginPhaseRecord(BatchState batch, PlantRecipe recipe)
@@ -993,6 +1143,8 @@ public static class PlantEngine
             var recipe = unit.Recipes.First(r => r.Id == batch.Recipe);
             string key = FormattableString.Invariant($"{batch.Id}-{batch.Phase + 1:00}");
             Record("batchphases", key, "update", new() { ["end_utc"] = now, ["actual_minutes"] = Math.Round((now - batch.PhaseStart).TotalMinutes, 2), ["interrupted"] = batch.Interrupted });
+            batch.Deviation = Math.Max(batch.Deviation, PhaseScore(recipe, batch, batch.Phase));
+            line.Deviation = Math.Round(batch.Deviation, 3);
             if (batch.Phase + 1 < recipe.Phases.Count)
             {
                 batch.Phase++;
@@ -1004,15 +1156,41 @@ public static class PlantEngine
                 return;
             }
             var order = line.Current!;
-            Record("batches", batch.Id, "update", new() { ["end_utc"] = now, ["status"] = "Released" });
+            double score = Math.Round(batch.Deviation, 3);
+            bool golden = score <= unit.GoldenThreshold;
+            // With batch release testing the batch waits in quarantine for its lab
+            // result (and, off golden under GxP, for its deviation to close).
+            bool deviation = gated && !golden && model.Quality!.Deviations is not null;
+            Record("batches", batch.Id, "update", new()
+            {
+                ["end_utc"] = now, ["status"] = gated ? "Quarantine" : "Released", ["yield_percent"] = batch.Yield,
+                ["deviation_score"] = score, ["golden"] = golden, ["released_utc"] = gated ? null : now
+            });
             order.Good = Math.Round(order.Good + batch.Size, 3);
             line.CurrentBatch = null;
             LineRuntime? fed = null;
-            if (unit.Feeds is { } f && f.Consumption.Any(c => c.Intermediate == order.Sku))
+            bool intermediate = unit.Feeds is { } f && f.Consumption.Any(c => c.Intermediate == order.Sku);
+            var shift = BatchShift(recipe, batch.Yield);
+            if (!gated)
             {
-                intermediateStock[order.Sku].Add(new StockBatch { Id = batch.Id, Remaining = batch.Size });
-                intermediateIncoming[order.Sku] = Math.Round(intermediateIncoming[order.Sku] - batch.Size, 3);
-                fed = lines[f.Line];
+                if (intermediate)
+                {
+                    intermediateStock[order.Sku].Add(new StockBatch { Id = batch.Id, Remaining = batch.Size, Shift = shift });
+                    intermediateIncoming[order.Sku] = Math.Round(intermediateIncoming[order.Sku] - batch.Size, 3);
+                    fed = lines[unit.Feeds!.Line];
+                }
+            }
+            else
+            {
+                var pending = new PendingBatch
+                {
+                    Id = batch.Id, Order = order.Id, Line = line.Line.Id, Sku = order.Sku, Recipe = recipe.Id, Size = batch.Size, Yield = batch.Yield,
+                    Intermediate = intermediate, Shift = shift, LabPending = true, DeviationOpen = deviation
+                };
+                pendingBatches[batch.Id] = pending;
+                if (!intermediate) unreleased[order.Id] = unreleased.GetValueOrDefault(order.Id) + 1;
+                SampleBatch(pending);
+                if (deviation) OpenDeviation(pending, recipe, batch, score);
             }
             if (order.Good >= order.GoodTarget - 1e-6) CompleteOrder(line);
             else RunBatch(line, unit);
@@ -1106,6 +1284,11 @@ public static class PlantEngine
         /// </summary>
         private void CreateLot(LineRuntime line, ProductionOrder order, long cases)
         {
+            if (gated && line.Line.Batch is not null)
+            {
+                CreateBatchLot(line, order, cases);
+                return;
+            }
             string lot = NextId("LOT");
             Record("lots", lot, "insert", new()
             {
@@ -1119,7 +1302,9 @@ public static class PlantEngine
                 return;
             }
             string sample = NextId("QS");
-            Record("qualitysamples", sample, "insert", new() { ["sample_id"] = sample, ["lot_id"] = lot, ["line_id"] = line.Line.Id, ["sku"] = order.Sku, ["sampled_utc"] = now, ["result_utc"] = null, ["status"] = "Pending", ["passed"] = null });
+            var columns = new Dictionary<string, object?> { ["sample_id"] = sample, ["lot_id"] = lot, ["line_id"] = line.Line.Id, ["sku"] = order.Sku, ["sampled_utc"] = now, ["result_utc"] = null, ["status"] = "Pending", ["passed"] = null };
+            if (batchPlant) columns["batch_id"] = null; // batch plants' sample table also names batches
+            Record("qualitysamples", sample, "insert", columns);
             var random = new PlantRandom(model.Seed, "lab:" + sample);
             At(now.AddMinutes(random.Uniform(quality.LabMinutes)), StatePriority,
                 new Event(Kind.LabResult, Line: line.Line.Id, Id: sample, Ref: lot, Number: cases, Time: now, Order: order.Ref()));
@@ -1135,7 +1320,7 @@ public static class PlantEngine
             foreach (var parameter in quality.Parameters)
             {
                 // The lab measures the product as it was made: the analyzer value at the sample time.
-                double value = PlantQualityValues.Value(model, parameter, lineId, order.Sku, produced);
+                double value = PlantQualityValues.Value(model, parameter, lineId, order.Sku, produced, order.QualityShift?.GetValueOrDefault(parameter.Name) ?? 0);
                 bool ok = PlantQualityValues.InSpec(parameter, value);
                 if (!ok) failed.Add(FormattableString.Invariant($"{parameter.Name} {value} {(value > parameter.Upper ? "above" : "below")} {(value > parameter.Upper ? parameter.Upper : parameter.Lower)}"));
                 string result = NextId("QR");
@@ -1149,9 +1334,143 @@ public static class PlantEngine
                 return;
             }
             string hold = NextId("QH");
-            Record("qualityholds", hold, "insert", new() { ["hold_id"] = hold, ["lot_id"] = lot, ["sample_id"] = sample, ["reason"] = string.Join("; ", failed), ["created_utc"] = now, ["released_utc"] = null, ["disposition"] = null });
+            var columns = new Dictionary<string, object?> { ["hold_id"] = hold, ["lot_id"] = lot, ["sample_id"] = sample, ["reason"] = string.Join("; ", failed), ["created_utc"] = now, ["released_utc"] = null, ["disposition"] = null };
+            if (batchPlant) columns["batch_id"] = null;
+            Record("qualityholds", hold, "insert", columns);
             Record("lots", lot, "update", new() { ["status"] = "On Hold" });
             At(now.AddMinutes(random.Uniform(quality.HoldMinutes)), StatePriority, new Event(Kind.HoldRelease, Id: hold, Ref: lot, Number: cases, Order: order));
+        }
+
+        // ---------------- batch release: lab results, holds and deviations ----------------
+
+        /// <summary>
+        /// What a batch's yield does to its quality: for each release test with a
+        /// yield sensitivity, the shift from the parameter's usual value. Fed lines
+        /// inherit it. Null when no release test depends on yield.
+        /// </summary>
+        private Dictionary<string, double>? BatchShift(PlantRecipe recipe, double yield)
+        {
+            Dictionary<string, double>? shift = null;
+            foreach (var test in model.Quality?.BatchRelease?.Parameters ?? [])
+                if (test.YieldSensitivity != 0)
+                    (shift ??= new(StringComparer.Ordinal))[test.Parameter] = Math.Round(test.YieldSensitivity * (yield - recipe.Golden.YieldTarget), 4);
+            return shift;
+        }
+
+        private void SampleBatch(PendingBatch batch)
+        {
+            string sample = NextId("QS");
+            Record("qualitysamples", sample, "insert", new() { ["sample_id"] = sample, ["lot_id"] = null, ["batch_id"] = batch.Id, ["line_id"] = batch.Line, ["sku"] = batch.Sku, ["sampled_utc"] = now, ["result_utc"] = null, ["status"] = "Pending", ["passed"] = null });
+            var random = new PlantRandom(model.Seed, "lab:" + sample);
+            At(now.AddMinutes(random.Uniform(model.Quality!.BatchRelease!.LabMinutes)), StatePriority, new Event(Kind.BatchLabResult, Line: batch.Line, Id: sample, Ref: batch.Id));
+        }
+
+        /// <summary>
+        /// A batch's release results: each tested parameter at its usual value for the
+        /// SKU, moved by the batch's yield shift, plus the sample's own noise, judged
+        /// against the release limits. A failure holds the batch for investigation.
+        /// </summary>
+        private void BatchLabResult(string sample, string batchId)
+        {
+            var quality = model.Quality!;
+            var batch = pendingBatches[batchId];
+            var random = new PlantRandom(model.Seed, "lab:" + sample);
+            random.Uniform(quality.BatchRelease!.LabMinutes);
+            var failed = new List<string>();
+            foreach (var test in quality.BatchRelease.Parameters)
+            {
+                var parameter = quality.Parameters.First(p => p.Name == test.Parameter);
+                double lower = test.Lower ?? parameter.Lower, upper = test.Upper ?? parameter.Upper;
+                double value = Math.Round(parameter.Target + parameter.SkuOffsets.GetValueOrDefault(batch.Sku) + (batch.Shift?.GetValueOrDefault(test.Parameter) ?? 0) +
+                    parameter.Sigma * PlantRandom.Noise(model.Seed, $"batchlab:{batch.Id}:{test.Parameter}", 0), 3);
+                bool ok = value >= lower && value <= upper;
+                if (!ok) failed.Add(FormattableString.Invariant($"{parameter.Name} {value} {(value > upper ? "above" : "below")} {(value > upper ? upper : lower)}"));
+                string result = NextId("QR");
+                Record("qualityresults", result, "insert", new() { ["result_id"] = result, ["sample_id"] = sample, ["parameter"] = parameter.Name, ["value"] = value, ["unit"] = parameter.Unit, ["lower_limit"] = lower, ["upper_limit"] = upper, ["in_spec"] = ok, ["result_utc"] = now });
+            }
+            Record("qualitysamples", sample, "update", new() { ["result_utc"] = now, ["status"] = "Complete", ["passed"] = failed.Count == 0 });
+            if (failed.Count == 0)
+            {
+                batch.LabPending = false;
+                TryReleaseBatch(batch);
+                return;
+            }
+            string hold = NextId("QH");
+            Record("qualityholds", hold, "insert", new() { ["hold_id"] = hold, ["lot_id"] = null, ["batch_id"] = batch.Id, ["sample_id"] = sample, ["reason"] = string.Join("; ", failed), ["created_utc"] = now, ["released_utc"] = null, ["disposition"] = null });
+            Record("batches", batch.Id, "update", new() { ["status"] = "On Hold" });
+            At(now.AddMinutes(random.Uniform(quality.HoldMinutes)), StatePriority, new Event(Kind.BatchHoldRelease, Id: hold, Ref: batch.Id));
+        }
+
+        /// <summary>A batch off the golden profile gets a deviation naming its worst phase; a QA person closes it later.</summary>
+        private void OpenDeviation(PendingBatch pending, PlantRecipe recipe, BatchState batch, double score)
+        {
+            int worst = Enumerable.Range(0, recipe.Phases.Count).OrderByDescending(i => PhaseScore(recipe, batch, i)).ThenBy(i => i).First();
+            var phase = recipe.Phases[worst];
+            double minutes = batch.Planned[worst] / 60.0, lag = batch.Lag.Length > worst ? batch.Lag[worst] : 0;
+            string description = lag / PlantBatchThermal.LagScaleC > Math.Abs(minutes - recipe.Golden.PhaseMinutes[worst]) / Math.Max(0.5, (phase.Minutes.Maximum - phase.Minutes.Minimum) / 2)
+                ? FormattableString.Invariant($"{phase.Name} temperature trailed the setpoint by up to {lag:0.#} °C; deviation score {score:0.00} against the golden profile")
+                : FormattableString.Invariant($"{phase.Name} ran {minutes:0.#} min against a golden {recipe.Golden.PhaseMinutes[worst]:0.#} min (normal {phase.Minutes.Minimum:0.#}–{phase.Minutes.Maximum:0.#}); deviation score {score:0.00}");
+            string id = NextId("DEV");
+            Record("deviations", id, "insert", new() { ["deviation_id"] = id, ["batch_id"] = pending.Id, ["phase"] = phase.Name, ["description"] = description, ["opened_utc"] = now, ["closed_utc"] = null, ["qa_approver_id"] = null });
+            var random = new PlantRandom(model.Seed, "deviation:" + id);
+            At(now.AddHours(random.Uniform(model.Quality!.Deviations!.CloseHours)), StatePriority, new Event(Kind.DeviationClose, Id: id, Ref: pending.Id));
+        }
+
+        /// <summary>QA closes the deviation: the QA person on shift approves it (the first QA person when none is).</summary>
+        private void CloseDeviation(string deviation, string batchId)
+        {
+            var shift = ShiftAt(now).Name;
+            var approver = model.QualityStaff.FirstOrDefault(q => q.Shift == shift) ?? model.QualityStaff[0];
+            Record("deviations", deviation, "update", new() { ["closed_utc"] = now, ["qa_approver_id"] = approver.Id });
+            var batch = pendingBatches[batchId];
+            batch.DeviationOpen = false;
+            TryReleaseBatch(batch);
+        }
+
+        /// <summary>
+        /// Releases a quarantined batch once its results passed (or its hold was
+        /// released) and its deviation, if any, is closed. An intermediate goes into
+        /// stock for the fed line; a direct-sale batch may complete its lot's release.
+        /// </summary>
+        private void TryReleaseBatch(PendingBatch batch)
+        {
+            if (batch.LabPending || batch.DeviationOpen) return;
+            pendingBatches.Remove(batch.Id);
+            Record("batches", batch.Id, "update", new() { ["status"] = "Released", ["released_utc"] = now });
+            if (batch.Intermediate)
+            {
+                intermediateStock[batch.Sku].Add(new StockBatch { Id = batch.Id, Remaining = batch.Size, Shift = batch.Shift });
+                intermediateIncoming[batch.Sku] = Math.Round(intermediateIncoming[batch.Sku] - batch.Size, 3);
+                var fed = lines[lines[batch.Line].Line.Batch!.Feeds!.Line];
+                if (fed.State == "Idle") Dispatch(fed);
+                return;
+            }
+            int left = unreleased[batch.Order] - 1;
+            if (left > 0) { unreleased[batch.Order] = left; return; }
+            unreleased.Remove(batch.Order);
+            if (waitingLots.Remove(batch.Order, out var waiting))
+            {
+                Record("lots", waiting.Lot, "update", new() { ["status"] = "Released", ["released_utc"] = now });
+                Release(waiting.Lot, waiting.Order, waiting.Cases);
+            }
+        }
+
+        /// <summary>
+        /// A batch-unit order's lot: its batches were tested one by one, so the lot
+        /// has no sample of its own and is released when its last batch is.
+        /// </summary>
+        private void CreateBatchLot(LineRuntime line, ProductionOrder order, long cases)
+        {
+            string lot = NextId("LOT");
+            bool ready = unreleased.GetValueOrDefault(order.Id) == 0;
+            Record("lots", lot, "insert", new()
+            {
+                ["lot_id"] = lot, ["production_order"] = order.Id, ["sales_order"] = order.SalesOrder!, ["sku"] = order.Sku,
+                ["line_id"] = line.Line.Id, ["cases"] = cases, ["produced_utc"] = now,
+                ["status"] = ready ? "Released" : "Quarantine", ["released_utc"] = ready ? now : null, ["shipped_utc"] = null
+            });
+            if (ready) Release(lot, order.Ref(), cases);
+            else waitingLots[order.Id] = new WaitingLot(lot, order.Ref(), cases);
         }
 
         /// <summary>A released lot goes into stock and ships on the next truck for its sales order.</summary>
@@ -1336,6 +1655,9 @@ public static class PlantEngine
             }
             else
             {
+                // A cleaning PM ends the drifts tied to it (the first completion after each drift began).
+                for (int i = 0; i < model.Drifts.Count; i++)
+                    if (model.Drifts[i].EndsWith == ticket.Code && now >= model.Drifts[i].FromUtc && !driftEnded.ContainsKey(i)) driftEnded[i] = now;
                 line.PendingPreventive = null;
                 SetState(line, "Idle");
                 Dispatch(line);

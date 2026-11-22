@@ -14,7 +14,7 @@ public class PlantStorylineTests
     private static readonly DateTimeOffset Anchor = DateTimeOffset.Parse("2026-11-21T18:00:00Z");
     private static readonly string Root = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "examples", "storylines");
 
-    private static PlantStorylineLibrary Library()
+    internal static PlantStorylineLibrary Library()
     {
         var result = PlantStorylines.Load(File.ReadAllText(Path.Combine(Root, "storylines.json")));
         Assert.True(result.IsValid, JsonSerializer.Serialize(result.Errors));
@@ -23,7 +23,7 @@ public class PlantStorylineTests
 
     private static string BaseJson(string id) => File.ReadAllText(Path.Combine(Root, "bases", id + ".json"));
 
-    private static PlantModel Build(params string[] ids)
+    internal static PlantModel Build(params string[] ids)
     {
         var library = Library();
         var storylines = ids.Select(id => library.Find(id)!).ToList();
@@ -46,8 +46,8 @@ public class PlantStorylineTests
     {
         var library = Library();
         Assert.Equal(15, library.Storylines.Count);
-        Assert.Equal(5, library.Storylines.Count(s => s.Engine == "available"));
-        Assert.Equal(3, library.Storylines.Count(s => s.Engine == "planned"));
+        Assert.Equal(8, library.Storylines.Count(s => s.Engine == "available"));
+        Assert.Equal(0, library.Storylines.Count(s => s.Engine == "planned"));
         Assert.Equal(7, library.Storylines.Count(s => s.Engine == "later"));
         // Every storyline the engine cannot build yet names what to offer instead (two have no fit).
         Assert.Equal(2, library.Storylines.Count(s => !s.Available && s.Closest is null));
@@ -144,6 +144,31 @@ public class PlantStorylineTests
         Assert.True(Rate(uncertified) > 3 * Rate(tables["operatorcompliance"].Where(c => c["certified"] is true)));
     }
 
+    /// <summary>The three golden-batch storylines compose on their batch bases and carry their drifts (and 5a its cleaning PM).</summary>
+    [Theory]
+    [InlineData("golden-batch-reactor-drift", "chemicals-batch", "Heat", 1)]
+    [InlineData("golden-batch-syrup-holds", "beverage-syrup-batch", "Dissolve", 2)]
+    [InlineData("golden-batch-pharma-deviation", "pharma-batch", "WetGranulate", 1)]
+    public void GoldenBatchStorylinesComposeWithTheirDrifts(string id, string baseId, string phase, int drifts)
+    {
+        Assert.Equal(baseId, Library().Find(id)!.Base);
+        var model = Build(id);
+        Assert.Equal(drifts, model.Drifts.Count);
+        Assert.Contains(model.Drifts, d => d.Phase == phase && d.FromUtc < Anchor && d.Cause.Length > 0);
+        Assert.All(model.Drifts, d => Assert.NotNull(model.Lines.Single(l => l.Id == d.Line).Batch));
+        Assert.True(model.StartUtc < model.Drifts.Min(d => d.FromUtc).AddDays(-1), "the history starts on golden batches before the drift");
+        if (id == "golden-batch-reactor-drift")
+        {
+            Assert.Equal("PM-JK101-CLEAN", model.Drifts[0].EndsWith);
+            Assert.Equal(3, model.Maintenance.Preventive.Count); // the base's PMs plus the storyline's cleaning PM
+        }
+        if (id == "golden-batch-pharma-deviation")
+        {
+            Assert.NotNull(model.Quality!.Deviations);
+            Assert.Equal(2, model.QualityStaff.Count);
+        }
+    }
+
     [Fact]
     public void AvailableStorylinesCombineOnTheSameBase()
     {
@@ -181,8 +206,8 @@ public class PlantStorylineTests
     public void UnavailableOrMismatchedStorylinesAreRefused()
     {
         var library = Library();
-        var planned = library.Storylines.First(s => s.Engine == "planned");
-        var result = PlantStorylines.Compose("beverage-2-line", BaseJson("beverage-2-line"), [planned]);
+        var later = library.Storylines.First(s => s.Engine == "later");
+        var result = PlantStorylines.Compose("beverage-2-line", BaseJson("beverage-2-line"), [later]);
         Assert.Equal("storyline.not_available", Assert.Single(result.Errors).Code);
         var wrongBase = PlantStorylines.Compose("chemicals-batch", BaseJson("beverage-2-line"), [library.Find("labeler-jams-late-orders")!]);
         Assert.Equal("storyline.wrong_base", Assert.Single(wrongBase.Errors).Code);

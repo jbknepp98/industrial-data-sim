@@ -510,14 +510,94 @@
         "LIMS results",
         "reactor tags"
       ],
-      "engine": "planned",
+      "engine": "available",
       "requires": [
         "batch"
       ],
-      "closest": "quality-hold-traced",
-      "base": null,
-      "fragment": null,
-      "talkTrack": []
+      "closest": null,
+      "base": "chemicals-batch",
+      "fragment": {
+        "timeline": {
+          "backfill": "14d"
+        },
+        "maintenance": {
+          "preventive": [
+            {
+              "code": "PM-JK101-CLEAN",
+              "line": "R1",
+              "equipment": "JK-101",
+              "description": "Reactor 101 heating jacket descale and clean",
+              "everyDays": 11,
+              "startHour": 13,
+              "durationMinutes": 240,
+              "skill": "mechanical"
+            }
+          ]
+        },
+        "drifts": [
+          {
+            "line": "R1",
+            "phase": "Heat",
+            "cause": "Heating jacket fouling: scale builds up on JK-101",
+            "from": "-9d",
+            "rampDays": 4,
+            "endsWith": "PM-JK101-CLEAN",
+            "effect": {
+              "phaseMinutesFactor": 1.35,
+              "temperatureLagC": 12,
+              "yieldDelta": -4
+            }
+          }
+        ]
+      },
+      "talkTrack": [
+        {
+          "tool": "Explorer",
+          "tags": [
+            "{TagRoot}.R1.Temperature",
+            "{TagRoot}.R1.Phase"
+          ],
+          "tables": [],
+          "ask": "Overlay Temperature for a golden batch from about two weeks ago and a drifted batch from last week, aligned at the start of Heat.",
+          "expect": "The drifted batch heats more slowly: it trails the setpoint by up to about 12 °C mid-Heat and reaches reaction temperature 20–30 minutes later."
+        },
+        {
+          "tool": "Connect",
+          "tags": [],
+          "tables": [
+            "{prefix}batches"
+          ],
+          "ask": "SELECT batch_id, recipe_id, start_utc, deviation_score, yield_percent, golden FROM {prefix}batches ORDER BY deviation_score DESC",
+          "expect": "The off-golden batches all ran in the last week and a half, with yields about 4 points below the golden 94 %."
+        },
+        {
+          "tool": "Explorer",
+          "tags": [
+            "{TagRoot}.R1.HeatRate",
+            "{TagRoot}.R1.BatchDeviation"
+          ],
+          "tables": [],
+          "ask": "Trend HeatRate and BatchDeviation over the whole history.",
+          "expect": "HeatRate sinks batch after batch while BatchDeviation climbs above 1, then both snap back after the jacket clean."
+        },
+        {
+          "tool": "Connect",
+          "tags": [],
+          "tables": [
+            "{prefix}maintenancetickets",
+            "{prefix}batches"
+          ],
+          "ask": "Find the jacket cleaning ticket (failure_code 'PM-JK101-CLEAN') and list the batches started after it with their deviation_score.",
+          "expect": "Batches after the clean are golden again (deviation_score at most 1): the cleaning PM ended the drift."
+        },
+        {
+          "tool": "Gage",
+          "tags": [],
+          "tables": [],
+          "ask": "Why did yield drop on R1 last week?",
+          "expect": "Heat phases stretched as the jacket fouled, yield fell about 4 points, and the jacket clean restored both."
+        }
+      ]
     },
     {
       "id": "golden-batch-syrup-holds",
@@ -543,15 +623,86 @@
         "LIMS results",
         "lot genealogy"
       ],
-      "engine": "planned",
+      "engine": "available",
       "requires": [
         "batch",
         "quality"
       ],
-      "closest": "quality-hold-traced",
-      "base": null,
-      "fragment": null,
-      "talkTrack": []
+      "closest": null,
+      "base": "beverage-syrup-batch",
+      "fragment": {
+        "timeline": {
+          "backfill": "10d"
+        },
+        "drifts": [
+          {
+            "line": "MX1",
+            "phase": "Dissolve",
+            "cause": "Dissolver steam valve sticking: sugar dissolves slowly and incompletely",
+            "from": "-7d",
+            "until": "-3d",
+            "rampDays": 1,
+            "effect": {
+              "phaseMinutesFactor": 1.3,
+              "yieldDelta": -4
+            }
+          },
+          {
+            "line": "MX1",
+            "phase": "Blend",
+            "cause": "Dissolver steam valve sticking: blend runs long to reach Brix",
+            "from": "-7d",
+            "until": "-3d",
+            "rampDays": 1,
+            "effect": {
+              "phaseMinutesFactor": 1.25
+            }
+          }
+        ]
+      },
+      "talkTrack": [
+        {
+          "tool": "Explorer",
+          "tags": [
+            "{TagRoot}.MX1.Phase",
+            "{TagRoot}.MX1.Temperature",
+            "{TagRoot}.L1.Quality.Brix"
+          ],
+          "tables": [],
+          "ask": "Put the mix tank's Phase and Temperature next to the filler's Brix analyzer for the last ten days.",
+          "expect": "Dissolve and Blend stretch from about a week ago, and a day or two later the filler's Brix steps down 0.3–0.4 °Bx. The mix tank recovers three days ago; the filler recovers once the last drifted syrup in stock is used up."
+        },
+        {
+          "tool": "Connect",
+          "tags": [],
+          "tables": [
+            "{prefix}qualityholds",
+            "{prefix}lots",
+            "{prefix}batchconsumption",
+            "{prefix}batches"
+          ],
+          "ask": "Join qualityholds to lots, then lots to batchconsumption on production_order, then to batches: which syrup batches went into each held filler lot?",
+          "expect": "Every Brix hold traces to syrup batches with low yield_percent and a high deviation_score, made inside the drift window."
+        },
+        {
+          "tool": "Connect",
+          "tags": [],
+          "tables": [
+            "{prefix}batches",
+            "{prefix}qualityresults",
+            "{prefix}qualitysamples"
+          ],
+          "ask": "Show each syrup batch with its Brix release result (qualitysamples by batch_id, then qualityresults).",
+          "expect": "The drifted syrup passed its wider release limits (10.4–11.6 °Bx) but tested low: the finished-drink spec caught it at the filler."
+        },
+        {
+          "tool": "Gage",
+          "tags": [],
+          "tables": [],
+          "ask": "Which syrup batches caused last week's holds?",
+          "expect": "The drifted syrup batches, the filler lots made from them, and the slow dissolve and blend behind them."
+        }
+      ]
     },
     {
       "id": "golden-batch-pharma-deviation",
@@ -575,15 +726,96 @@
         "deviation records",
         "LIMS results"
       ],
-      "engine": "planned",
+      "engine": "available",
       "requires": [
         "batch",
         "quality"
       ],
-      "closest": "quality-hold-traced",
-      "base": null,
-      "fragment": null,
-      "talkTrack": []
+      "closest": null,
+      "base": "pharma-batch",
+      "fragment": {
+        "timeline": {
+          "backfill": "10d"
+        },
+        "people": {
+          "qa": [
+            {
+              "id": "E3001",
+              "name": "Priya Raman",
+              "shift": "CrewA"
+            },
+            {
+              "id": "E3002",
+              "name": "Tomasz Nowak",
+              "shift": "CrewB"
+            }
+          ]
+        },
+        "quality": {
+          "deviations": {
+            "closeHours": {
+              "minimum": 6,
+              "maximum": 30
+            }
+          }
+        },
+        "drifts": [
+          {
+            "line": "G1",
+            "phase": "WetGranulate",
+            "cause": "Granulation endpoint drift: binder spray nozzle wear",
+            "from": "-8d",
+            "until": "-3d",
+            "rampDays": 1.5,
+            "effect": {
+              "phaseMinutesFactor": 1.4,
+              "yieldDelta": -4
+            }
+          }
+        ]
+      },
+      "talkTrack": [
+        {
+          "tool": "Connect",
+          "tags": [],
+          "tables": [
+            "{prefix}batches",
+            "{prefix}batchphases",
+            "{prefix}goldenprofiles"
+          ],
+          "ask": "Compare the last batches phase by phase against the golden profile: batchphases.planned_minutes against goldenprofiles.golden_minutes, with each batch's deviation_score.",
+          "expect": "WetGranulate runs well past its golden 32.5 minutes in last week's batches; their deviation scores exceed 1 and yields are lower."
+        },
+        {
+          "tool": "Explorer",
+          "tags": [
+            "{TagRoot}.G1.Phase",
+            "{TagRoot}.G1.BatchDeviation",
+            "{TagRoot}.G1.AgitatorSpeed"
+          ],
+          "tables": [],
+          "ask": "Trend Phase, AgitatorSpeed and BatchDeviation on the granulator.",
+          "expect": "The wet granulation step stretches and BatchDeviation rises above 1 for several days, then returns to normal."
+        },
+        {
+          "tool": "Connect",
+          "tags": [],
+          "tables": [
+            "{prefix}deviations",
+            "{prefix}batches",
+            "{prefix}employees"
+          ],
+          "ask": "Audit trail: list deviations with the batch, the phase, opened and closed times, the QA approver's name, and the batch's released_utc.",
+          "expect": "Every off-golden batch has a deviation; each was released only after a named QA approver closed it."
+        },
+        {
+          "tool": "Gage",
+          "tags": [],
+          "tables": [],
+          "ask": "Which batches were released with deviations, and who approved them?",
+          "expect": "The deviated batches, their approvers and release times, and the granulation endpoint drift behind them."
+        }
+      ]
     },
     {
       "id": "changeover-startup-waste",

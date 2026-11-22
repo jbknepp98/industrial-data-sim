@@ -223,7 +223,13 @@
                   "end": 0
                 }
               }
-            ]
+            ],
+            "golden": {
+              "yieldPercent": {
+                "target": 94.0,
+                "sigma": 0.6
+              }
+            }
           },
           {
             "id": "RCP-POLY-B",
@@ -354,7 +360,13 @@
                   "end": 0
                 }
               }
-            ]
+            ],
+            "golden": {
+              "yieldPercent": {
+                "target": 94.0,
+                "sigma": 0.6
+              }
+            }
           }
         ],
         "feeds": {

@@ -296,7 +296,9 @@ plus a packaging line, with Quality).
     `batchconsumption` row (batch, production order, quantity).
   - With no stock, the fed line waits, Idle, with the reason
     `Waiting for <intermediate description>` (for example `Waiting for Berry syrup`).
-  - Batch `status`: `Running`, `Released` at discharge, `Consumed` when used up.
+  - Batch `status`: `Running`, then `Released` at discharge (or `Quarantine`
+    until its release decision when the plant has `quality.batchRelease`, see
+    below), and `Consumed` when used up. Only released batches are consumed.
 - **Tags per batch line:** `BatchId`, `Phase` (`CIP` during a changeover),
   `Temperature`, `Pressure`, `AgitatorSpeed` and `Level`, plus `State`, `SKU`,
   `OrderNumber` and each unit's `Status` and `Vibration`. A batch line has no
@@ -304,6 +306,10 @@ plus a packaging line, with Quality).
   - While Running, the values follow the phase ramp plus stateless noise.
   - While Down, temperature and pressure decay toward ambient (20 °C, 1.0 bar;
     time constant 45 minutes), the agitator is 0 and the level holds.
+  - After the repair (EngineVersion 4), the temperature climbs back from where
+    it cooled at up to 3 °C per minute until it meets the phase ramp. A unit
+    that starts a phase warmer than the ramp (the next batch right after a hot
+    discharge) settles onto it with a 20-minute time constant.
   - Between batches, the values are ambient, empty and still.
 - **Tables:** `recipes`, `recipephases` (setpoints as JSON), `batches` and
   `batchphases` with any batch unit; `batchconsumption` with `feeds`.
@@ -333,6 +339,122 @@ mismatches, 0 missing), and all 28 `batchphases` rows equaled the preview.
 (maximum residual 0.42 °C). After `docker stop` (exit 130) and start, it logged
 `plant.snapshot_resumed` and matched again. It was then removed (24 tables
 dropped).
+
+## Golden batch drift and batch quality
+
+Phase 4 of the interview front end. It makes the golden-batch storylines 5a,
+5b and 5c buildable.
+
+- **Golden profile:** `recipes[].golden` (optional) holds `phaseMinutes` (by
+  phase name; each defaults to the middle of the phase's range) and
+  `yieldPercent` (`target` and `sigma`; default 95 and 0.5). The golden
+  setpoints are the recipe's own ramps. Each batch draws its yield from its own
+  random stream.
+- **Deviation score:** for each phase, the running minutes' distance from the
+  golden minutes in half-widths of the phase's range (1 = the edge of normal),
+  or the temperature lag in units of 10 °C, whichever is larger. The batch
+  score is the worst phase. A batch is `golden` when the score is at most
+  `batch.goldenThreshold` (default 1). Without a drift every batch is golden,
+  because phase times are drawn inside their ranges.
+- **Drifts:** top-level `drifts[]`, each with `line` (a batch line),
+  optional `recipe`, `phase`, `cause`, `from`, `until` and/or `endsWith`,
+  `rampDays` and `effect` (`phaseMinutesFactor`, `temperatureLagC`,
+  `yieldDelta`).
+  - The drift's strength rises linearly from 0 at `from` to 1 after
+    `rampDays`. It drops to 0 at `until`, or when the preventive task
+    `endsWith` (on the same line) first completes after `from`.
+  - A batch takes the strength at its start. Its phase runs `factor` times
+    longer, its temperature trails the setpoint by up to `lag` °C at mid-phase
+    (back on the ramp at the phase's end), and its yield moves by `yieldDelta`.
+  - Drifts are top level so storyline fragments can add them. `drifts` and
+    `maintenance.preventive` are additive in composition, like incidents.
+- **Batch release testing:** `quality.batchRelease` with `labMinutes` and
+  `parameters[]` (`name` of a quality parameter, optional `lower` and `upper`
+  release limits, optional `yieldSensitivity`).
+  - Each discharged batch waits in `Quarantine` and is sampled. The sample row
+    has `batch_id` set and `lot_id` empty; results arrive after `labMinutes`.
+  - A result is the parameter's target plus the SKU offset plus
+    `yieldSensitivity` × (yield − golden yield) plus noise. Out of limits, the
+    batch goes `On Hold` (a `qualityholds` row with `batch_id`) for
+    `quality.holdMinutes`, then is released.
+  - Released intermediates go into stock for the fed line. A fed order inherits
+    each batch's yield shift in proportion to what it took. Its lot's lab result
+    and the line's analyzer tag both include that shift, so a drifted syrup that
+    passed its wide release limits can fail the finished-drink spec at the
+    filler.
+  - A direct-sale batch order's lot has no sample of its own. It is released
+    when its last batch is.
+- **Deviations (GxP):** `quality.deviations` with `closeHours` needs
+  `quality.batchRelease` and `people.qa` (1–3 QA people with `id`, `name`,
+  `shift`; written to `employees` with role `QA`).
+  - Every batch that is not golden gets a `deviations` row at discharge. The
+    row names the worst phase and what was seen.
+  - The QA person on shift closes it `closeHours` later (`closed_utc`,
+    `qa_approver_id`). Only then can the batch be released.
+- **Tables:** `batches` gains `yield_percent`, `deviation_score`, `golden` and
+  `released_utc`. A new table, `goldenprofiles`, holds one row per recipe
+  phase with `golden_minutes`, `setpoints_json` and `golden_yield_percent`.
+  `deviations` exists only with `quality.deviations`. In batch plants,
+  `qualitysamples` and `qualityholds` gain `batch_id`; other plants keep their
+  columns.
+- **Tags per batch line:** `BatchDeviation` is the worst phase score so far,
+  updated at the end of each phase, so after discharge it reads the batch's
+  `deviation_score`. `HeatRate` is °C per minute while the temperature is
+  rising, and 0 otherwise.
+- **Connect spec and Atlas starter:** `Recipe` instances, the query properties
+  `Line.BatchesOffGolden` and `Recipe.GoldenComparison` (phase-by-phase running
+  minutes against golden minutes for the recipe's last 10 batches), and, with
+  deviations, `Line.BatchDeviations` (the audit trail with the approver's name
+  and the batch's release time).
+- **Preview:** `summary.batches.comparison` (one row per discharged batch:
+  cycle minutes, yield, deviation score, golden, status) and
+  `summary.batches.drifts` (each window, ended early by its cleaning PM when
+  that happened). The review page's batch comparison table (rows started
+  inside a drift window shaded) is on `feature/phase-4-golden-preview`, built on
+  phase 7's shared renderer.
+- **Validation errors:** `plant.invalid_drift`, `plant.invalid_drift_time`,
+  `plant.invalid_golden`, `plant.unknown_phase`, `plant.no_batch_line`,
+  `plant.qa_required`, `plant.batch_release_required` and `plant.unused_qa`.
+- **Bases:** every recipe in the three batch bases has a golden yield. The pharma
+  base tests each granulation batch (assay depends on yield). The syrup base
+  now has a Quality area: finished-drink Brix 10.7–11.3 at the filler, and
+  syrup released at 10.4–11.6.
+
+**Storylines:**
+
+| Storyline | Base | Drift | What it shows |
+| --- | --- | --- | --- |
+| `golden-batch-reactor-drift` (5a) | `chemicals-batch`, 14-day history | Heat ×1.35, lag 12 °C, yield −4 from −9 days, ramp 4 days | Ended by the jacket cleaning PM `PM-JK101-CLEAN` (every 11 days, so about 2 days before the anchor) |
+| `golden-batch-syrup-holds` (5b) | `beverage-syrup-batch`, 10-day history | Dissolve ×1.3 and yield −4, Blend ×1.25, −7 to −3 days | Filler lots made from drifted syrup fail Brix and go on hold; genealogy traces each to its syrup batches. Drifted syrup still in stock causes holds after the drift ends |
+| `golden-batch-pharma-deviation` (5c) | `pharma-batch`, 10-day history | WetGranulate ×1.4 and yield −4, −8 to −3 days | Off-golden batches get deviations, and QA closes each before release |
+
+**`EngineVersion` 4** adds the snapshot state for this: per-batch drift effects
+and yield, the line's process temperature and BatchDeviation value, drift ends,
+batches waiting for release, and lots waiting for their batches. Packaging
+plants' output is byte-identical (the golden hashes did not move). Batch plants'
+history changes: new columns, gradual reheat, and quarantine where release
+testing is configured.
+
+**Live check (November 22, 2026, image `flow-data-simulator:2.0.0-dev-golden`).**
+Each storyline ran alone in Docker, at a 30-second sample interval against the
+Test Dataset (7-day purge age, so the check covers the last 6.8 days). Each was
+removed afterwards.
+
+- **`PlanTestGoldenA0629` (5a):** Historian matched the engine on 116,844
+  points (0 mismatches, 0 missing).
+  - `batches` by start: deviation scores rose above 1 from 11-14 (to 2.2) with
+    yields near 90 %. After the jacket clean completed at 11-19 22:19, all 6
+    later batches were golden at about 94 %.
+  - Mean `HeatRate` during Heat was 1.43–1.45 °C/min in the drift and
+    2.1–2.5 °C/min after the clean.
+- **`PlanTestGoldenB0631` (5b):** 0 mismatches on 120,364 points. All 10 held
+  filler lots traced through `batchconsumption` to syrup batches made inside
+  the drift window. No syrup batch was held.
+- **`PlanTestGoldenC0631` (5c):** 0 mismatches on 123,455 points.
+  - All 12 off-golden batches had a deviation, each closed by a named QA
+    approver, and none was released before its closure.
+  - `Line.BatchesOffGolden`, `Recipe.GoldenComparison` and
+    `Line.BatchDeviations` ran on the live tables.
 
 ## Connect mapping spec and Atlas starter (milestone 6)
 
@@ -647,9 +769,9 @@ Further rules:
 - **Mixing and CIP on packaging lines:** model them as a batch unit feeding
   the line (`beverage-syrup-batch`). On a packaging line alone they are still
   part of the changeover block.
-- **Reheating after a batch-unit repair:** the interrupted phase resumes at its
-  setpoint at once; the temperature does not climb back from where it cooled.
-- **Golden-batch comparison and drift:** phase 4.
+- **Yield and quantities:** a batch's yield is recorded and drives its quality
+  results, but the discharged quantity is still the batch size. Low yield does
+  not make a fed line wait longer.
 - **Suppliers, purchase orders and raw-material lots:** quality excursions
   stand in for supplier effects.
 - **Utilities correlated with the process,** and multiple sites.

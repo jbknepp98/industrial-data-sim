@@ -39,8 +39,8 @@ It speaks to: {StorylineRoles}. KPIs: {StorylineKpis}.
 ## Asked for, not in the simulator yet
 
 {UnmetRequests}
-<!-- For example: "golden batch comparison (planned); showed the
-quality-hold storyline instead". -->
+<!-- For example: "MCC trip impact (later); showed the labeler-jam storyline
+instead". -->
 
 ## Close
 

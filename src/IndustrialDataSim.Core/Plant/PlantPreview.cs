@@ -131,6 +131,21 @@ public static class PlantPreview
                 {
                     var done = Rows("batches").Where(b => Equals(b["recipe_id"], recipe.Id) && b["end_utc"] is DateTimeOffset).ToList();
                     return new { recipe = recipe.Id, sku = recipe.Sku, batches = done.Count, meanCycleMinutes = Mean(done.Select(b => Minutes(b, "start_utc", "end_utc"))) };
+                }).ToList(),
+                // Golden batch comparison: every discharged batch with its cycle time, yield and
+                // deviation, and each drift's window (ended early by its cleaning PM when it has one).
+                comparison = Rows("batches").Where(b => b["end_utc"] is DateTimeOffset).Select(b => new
+                {
+                    batch = b["batch_id"], line = b["line_id"], recipe = b["recipe_id"], startUtc = b["start_utc"],
+                    cycleMinutes = Math.Round(Minutes(b, "start_utc", "end_utc"), 1), yieldPercent = b["yield_percent"],
+                    deviationScore = b["deviation_score"], golden = b["golden"], status = b["status"], releasedUtc = b["released_utc"]
+                }).ToList(),
+                drifts = run.Model.Drifts.Select(d => new
+                {
+                    line = d.Line, recipe = d.Recipe, phase = d.Phase, cause = d.Cause, fromUtc = d.FromUtc,
+                    untilUtc = new[] { d.UntilUtc, d.EndsWith is null ? null : tickets.Where(t => Equals(t["failure_code"], d.EndsWith) && t["completed_utc"] is DateTimeOffset done && done >= d.FromUtc)
+                        .Select(t => (DateTimeOffset?)t["completed_utc"]).Min() }.Where(t => t is not null).Min(),
+                    endsWith = d.EndsWith
                 }).ToList()
             }
         };

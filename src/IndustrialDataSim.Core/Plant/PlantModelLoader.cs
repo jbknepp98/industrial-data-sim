@@ -41,7 +41,7 @@ public static partial class PlantModelLoader
         if (root.ValueKind != JsonValueKind.Object)
             return new(null, [new("plant.object_required", "$", "The plant model must be a JSON object.")]);
         SessionDefinitionLoader.CheckProperties(root, ["schemaVersion", "kind", "simulation", "seed", "timeline", "sampleIntervalMs",
-            "tagRoot", "shifts", "skus", "lines", "people", "customers", "parts", "demand", "maintenance", "incidents", "quality", "shipping"], "$", errors);
+            "tagRoot", "shifts", "skus", "lines", "people", "customers", "parts", "demand", "maintenance", "incidents", "quality", "shipping", "drifts"], "$", errors);
         if (!root.TryGetProperty("schemaVersion", out var version) || version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out int v) || v != 1)
             errors.Add(new("plant.unsupported_version", "$.schemaVersion", "Use schemaVersion 1 (integer literal)."));
         if (Text(root, "kind", "$", errors) is { } kind && kind != "plant")
@@ -64,7 +64,7 @@ public static partial class PlantModelLoader
         foreach (var (sku, index) in skus.Select((s, n) => (s, n)))
             if (lines.Count > 0 && lines.All(l => !l.Skus.Contains(sku.Code)))
                 errors.Add(new("plant.unmade_sku", $"$.skus[{index}]", "No line can make this SKU, so its orders could never be produced. Add it to a line's skus or remove it."));
-        var (operators, technicians) = People(root, shifts, lines, errors);
+        var (operators, technicians, qualityStaff) = People(root, shifts, lines, errors);
         var customers = List(root, "customers", "$", 1, MaximumCustomers, errors, (item, path) =>
         {
             SessionDefinitionLoader.CheckProperties(item, ["id", "name"], path, errors);
@@ -104,15 +104,19 @@ public static partial class PlantModelLoader
         if (maintenance is not null && root.TryGetProperty("maintenance", out var maintenanceItem) && maintenanceItem.ValueKind == JsonValueKind.Object &&
             maintenanceItem.TryGetProperty("certification", out _))
             maintenance = maintenance with { Certification = Certification(maintenanceItem, maintenance, lines, operators, technicians, anchorUtc, errors) };
-        var quality = root.TryGetProperty("quality", out _) ? Quality(root, skus, anchorUtc, errors) : null;
+        var quality = root.TryGetProperty("quality", out _) ? Quality(root, skus, lines, qualityStaff, anchorUtc, errors) : null;
         var shipping = root.TryGetProperty("shipping", out _) ? Shipping(root, errors) : null;
+        var drifts = root.TryGetProperty("drifts", out _) ? Drifts(root, lines, maintenance, anchorUtc, errors) : [];
+        if (qualityStaff.Count > 0 && quality?.Deviations is null)
+            errors.Add(new("plant.unused_qa", "$.people.qa", "QA staff only close batch deviations. Add quality.deviations, or remove people.qa."));
         if (errors.ErrorCount > 0 || simulation is null) return new(null, errors.AsReadOnly());
         foreach (var (incident, index) in incidents.Select((i, n) => (i, n)))
             if (incident.AtUtc < start || (end is { } stop && incident.AtUtc >= stop))
                 errors.Add(new("plant.incident_outside_timeline", $"$.incidents[{index}].at", "Place the incident inside the plant's timeline (after the backfill start and before endUtc)."));
         if (errors.ErrorCount > 0) return new(null, errors.AsReadOnly());
         return new(new PlantModel(simulation, simulation.ToLowerInvariant() + "_", tagRoot, seed, start, end, anchorUtc, sample,
-            shifts, skus, lines, operators, technicians, customers, parts, demand, maintenance!, incidents) { Quality = quality, Shipping = shipping }, []);
+            shifts, skus, lines, operators, technicians, customers, parts, demand, maintenance!, incidents)
+        { Quality = quality, Shipping = shipping, Drifts = drifts, QualityStaff = qualityStaff }, []);
     }
 
     private static (DateTimeOffset Start, DateTimeOffset? End) Timeline(JsonElement root, DateTimeOffset anchor, ValidationErrors errors)
@@ -243,7 +247,7 @@ public static partial class PlantModelLoader
             errors.Add(new("plant.batch_required", path, "A batch line needs batch with capacity, unit and recipes (and optionally feeds)."));
             return null;
         }
-        SessionDefinitionLoader.CheckProperties(item, ["capacity", "unit", "recipes", "feeds"], path, errors);
+        SessionDefinitionLoader.CheckProperties(item, ["capacity", "unit", "recipes", "feeds", "goldenThreshold"], path, errors);
         double capacity = Number(item, "capacity", path, 1, 1_000_000, errors);
         string unit = Text(item, "unit", path, errors) ?? "";
         PlantRamp Ramp(JsonElement parent, string name, string parentPath, double minimum, double maximum, string example)
@@ -259,7 +263,7 @@ public static partial class PlantModelLoader
         }
         var recipes = List(item, "recipes", path, 1, MaximumSkus, errors, (recipe, recipePath) =>
         {
-            SessionDefinitionLoader.CheckProperties(recipe, ["id", "sku", "phases"], recipePath, errors);
+            SessionDefinitionLoader.CheckProperties(recipe, ["id", "sku", "phases", "golden"], recipePath, errors);
             string sku = Text(recipe, "sku", recipePath, errors) ?? "";
             if (!lineSkus.Contains(sku))
                 errors.Add(new("plant.recipe_sku", recipePath + ".sku", "Reference a SKU made on this batch line (listed under the line's skus)."));
@@ -282,7 +286,8 @@ public static partial class PlantModelLoader
                 var level = Ramp(phase, "levelPercent", phasePath, 0, 100, "{\"start\": 0, \"end\": 65}");
                 return new PlantPhase(name, minutes, temperature, pressure, agitator, level);
             });
-            return new PlantRecipe(Id(recipe, "id", recipePath, errors) ?? "", sku, phases);
+            var parsed = new PlantRecipe(Id(recipe, "id", recipePath, errors) ?? "", sku, phases);
+            return recipe.TryGetProperty("golden", out _) ? parsed with { Golden = Golden(recipe, recipePath, phases, errors) } : parsed;
         });
         Unique(recipes.Select(r => r.Id), path + ".recipes", "recipe id", errors);
         foreach (var sku in lineSkus)
@@ -306,25 +311,121 @@ public static partial class PlantModelLoader
                 feeds = new PlantFeeds(Text(feedsItem, "line", feedsPath, errors) ?? "", consumption);
             }
         }
-        return new PlantBatchUnit(capacity, unit, recipes, feeds);
+        double threshold = item.TryGetProperty("goldenThreshold", out _) ? Number(item, "goldenThreshold", path, 0.1, 10, errors) : 1.0;
+        return new PlantBatchUnit(capacity, unit, recipes, feeds) { GoldenThreshold = threshold };
     }
 
-    private static (IReadOnlyList<PlantPerson>, IReadOnlyList<PlantPerson>) People(JsonElement root, IReadOnlyList<PlantShift> shifts,
+    /// <summary>A recipe's golden profile: optional per-phase golden minutes (by phase name) and the yield target and sigma.</summary>
+    private static PlantGolden Golden(JsonElement recipe, string recipePath, IReadOnlyList<PlantPhase> phases, ValidationErrors errors)
+    {
+        string path = recipePath + ".golden";
+        var defaults = PlantGolden.Default(phases);
+        var item = recipe.GetProperty("golden");
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            errors.Add(new("plant.object_required", path, "Supply golden as an object with optional phaseMinutes and yieldPercent, or leave it out (the middle of each phase's range and a 95 % yield)."));
+            return defaults;
+        }
+        SessionDefinitionLoader.CheckProperties(item, ["phaseMinutes", "yieldPercent"], path, errors);
+        var minutes = defaults.PhaseMinutes.ToList();
+        if (item.TryGetProperty("phaseMinutes", out var map))
+        {
+            if (map.ValueKind != JsonValueKind.Object)
+                errors.Add(new("plant.object_required", path + ".phaseMinutes", "Use an object of phase name to golden running minutes, for example {\"Heat\": 75}."));
+            else foreach (var entry in map.EnumerateObject())
+            {
+                int index = phases.ToList().FindIndex(p => p.Name == entry.Name);
+                string entryPath = $"{path}.phaseMinutes.{entry.Name}";
+                if (index < 0) errors.Add(new("plant.unknown_phase", entryPath, $"Reference a phase of this recipe: {string.Join(", ", phases.Select(p => p.Name))}."));
+                else if (entry.Value.ValueKind != JsonValueKind.Number || !entry.Value.TryGetDouble(out double value) || value < phases[index].Minutes.Minimum || value > phases[index].Minutes.Maximum)
+                    errors.Add(new("plant.invalid_golden", entryPath, FormattableString.Invariant($"Use a number of minutes inside the phase's range, {phases[index].Minutes.Minimum} through {phases[index].Minutes.Maximum}.")));
+                else minutes[index] = value;
+            }
+        }
+        double target = defaults.YieldTarget, sigma = defaults.YieldSigma;
+        if (item.TryGetProperty("yieldPercent", out var yield))
+        {
+            string yieldPath = path + ".yieldPercent";
+            if (yield.ValueKind != JsonValueKind.Object)
+                errors.Add(new("plant.object_required", yieldPath, "Use an object with target and sigma, for example {\"target\": 96, \"sigma\": 0.6}."));
+            else
+            {
+                SessionDefinitionLoader.CheckProperties(yield, ["target", "sigma"], yieldPath, errors);
+                target = Number(yield, "target", yieldPath, 1, 100, errors);
+                sigma = Number(yield, "sigma", yieldPath, 0, 20, errors);
+            }
+        }
+        return new PlantGolden(minutes, target, sigma);
+    }
+
+    /// <summary>
+    /// Planted golden-batch drifts. Each names a batch line, optionally a recipe,
+    /// and a phase; it starts at from (relative to the anchor) and ends at until or
+    /// when the preventive maintenance endsWith completes, whichever is first.
+    /// </summary>
+    private static IReadOnlyList<PlantDrift> Drifts(JsonElement root, IReadOnlyList<PlantLine> lines, PlantMaintenance? maintenance, DateTimeOffset anchor, ValidationErrors errors) =>
+        List(root, "drifts", "$", 0, 6, errors, (item, path) =>
+        {
+            SessionDefinitionLoader.CheckProperties(item, ["line", "recipe", "phase", "cause", "from", "until", "rampDays", "endsWith", "effect"], path, errors);
+            string lineId = Text(item, "line", path, errors) ?? "";
+            var line = lines.FirstOrDefault(l => l.Id == lineId);
+            if (line?.Batch is null)
+                errors.Add(new("plant.invalid_drift", path + ".line", "Reference the id of a batch line (kind \"batch\"). Drifts change batch phases."));
+            string? recipe = item.TryGetProperty("recipe", out _) ? Text(item, "recipe", path, errors) : null;
+            var recipes = line?.Batch?.Recipes.Where(r => recipe is null || r.Id == recipe).ToList() ?? [];
+            if (recipe is not null && line?.Batch is not null && recipes.Count == 0)
+                errors.Add(new("plant.invalid_drift", path + ".recipe", "Reference a recipe id on that batch line, or leave recipe out to affect every recipe with this phase."));
+            string phase = Text(item, "phase", path, errors) ?? "";
+            if (line?.Batch is not null && recipes.Count > 0 && recipes.All(r => r.Phases.All(p => p.Name != phase)))
+                errors.Add(new("plant.invalid_drift", path + ".phase", $"Reference a phase of the drifted recipes: {string.Join(", ", recipes.SelectMany(r => r.Phases.Select(p => p.Name)).Distinct())}."));
+            string cause = Text(item, "cause", path, errors) ?? "";
+            var from = Signed(Text(item, "from", path, errors));
+            if (from is null) errors.Add(new("plant.invalid_drift_time", path + ".from", "Use a signed duration relative to the anchor (now), for example \"-9d\"."));
+            TimeSpan? until = null;
+            if (item.TryGetProperty("until", out _))
+            {
+                until = Signed(Text(item, "until", path, errors));
+                if (until is null || (from is not null && until <= from))
+                    errors.Add(new("plant.invalid_drift_time", path + ".until", "Use a signed duration relative to the anchor that is later than from, for example \"-3d\"."));
+            }
+            string? endsWith = item.TryGetProperty("endsWith", out _) ? Text(item, "endsWith", path, errors) : null;
+            if (endsWith is not null && maintenance is not null && maintenance.Preventive.All(p => p.Code != endsWith || p.Line != lineId))
+                errors.Add(new("plant.invalid_drift", path + ".endsWith", "Reference the code of a preventive maintenance task on the same line (for example a jacket cleaning). Its next completion after from ends the drift."));
+            if (!item.TryGetProperty("until", out _) && endsWith is null)
+                errors.Add(new("plant.invalid_drift_time", path, "Give the drift an end: until (a signed duration), endsWith (a preventive maintenance code), or both."));
+            double ramp = item.TryGetProperty("rampDays", out _) ? Number(item, "rampDays", path, 0, 60, errors) : 0;
+            double factor = 1, lag = 0, yieldDelta = 0;
+            if (!item.TryGetProperty("effect", out var effect) || effect.ValueKind != JsonValueKind.Object)
+                errors.Add(new("plant.invalid_drift", path + ".effect", "Supply effect with at least one of phaseMinutesFactor (for example 1.35), temperatureLagC or yieldDelta (for example -4)."));
+            else
+            {
+                string effectPath = path + ".effect";
+                SessionDefinitionLoader.CheckProperties(effect, ["phaseMinutesFactor", "temperatureLagC", "yieldDelta"], effectPath, errors);
+                if (effect.TryGetProperty("phaseMinutesFactor", out _)) factor = Number(effect, "phaseMinutesFactor", effectPath, 0.5, 3, errors);
+                if (effect.TryGetProperty("temperatureLagC", out _)) lag = Number(effect, "temperatureLagC", effectPath, 0, 50, errors);
+                if (effect.TryGetProperty("yieldDelta", out _)) yieldDelta = Number(effect, "yieldDelta", effectPath, -50, 50, errors);
+                if (factor == 1 && lag == 0 && yieldDelta == 0)
+                    errors.Add(new("plant.invalid_drift", effectPath, "The effect changes nothing. Set phaseMinutesFactor (not 1), temperatureLagC or yieldDelta."));
+            }
+            return new PlantDrift(lineId, recipe, phase, cause, anchor + (from ?? TimeSpan.Zero), until is null ? null : anchor + until.Value, ramp, endsWith, factor, lag, yieldDelta);
+        }, optional: true);
+
+    private static (IReadOnlyList<PlantPerson>, IReadOnlyList<PlantPerson>, IReadOnlyList<PlantPerson>) People(JsonElement root, IReadOnlyList<PlantShift> shifts,
         IReadOnlyList<PlantLine> lines, ValidationErrors errors)
     {
         if (!root.TryGetProperty("people", out var people) || people.ValueKind != JsonValueKind.Object)
         {
             errors.Add(new("plant.people_required", "$.people", "Supply people with operators and technicians."));
-            return ([], []);
+            return ([], [], []);
         }
-        SessionDefinitionLoader.CheckProperties(people, ["operators", "technicians"], "$.people", errors);
-        PlantPerson Person(JsonElement item, string path, bool technician)
+        SessionDefinitionLoader.CheckProperties(people, ["operators", "technicians", "qa"], "$.people", errors);
+        PlantPerson Person(JsonElement item, string path, bool technician, bool qa = false)
         {
-            SessionDefinitionLoader.CheckProperties(item, technician ? ["id", "name", "shift", "skills"] : ["id", "name", "shift", "line"], path, errors);
+            SessionDefinitionLoader.CheckProperties(item, technician ? ["id", "name", "shift", "skills"] : qa ? ["id", "name", "shift"] : ["id", "name", "shift", "line"], path, errors);
             string shift = Text(item, "shift", path, errors) ?? "";
             if (shifts.All(s => s.Name != shift)) errors.Add(new("plant.unknown_shift", path + ".shift", "Reference a shift name declared under shifts."));
             string? line = null;
-            if (!technician)
+            if (!technician && !qa)
             {
                 line = Text(item, "line", path, errors);
                 if (line is not null && lines.All(l => l.Id != line)) errors.Add(new("plant.unknown_line", path + ".line", "Reference a line id declared under lines."));
@@ -337,8 +438,9 @@ public static partial class PlantModelLoader
         }
         var operators = List(people, "operators", "$.people", 1, MaximumOperators, errors, (i, p) => Person(i, p, false));
         var technicians = List(people, "technicians", "$.people", 1, MaximumTechnicians, errors, (i, p) => Person(i, p, true));
-        Unique(operators.Select(o => o.Id).Concat(technicians.Select(t => t.Id)), "$.people", "person id", errors);
-        return (operators, technicians);
+        var qaStaff = List(people, "qa", "$.people", 0, 3, errors, (i, p) => Person(i, p, false, qa: true), optional: true);
+        Unique(operators.Select(o => o.Id).Concat(technicians.Select(t => t.Id)).Concat(qaStaff.Select(q => q.Id)), "$.people", "person id", errors);
+        return (operators, technicians, qaStaff);
     }
 
     private static PlantDemand Demand(JsonElement root, ValidationErrors errors)
@@ -534,7 +636,8 @@ public static partial class PlantModelLoader
         return new PlantCertification(validDays, issued, renewals, safetyCritical, policy) { Operators = operatorSide };
     }
 
-    private static PlantQuality? Quality(JsonElement root, IReadOnlyList<PlantSku> skus, DateTimeOffset anchor, ValidationErrors errors)
+    private static PlantQuality? Quality(JsonElement root, IReadOnlyList<PlantSku> skus, IReadOnlyList<PlantLine> lines, IReadOnlyList<PlantPerson> qualityStaff,
+        DateTimeOffset anchor, ValidationErrors errors)
     {
         const string path = "$.quality";
         var item = root.GetProperty("quality");
@@ -543,7 +646,7 @@ public static partial class PlantModelLoader
             errors.Add(new("plant.object_required", path, "Supply quality as an object with parameters, labMinutes, holdMinutes and optional excursions, or leave it out."));
             return null;
         }
-        SessionDefinitionLoader.CheckProperties(item, ["parameters", "labMinutes", "holdMinutes", "excursions"], path, errors);
+        SessionDefinitionLoader.CheckProperties(item, ["parameters", "labMinutes", "holdMinutes", "excursions", "batchRelease", "deviations"], path, errors);
         var parameters = List(item, "parameters", path, 1, 4, errors, (p, pPath) =>
         {
             SessionDefinitionLoader.CheckProperties(p, ["name", "unit", "target", "lower", "upper", "sigma", "skuOffsets"], pPath, errors);
@@ -580,7 +683,54 @@ public static partial class PlantModelLoader
             return new PlantExcursion(parameter, anchor + (from ?? TimeSpan.Zero), anchor + (until ?? TimeSpan.Zero),
                 Number(e, "shift", ePath, -1e6, 1e6, errors), sku, e.TryGetProperty("note", out _) ? Text(e, "note", ePath, errors) ?? "" : "");
         }, optional: true);
-        return new(parameters, Range(item, "labMinutes", path, 1, 1440, errors), Range(item, "holdMinutes", path, 10, 10080, errors), excursions);
+        PlantBatchRelease? release = null;
+        if (item.TryGetProperty("batchRelease", out var releaseItem))
+        {
+            const string releasePath = path + ".batchRelease";
+            if (lines.All(l => l.Batch is null))
+                errors.Add(new("plant.no_batch_line", releasePath, "batchRelease tests batches, and this plant has no batch line. Remove it, or add a line with kind \"batch\"."));
+            if (releaseItem.ValueKind != JsonValueKind.Object)
+                errors.Add(new("plant.object_required", releasePath, "Supply batchRelease as an object with labMinutes and parameters, or leave it out."));
+            else
+            {
+                SessionDefinitionLoader.CheckProperties(releaseItem, ["labMinutes", "parameters"], releasePath, errors);
+                var tests = List(releaseItem, "parameters", releasePath, 1, 4, errors, (t, tPath) =>
+                {
+                    SessionDefinitionLoader.CheckProperties(t, ["name", "lower", "upper", "yieldSensitivity"], tPath, errors);
+                    string name = Text(t, "name", tPath, errors) ?? "";
+                    var parameter = parameters.FirstOrDefault(p => p.Name == name);
+                    if (parameter is null) errors.Add(new("plant.unknown_parameter", tPath + ".name", "Reference a quality parameter name declared under quality.parameters."));
+                    double? lower = t.TryGetProperty("lower", out _) ? Number(t, "lower", tPath, -1e6, 1e6, errors) : null;
+                    double? upper = t.TryGetProperty("upper", out _) ? Number(t, "upper", tPath, -1e6, 1e6, errors) : null;
+                    if (parameter is not null && !((lower ?? parameter.Lower) < parameter.Target && parameter.Target < (upper ?? parameter.Upper)))
+                        errors.Add(new("plant.invalid_spec", tPath, "Release limits must keep lower < target < upper."));
+                    double sensitivity = t.TryGetProperty("yieldSensitivity", out _) ? Number(t, "yieldSensitivity", tPath, -1e3, 1e3, errors) : 0;
+                    return new PlantBatchTest(name, lower, upper, sensitivity);
+                });
+                Unique(tests.Select(t => t.Parameter), releasePath + ".parameters", "batch release parameter", errors);
+                release = new PlantBatchRelease(Range(releaseItem, "labMinutes", releasePath, 1, 1440, errors), tests);
+            }
+        }
+        PlantDeviations? deviations = null;
+        if (item.TryGetProperty("deviations", out var deviationItem))
+        {
+            const string deviationPath = path + ".deviations";
+            if (lines.All(l => l.Batch is null))
+                errors.Add(new("plant.no_batch_line", deviationPath, "Deviations are raised for batches off the golden profile, and this plant has no batch line."));
+            if (!item.TryGetProperty("batchRelease", out _))
+                errors.Add(new("plant.batch_release_required", deviationPath, "A deviation holds a batch's release, so batches need release testing. Add quality.batchRelease."));
+            if (qualityStaff.Count == 0)
+                errors.Add(new("plant.qa_required", deviationPath, "Someone must approve deviations. Add people.qa with at least one QA person (id, name, shift)."));
+            if (deviationItem.ValueKind != JsonValueKind.Object)
+                errors.Add(new("plant.object_required", deviationPath, "Supply deviations as an object with closeHours, or leave it out."));
+            else
+            {
+                SessionDefinitionLoader.CheckProperties(deviationItem, ["closeHours"], deviationPath, errors);
+                deviations = new PlantDeviations(Range(deviationItem, "closeHours", deviationPath, 0.5, 720, errors));
+            }
+        }
+        return new(parameters, Range(item, "labMinutes", path, 1, 1440, errors), Range(item, "holdMinutes", path, 10, 10080, errors), excursions)
+        { BatchRelease = release, Deviations = deviations };
     }
 
     private static PlantShipping? Shipping(JsonElement root, ValidationErrors errors)

@@ -31,6 +31,12 @@ public sealed record PlantModel(
 
     /// <summary>Optional Shipping area: lots, inventory and shipments. Null when not included.</summary>
     public PlantShipping? Shipping { get; init; }
+
+    /// <summary>Planted golden-batch drifts on batch units (top-level "drifts"). Empty when none.</summary>
+    public IReadOnlyList<PlantDrift> Drifts { get; init; } = [];
+
+    /// <summary>Quality assurance staff who close batch deviations (people.qa). Empty when none.</summary>
+    public IReadOnlyList<PlantPerson> QualityStaff { get; init; } = [];
 }
 
 /// <summary>A shift starts at StartHour (UTC, whole hours) every day and lasts Hours.</summary>
@@ -59,10 +65,46 @@ public sealed record PlantLine(string Id, string Name, int ChangeoverMinutes, IR
 public sealed record PlantBatchUnit(double Capacity, string Unit, IReadOnlyList<PlantRecipe> Recipes, PlantFeeds? Feeds)
 {
     public PlantRecipe RecipeFor(string sku) => Recipes.First(r => r.Sku == sku);
+
+    /// <summary>
+    /// A batch is golden when its deviation score is at most this value. The score
+    /// is 1 when a phase ran at the edge of its normal range, so 1 (the default)
+    /// means "every phase inside its range and the temperature on profile".
+    /// </summary>
+    public double GoldenThreshold { get; init; } = 1.0;
 }
 
-/// <summary>One recipe per SKU made on a batch unit: its phases in order.</summary>
-public sealed record PlantRecipe(string Id, string Sku, IReadOnlyList<PlantPhase> Phases);
+/// <summary>One recipe per SKU made on a batch unit: its phases in order and its golden profile.</summary>
+public sealed record PlantRecipe(string Id, string Sku, IReadOnlyList<PlantPhase> Phases)
+{
+    /// <summary>The golden batch: per-phase running minutes (default the middle of each range) and the expected yield.</summary>
+    public PlantGolden Golden { get; init; } = PlantGolden.Default(Phases);
+}
+
+/// <summary>
+/// A recipe's golden profile. PhaseMinutes holds the golden running minutes of
+/// each phase, in recipe order; the golden setpoints are the recipe's own ramps.
+/// Yield is drawn per batch around YieldTarget with YieldSigma (percent).
+/// </summary>
+public sealed record PlantGolden(IReadOnlyList<double> PhaseMinutes, double YieldTarget, double YieldSigma)
+{
+    public const double DefaultYieldTarget = 95, DefaultYieldSigma = 0.5;
+
+    public static PlantGolden Default(IReadOnlyList<PlantPhase> phases) =>
+        new(phases.Select(p => (p.Minutes.Minimum + p.Minutes.Maximum) / 2).ToList(), DefaultYieldTarget, DefaultYieldSigma);
+}
+
+/// <summary>
+/// A planted golden-batch drift on one batch line (and optionally one recipe):
+/// from FromUtc its effect ramps in linearly over RampDays, and it lasts until
+/// UntilUtc or until the preventive maintenance EndsWith next completes after
+/// FromUtc, whichever comes first. The effect stretches Phase's running time by
+/// PhaseMinutesFactor, makes its temperature trail the setpoint by up to
+/// TemperatureLagC, and moves each affected batch's yield by YieldDelta points.
+/// A batch takes the drift's strength at the moment it starts.
+/// </summary>
+public sealed record PlantDrift(string Line, string? Recipe, string Phase, string Cause, DateTimeOffset FromUtc, DateTimeOffset? UntilUtc,
+    double RampDays, string? EndsWith, double PhaseMinutesFactor, double TemperatureLagC, double YieldDelta);
 
 /// <summary>A start and end value; setpoints ramp linearly from Start to End over a phase's running time.</summary>
 public sealed record PlantRamp(double Start, double End)
@@ -193,7 +235,36 @@ public sealed record PlantExcursion(string Parameter, DateTimeOffset FromUtc, Da
 /// for HoldMinutes (investigation and retest) before release.
 /// </summary>
 public sealed record PlantQuality(IReadOnlyList<PlantQualityParameter> Parameters, PlantRange LabMinutes,
-    PlantRange HoldMinutes, IReadOnlyList<PlantExcursion> Excursions);
+    PlantRange HoldMinutes, IReadOnlyList<PlantExcursion> Excursions)
+{
+    /// <summary>Optional release testing of every discharged batch (quality.batchRelease). Null when not included.</summary>
+    public PlantBatchRelease? BatchRelease { get; init; }
+
+    /// <summary>Optional GxP deviations for batches off the golden profile (quality.deviations). Null when not included.</summary>
+    public PlantDeviations? Deviations { get; init; }
+
+    /// <summary>Batches wait in quarantine for a release decision (lab result, deviation closure) instead of being released at discharge.</summary>
+    public bool GatesBatches => BatchRelease is not null;
+}
+
+/// <summary>
+/// Each discharged batch is sampled; results arrive after LabMinutes. A batch
+/// stays in quarantine until its results pass (or its hold is released) and any
+/// deviation is closed. Intermediates reach the fed line only once released.
+/// </summary>
+public sealed record PlantBatchRelease(PlantRange LabMinutes, IReadOnlyList<PlantBatchTest> Parameters);
+
+/// <summary>
+/// A quality parameter tested on each batch, optionally with its own release
+/// limits (for example a syrup released on a wider Brix range than the finished
+/// drink). YieldSensitivity moves the result per percentage point of yield away
+/// from the recipe's golden yield, so a low-yield batch tests low. A fed
+/// line's product inherits that shift from the batches it consumed.
+/// </summary>
+public sealed record PlantBatchTest(string Parameter, double? Lower, double? Upper, double YieldSensitivity);
+
+/// <summary>Every batch that is not golden gets a deviation record; a QA person closes it CloseHours after discharge, and only then can the batch be released.</summary>
+public sealed record PlantDeviations(PlantRange CloseHours);
 
 /// <summary>Released lots ship against their sales order after DelayHours, with one of the carriers.</summary>
 public sealed record PlantShipping(PlantRange DelayHours, IReadOnlyList<string> Carriers);

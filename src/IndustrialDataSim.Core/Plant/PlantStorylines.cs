@@ -41,7 +41,8 @@ public sealed record PlantComposeResult(string? ModelJson, IReadOnlyList<Validat
 ///
 /// Composition is a JSON merge patch (RFC 7386) per fragment, with two rules:
 /// - the lists of planted events (incidents, quality excursions, certificate
-///   issues and renewals, work instructions) add up, so
+///   issues and renewals, work instructions, golden-batch drifts and the
+///   preventive tasks that end them) add up, so
 ///   several storylines can each plant their own events;
 /// - any other value two storylines set differently is a conflict, reported
 ///   with both storyline ids and the path, never silently overwritten.
@@ -66,7 +67,7 @@ public static class PlantStorylines
     private static readonly string[] AdditivePaths =
     [
         "$.incidents", "$.quality.excursions", "$.maintenance.certification.issued", "$.maintenance.certification.renewals",
-        "$.maintenance.certification.operators.workInstructions"
+        "$.maintenance.certification.operators.workInstructions", "$.drifts", "$.maintenance.preventive"
     ];
 
     private static readonly string[] EntryFields =
