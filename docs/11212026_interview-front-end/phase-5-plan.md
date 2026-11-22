@@ -101,7 +101,7 @@ one-sentence test message, and prints the model handle and the token usage.
 <end-to-end-verification>
 - [x] One-time setup (owner approves): create Pulse client `DataSim` with policy Soft; put its ID and secret in `.tools/private/container.env` (never printed). The client already existed (the Historian writer's) and its secret was already in `container.env`. The owner added the `Pulse` audience, which Gage requires, and a Soft client policy.
 - [x] `plant gage-check` in the dev container on the Timebase network prints the model handle and a reply (image `flow-data-simulator:2.0.0-dev-gage`: `anthropic/claude`, answered by `claude-sonnet-4-6`, 25 in / 14 out tokens)
-- [ ] Wrong secret gives `gage.client_rejected`; `FLOWSIM_GAGE_MODEL=nope/x` gives `gage.model_missing` listing the real handles; Pulse stopped gives `gage.pulse_unreachable`. The first two pass live. Stopping Pulse was not approved, so the unreachable case was checked with an unused port (`https://localhost:4999`) and by a unit test.
+- [x] Wrong secret gives `gage.client_rejected`; `FLOWSIM_GAGE_MODEL=nope/x` gives `gage.model_missing` listing the real handles; Pulse stopped gives `gage.pulse_unreachable`. The first two pass live. Stopping Pulse was not approved, so the unreachable case was checked with an unused port (`https://localhost:4999`) and by a unit test. The owner chose to skip the live Pulse-stopped test (November 22, 2026).
 - [ ] Pulse usage (`/api/gage/usage`) shows the test call under the `DataSim` client. The endpoint returns 403 to the client itself (admin only), so an administrator still needs to confirm this in Pulse → Gage → Usage.
 </end-to-end-verification>
 </success-criteria>
