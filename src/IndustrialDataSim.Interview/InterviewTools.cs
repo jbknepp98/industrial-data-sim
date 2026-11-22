@@ -314,6 +314,19 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
         }
 
         var plant = loaded.Model!;
+        // A storyline that sets its own backfill needs all of it (for example
+        // 5a's 14 days put the jacket clean, and the recovery after it, inside
+        // the history). A shorter override would quietly lose that part.
+        var own = chosen.Select(c => c.FragmentFor(baseId)?["timeline"]?["backfill"]?.GetValue<string>()).OfType<string>().ToList();
+        if (own.Count > 0 && backfill.Length > 0)
+        {
+            var storylineDefault = PlantStorylines.Compose(baseId, baseJson, chosen, new JsonObject { ["simulation"] = simulation });
+            var defaultModel = storylineDefault.IsValid ? PlantModelLoader.Load(storylineDefault.ModelJson!, Anchor()).Model : null;
+            if (defaultModel is not null && plant.StartUtc > defaultModel.StartUtc)
+                return Failure([new("tool.backfill_too_short", "$.backfill",
+                    $"These storylines need their own history length ({string.Join(", ", own.Distinct())}): their events, and the recoveries after them, are timed for it. " +
+                    "Leave backfill empty to use it. If the user's Historian Dataset purges sooner, tell them Historian will drop the oldest points while Postgres keeps every row, and let them choose.")]);
+        }
         // Every planted event needs a normal day of history before it: a drift
         // that starts before the history has no golden baseline to compare
         // with, and the plant starts in the middle of the problem.

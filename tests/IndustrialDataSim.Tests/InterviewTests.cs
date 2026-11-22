@@ -316,7 +316,7 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
         var error = Assert.Single(result!["errors"]!.AsArray());
         Assert.Equal("tool.backfill_too_short", error!["code"]!.GetValue<string>());
         Assert.Equal("$.backfill", error["path"]!.GetValue<string>());
-        Assert.Contains("at least 8d", error["message"]!.GetValue<string>());
+        Assert.Contains("10d", error["message"]!.GetValue<string>()); // 5b's own history length
         Assert.Null(store.Load(session.Id)!.DraftModelJson);
     }
 
