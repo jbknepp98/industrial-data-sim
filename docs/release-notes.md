@@ -1,4 +1,9 @@
-# Unreleased (after 2.0.0-rc.1)
+# industrial-data-sim 2.0.0-rc.2: release candidate
+
+Candidate, not a release. Approved by the owner on November 22, 2026: 2.0.0-rc.1 plus
+the changes below. The tag `v2.0.0-rc.2` goes on the version-only commit whose CI run
+passes every job.
+
 
 - **Each plant approved on the page gets its own Historian Dataset** (owner decision,
   November 22, 2026). Approve creates a Dataset named exactly like the plant, with a

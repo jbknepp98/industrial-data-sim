@@ -10,9 +10,9 @@ permissions:
 
 # Candidate under test. Bump the rc number for any behavior-changing repair;
 # 1.1.0-rc.1: open-ended sessions candidate (owner-approved design, November 21, 2026).
-# 2.0.0-rc.1: plant simulation and the web interview (owner-approved candidate, November 22, 2026).
+# 2.0.0-rc.2: plant simulation and the web interview, each plant with its own Dataset (owner-approved candidate, November 22, 2026).
 env:
-  CANDIDATE_VERSION: 2.0.0-rc.1
+  CANDIDATE_VERSION: 2.0.0-rc.2
 
 concurrency:
   group: verify-${{ github.ref }}

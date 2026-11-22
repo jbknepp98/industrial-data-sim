@@ -14,10 +14,10 @@ from chat transcripts, env files or logs into code, prompts, logs or documents.
 ## Status now (November 22, 2026)
 
 - **Released:** 1.0.1 (tag `v1.0.1` on `192aaab`), the session simulator.
-- **Candidate:** 2.0.0-rc.1, tag `v2.0.0-rc.1` on `a7bceef`, built by
-  [CI run 44999977188](https://github.com/jbknepp98/industrial-data-sim/actions/runs/44999977188)
-  (all nine jobs). After it, `b5dd016` made the CI web image carry its version
-  tag (CI and README only). Release gates and their state:
+- **Candidate:** 2.0.0-rc.2 (tag `v2.0.0-rc.2`): rc.1 plus each plant approved on
+  the page getting its own 365-day Historian Dataset (see release-notes.md). rc.1
+  is tagged `v2.0.0-rc.1` on `a7bceef`
+  ([CI run 44999977188](https://github.com/jbknepp98/industrial-data-sim/actions/runs/44999977188)). Release gates and their state:
   [release-2.0.0-acceptance.md](release-2.0.0-acceptance.md).
 - **What 2.0 is:** a small simulated plant on one clock, with records in
   Postgres and tags in Historian, built from an interview on a web page in the
@@ -33,7 +33,7 @@ from chat transcripts, env files or logs into code, prompts, logs or documents.
   - `bluebirdbev-plant`, image `flow-data-simulator:2.0.0-dev` (a local build,
     not a release), running the BluebirdBev plant into the `Test` Dataset
     (7-day purge age);
-  - `flow-data-simulator-web`, image `flow-data-simulator-web:2.0.0-rc.1`
+  - `flow-data-simulator-web`, image `flow-data-simulator-web:2.0.0-rc.2`
     (the CI-built image), on `127.0.0.1:8480`, hosting no plants. It shows
     BluebirdBev as "running elsewhere".
 

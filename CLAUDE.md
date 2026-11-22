@@ -8,7 +8,7 @@ is the original 1.0 handoff.
 
 The repository holds two products:
 
-- **Plant simulator, 2.0.0-rc.1** (tag `v2.0.0-rc.1`, November 22, 2026; a candidate,
+- **Plant simulator, 2.0.0-rc.2** (tag `v2.0.0-rc.2`, November 22, 2026; a candidate,
   not a release). Scope and gates: `docs/release-2.0.0-specification.md` and
   `docs/release-2.0.0-acceptance.md`. How it works: `docs/plant-simulation.md`; owner
   decisions: `docs/design-plant-simulation.md`. Projects: `src/IndustrialDataSim.Core`
@@ -40,7 +40,7 @@ changes.
 Running deployment: Postgres container `flow-data-sim-pg` (database `flow_data_sim`);
 plant container `bluebirdbev-plant` (image `flow-data-simulator:2.0.0-dev`, a local
 build, not a release) writing tags to the `Test` Dataset; and the web container
-`flow-data-simulator-web` (image `flow-data-simulator-web:2.0.0-rc.1`, the CI-built
+`flow-data-simulator-web` (image `flow-data-simulator-web:2.0.0-rc.2`, the CI-built
 candidate) from the compose snippet. The web container shows BluebirdBev as "running
 elsewhere" and never touches it. Live checks use simulation names starting with
 `PlanTest`. A simulation only touches tables with its own prefix; never touch another

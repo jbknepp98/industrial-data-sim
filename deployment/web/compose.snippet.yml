@@ -20,7 +20,7 @@ name: flow-data-sim
 
 services:
   flow-data-simulator-web:
-    image: flow-data-simulator-web:2.0.0-rc.1
+    image: flow-data-simulator-web:2.0.0-rc.2
     build:
       context: ../..
       dockerfile: deployment/web/Dockerfile
