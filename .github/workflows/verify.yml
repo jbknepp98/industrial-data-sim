@@ -39,6 +39,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r scripts/requirements.txt
+      # The solution includes the Interview and Web projects, so their builds
+      # and tests run here on every OS (Postgres-backed tests skip without FLOWSIM_TEST_PG).
       - run: dotnet restore IndustrialDataSim.slnx
       - run: dotnet build IndustrialDataSim.slnx --configuration Release --no-restore --disable-build-servers
       - run: dotnet test IndustrialDataSim.slnx --configuration Release --no-build --no-restore
@@ -85,12 +87,79 @@ jobs:
       - run: python scripts/verify_deployment_templates.py .tools/candidate/industrial-data-sim-${{ env.CANDIDATE_VERSION }}-${{ matrix.rid }}
       - run: dotnet list src/IndustrialDataSim.Cli package --vulnerable --include-transitive --format json --output-version 1 > .tools/candidate/dependency-audit.json
       - run: python scripts/check_dependency_audit.py .tools/candidate/dependency-audit.json
+      # The web container's packages (Anthropic, Npgsql and their transitive
+      # dependencies). ASP.NET Core is a shared framework, not a NuGet package:
+      # its patch level is the setup-dotnet SDK's runtime, recorded below.
+      - run: dotnet list src/IndustrialDataSim.Web package --vulnerable --include-transitive --format json --output-version 1 > .tools/candidate/dependency-audit-web.json
+      - run: python scripts/check_dependency_audit.py .tools/candidate/dependency-audit-web.json
+      - run: dotnet --list-runtimes > .tools/candidate/runtimes.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: candidate-${{ matrix.rid }}
           path: |
             .tools/candidate/*.zip
             .tools/candidate/*.sha256
-            .tools/candidate/dependency-audit.json
+            .tools/candidate/dependency-audit*.json
+            .tools/candidate/runtimes.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  # The web container image (deployment/web/Dockerfile). It is Docker-only, so
+  # only the two Linux RIDs apply: osx-arm64 and win-x64 have no web image.
+  # Each image is built natively, smoke-tested against a throwaway Postgres
+  # (non-root, health check, clean SIGINT stop) and saved as an artifact. No
+  # registry push: images are tagged locally until the owner approves a release.
+  web-image:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+          - os: ubuntu-24.04
+            rid: linux-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      IMAGE: flow-data-simulator-web:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - run: docker build -f deployment/web/Dockerfile --build-arg VERSION=2.0.0-dev -t "$IMAGE" .
+      - name: Image runs as non-root with SIGINT and a health check
+        run: |
+          test "$(docker inspect "$IMAGE" --format '{{.Config.User}}')" = datasim
+          test "$(docker inspect "$IMAGE" --format '{{.Config.StopSignal}}')" = SIGINT
+          docker inspect "$IMAGE" --format '{{json .Config.Healthcheck.Test}}' | grep -q healthcheck
+          docker run --rm --entrypoint sh "$IMAGE" -c 'test -f storylines/storylines.json && test -d storylines/bases && test -x IndustrialDataSim.Cli'
+      - name: Smoke test against a throwaway flow_data_sim
+        run: |
+          docker network create smoke
+          docker run -d --name smoke-pg --network smoke --network-alias flow-data-sim-pg \
+            -e POSTGRES_USER=flowsim_admin -e POSTGRES_PASSWORD=smoke-admin -e POSTGRES_DB=flow_data_sim \
+            -e FLOWSIM_WRITER_PASSWORD=smoke-writer -e FLOWSIM_READER_PASSWORD=smoke-reader \
+            -v "$PWD/deployment/web/postgres-init.sh:/docker-entrypoint-initdb.d/10-flowsim.sh:ro" \
+            -v "$PWD/deployment/postgres/01_bootstrap.sql:/flowsim/01_bootstrap.sql:ro" postgres:16
+          for i in $(seq 1 30); do docker exec smoke-pg psql -U flowsim_admin -d flow_data_sim -Atc 'select 1 from flowsim_simulations limit 0' >/dev/null 2>&1 && break; sleep 2; done
+          docker run -d --name smoke-web --network smoke -p 127.0.0.1:8480:8480 -e TIMEBASE_DATASET=Test \
+            -e 'FLOWSIM_PG_CONNECTION=Host=flow-data-sim-pg;Database=flow_data_sim;Username=flowsim_writer;Password=smoke-writer' "$IMAGE"
+          status=starting
+          for i in $(seq 1 30); do status=$(docker inspect smoke-web --format '{{.State.Health.Status}}'); [ "$status" = healthy ] && break; sleep 3; done
+          docker logs smoke-web
+          test "$status" = healthy
+          # No Pulse here: the page must say which setting is missing and keep the database working.
+          curl -fsS http://127.0.0.1:8480/api/health | tee health.json
+          grep -q '"database":"ok"' health.json && grep -q '"code":"gage.missing_setting"' health.json
+          docker stop smoke-web
+          test "$(docker inspect smoke-web --format '{{.State.ExitCode}}')" = 0
+      - run: |
+          mkdir -p .tools/web-image
+          docker save "$IMAGE" | gzip > .tools/web-image/flow-data-simulator-web-${{ matrix.rid }}.tar.gz
+          (cd .tools/web-image && sha256sum *.tar.gz > SHA256SUMS)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-image-${{ matrix.rid }}
+          path: .tools/web-image/
           if-no-files-found: error
           retention-days: 14

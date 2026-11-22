@@ -44,3 +44,6 @@ __pycache__/
 runtime.jsonl
 runtime.[0-9]*.jsonl
 runtime.log.owner
+
+# Web container env files (deployment/web/*.env.example are the templates)
+deployment/web/*.env

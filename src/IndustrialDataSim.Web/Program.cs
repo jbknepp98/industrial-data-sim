@@ -11,13 +11,18 @@
 //   FLOWSIM_WEB_URLS           listen address, default http://127.0.0.1:8480
 //   FLOWSIM_WEB_ALLOWED_HOSTS  accepted Host names, default localhost;127.0.0.1;[::1]
 // Secrets are never logged or echoed.
+//
+// `flow-data-simulator-web healthcheck` asks the running page for /api/health
+// (the image's Docker health check) and exits 0 when it answers.
 using IndustrialDataSim.Interview;
 using IndustrialDataSim.Runtime;
 using IndustrialDataSim.Web;
 
-var log = new JsonLog(Console.Out);
 string? Setting(string key) => Environment.GetEnvironmentVariable(key) is { Length: > 0 } value ? value : null;
 
+if (args is ["healthcheck"]) return await WebHealthProbe.Run(Setting("FLOWSIM_WEB_URLS"), Console.Error);
+
+var log = new JsonLog(Console.Out);
 string? connection = Setting("FLOWSIM_PG_CONNECTION");
 if (connection is null)
 {

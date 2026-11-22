@@ -92,12 +92,38 @@
           "ask": "Why were orders late this week, and what should maintenance do about Labeler 202?",
           "expect": "An answer that joins the jams, the tickets and the late orders, and points to the worn gripper pads."
         }
+      ],
+      "variants": [
+        {
+          "base": "beverage-syrup-batch",
+          "fragment": {
+            "demand": {
+              "ordersPerDay": 3.8,
+              "dueDays": {
+                "minimum": 1.2,
+                "maximum": 2.2
+              }
+            },
+            "incidents": [
+              {
+                "failureMode": "LB202-JAM",
+                "at": "-30h",
+                "note": "Storyline: the jam the demo walks through; vibration climbs for 8 hours first."
+              },
+              {
+                "failureMode": "LB202-JAM",
+                "at": "-3d",
+                "note": "Storyline: an earlier jam on the same labeler."
+              }
+            ]
+          }
+        }
       ]
     },
     {
       "id": "repeat-bearing-failure",
       "title": "The same bearing keeps failing",
-      "pitch": "The mix tank agitator bearing fails three times in ten days, and each repair is treated as a one-off.",
+      "pitch": "The mix tank agitator fails three times in ten days on the same part (a bearing, or a seal on the syrup plant), and each repair is treated as a one-off.",
       "industries": [
         "food-beverage",
         "cpg",
@@ -175,6 +201,60 @@
           "tables": [],
           "ask": "Which assets have repeat failures this month, and what did they cost in parts and downtime?",
           "expect": "Mix Tank 101 at the top, with the bearing as the common part."
+        }
+      ],
+      "variants": [
+        {
+          "base": "beverage-syrup-batch",
+          "fragment": {
+            "incidents": [
+              {
+                "failureMode": "AG101-SEAL",
+                "at": "-5d",
+                "note": "Storyline: first agitator seal leak on the syrup mix tank."
+              },
+              {
+                "failureMode": "AG101-SEAL",
+                "at": "-3d",
+                "note": "Storyline: second seal leak on the same agitator."
+              },
+              {
+                "failureMode": "AG101-SEAL",
+                "at": "-20h",
+                "note": "Storyline: third seal leak in under a week."
+              }
+            ]
+          },
+          "talkTrack": [
+            {
+              "tool": "Connect",
+              "tags": [],
+              "tables": [
+                "{prefix}maintenancetickets",
+                "{prefix}partsusage"
+              ],
+              "ask": "List corrective tickets on agitator AG-101 (syrup mix tank 101) with the parts used.",
+              "expect": "Three tickets in under a week, each replacing the agitator seal."
+            },
+            {
+              "tool": "Explorer",
+              "tags": [
+                "{TagRoot}.MX1.AG-101.Vibration",
+                "{TagRoot}.MX1.AG-101.Status",
+                "{TagRoot}.MX1.Phase"
+              ],
+              "tables": [],
+              "ask": "Trend the agitator's vibration and status with the mix tank's phase across the week.",
+              "expect": "The same vibration rise before every leak, and the mix tank stops mid-batch each time: a pattern, not bad luck."
+            },
+            {
+              "tool": "Gage",
+              "tags": [],
+              "tables": [],
+              "ask": "Which assets have repeat failures this month, and what did they cost in parts and downtime?",
+              "expect": "Agitator AG-101 at the top, with the seal as the common part."
+            }
+          ]
         }
       ]
     },

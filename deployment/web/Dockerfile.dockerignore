@@ -1,0 +1,10 @@
+# Only what the web image build copies. Never send state, credentials or tooling.
+**
+!global.json
+!Directory.Build.props
+!IndustrialDataSim.slnx
+!src/**
+!examples/storylines/**
+!tools/plant-preview/**
+**/bin/
+**/obj/

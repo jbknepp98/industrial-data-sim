@@ -54,7 +54,7 @@ public sealed class InterviewLibrary
             return (null, loaded.Errors.Select(e => e with { Path = "storylines.json " + e.Path }).ToList());
 
         var bases = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (string baseId in loaded.Library!.Storylines.Where(s => s.Base is not null).Select(s => s.Base!).Distinct())
+        foreach (string baseId in loaded.Library!.Storylines.SelectMany(s => s.Bases).Distinct())
         {
             if (Read(Path.Combine("bases", baseId + ".json"), "interview.base_unreadable", errors) is not { } json) continue;
             try { using var _ = JsonDocument.Parse(json); bases[baseId] = json; }
