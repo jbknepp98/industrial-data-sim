@@ -112,6 +112,37 @@ internal sealed class ToolInput
         return result;
     }
 
+    /// <summary>
+    /// A list of {storyline, words} asks (find_storylines askedFor): storyline is
+    /// a library id or "none", words is the user's phrasing.
+    /// </summary>
+    public List<(string Storyline, string Words, string Path)> Asks(string name, IReadOnlyList<string> allowedStorylines)
+    {
+        var result = new List<(string, string, string)>();
+        foreach (var (item, path) in Items(name, 0, MaxListItems))
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                Errors.Add(new("tool.expected_object", path, "Use an object with storyline and words."));
+                continue;
+            }
+            foreach (var property in item.EnumerateObject())
+                if (property.Name is not ("storyline" or "words"))
+                    Errors.Add(new("tool.unknown_field", path + "." + property.Name, "Remove this field; use only storyline and words."));
+            if (!item.TryGetProperty("storyline", out var storylineValue)) Errors.Add(new("tool.missing_field", path + ".storyline", "Supply this field: a library storyline id, or \"none\"."));
+            if (!item.TryGetProperty("words", out var wordsValue)) Errors.Add(new("tool.missing_field", path + ".words", "Supply this field: what the user asked for, in their words."));
+            string storyline = TextAt(item.TryGetProperty("storyline", out _) ? storylineValue : null, path + ".storyline", allowEmpty: false, 64);
+            string words = TextAt(item.TryGetProperty("words", out _) ? wordsValue : null, path + ".words", allowEmpty: false, MaxText);
+            if (storyline.Length > 0 && !allowedStorylines.Contains(storyline))
+            {
+                Errors.Add(new("tool.value_not_allowed", path + ".storyline", "Use a storyline id from the library, or \"none\" when no storyline covers the ask."));
+                continue;
+            }
+            if (storyline.Length > 0 && words.Length > 0) result.Add((storyline, words, path));
+        }
+        return result;
+    }
+
     private IEnumerable<(JsonElement Item, string Path)> Items(string name, int minimum, int maximum)
     {
         if (Field(name) is not { } value) yield break;

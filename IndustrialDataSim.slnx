@@ -10,6 +10,7 @@
     <Project Path="src/IndustrialDataSim.Core/IndustrialDataSim.Core.csproj" />
     <Project Path="src/IndustrialDataSim.Runtime/IndustrialDataSim.Runtime.csproj" />
     <Project Path="src/IndustrialDataSim.Interview/IndustrialDataSim.Interview.csproj" />
+    <Project Path="src/IndustrialDataSim.Web/IndustrialDataSim.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/IndustrialDataSim.CrashProbe/IndustrialDataSim.CrashProbe.csproj" />

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow Data Simulator</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="shared/plant-preview.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="star" aria-hidden="true">✳</span><span class="eyebrow">Flow Data Simulator</span><b>Demo plant interview</b></div>
+  <nav class="tabs" role="tablist">
+    <button type="button" role="tab" id="tab-interview" aria-selected="true" aria-controls="view-interview">Interview</button>
+    <button type="button" role="tab" id="tab-plants" aria-selected="false" aria-controls="view-plants">Plants</button>
+  </nav>
+  <div class="top-actions">
+    <button type="button" class="ghost" id="new-interview">New interview</button>
+    <button type="button" class="ghost" id="theme" aria-label="Switch light or dark">◐</button>
+  </div>
+</header>
+
+<div class="banner" id="gage-banner" role="alert" hidden>
+  <div>
+    <b>The interview can't reach a model through Pulse, so it has stopped.</b>
+    <p id="gage-message"></p>
+    <p class="code" id="gage-code"></p>
+  </div>
+  <button type="button" id="gage-recheck">Check again</button>
+</div>
+
+<main id="view-interview" role="tabpanel" aria-labelledby="tab-interview">
+  <section class="chat" aria-label="Interview">
+    <div class="messages" id="messages" aria-live="polite"></div>
+    <form class="composer" id="composer">
+      <textarea id="input" rows="3" maxlength="8000" placeholder="Tell the interviewer who will watch the demo and what costs them the most…" aria-label="Message to the interviewer"></textarea>
+      <div class="composer-row">
+        <span class="hint" id="composer-hint">Enter sends · Shift+Enter for a new line</span>
+        <button type="submit" id="send">Send</button>
+      </div>
+    </form>
+  </section>
+
+  <aside class="side" aria-label="Storylines and preview">
+    <section class="card" id="live-card" hidden>
+      <div class="eyebrow">Approved</div>
+      <h2 id="live-title"></h2>
+      <dl class="kv" id="live-facts"></dl>
+      <div class="downloads" id="live-downloads"></div>
+    </section>
+
+    <section class="card">
+      <div class="eyebrow">Storylines</div>
+      <div id="storylines"><p class="muted">The interviewer picks storylines from the library once it knows your audience.</p></div>
+    </section>
+
+    <section class="card" id="needs-card" hidden>
+      <div class="eyebrow">Needs profile</div>
+      <dl class="kv" id="needs"></dl>
+    </section>
+
+    <section class="card" id="approve-card" hidden>
+      <div class="eyebrow">Ready to build</div>
+      <p>Review the preview below. Nothing is written until you approve.</p>
+      <button type="button" class="primary" id="approve-open">Approve and run…</button>
+      <div class="confirm" id="approve-confirm" hidden>
+        <h3>Build and run this plant?</h3>
+        <dl class="kv" id="approve-facts"></dl>
+        <details><summary id="approve-tables-summary">Tables</summary><ul class="tables" id="approve-tables"></ul></details>
+        <p class="muted">The plant backfills its history, then keeps running in this container until you stop or remove it on the Plants tab.</p>
+        <div class="row"><button type="button" class="primary" id="approve-yes">Approve and run</button><button type="button" class="ghost" id="approve-no">Cancel</button></div>
+        <p class="error" id="approve-error" hidden></p>
+      </div>
+    </section>
+
+    <section class="preview-host" id="preview-section" hidden>
+      <div class="eyebrow">Plant preview</div>
+      <div class="pp" id="preview"></div>
+    </section>
+  </aside>
+</main>
+
+<main id="view-plants" role="tabpanel" aria-labelledby="tab-plants" hidden>
+  <section class="card wide">
+    <div class="eyebrow">Plants in flow_data_sim</div>
+    <p class="muted">Plants approved on this page run inside this container. Others are listed read-only; a plant another process delivers shows "running elsewhere" and is never touched here. <span id="plants-dataset"></span></p>
+    <div class="scroll"><table class="plants"><thead><tr><th>Simulation</th><th>Status</th><th>Delivered through</th><th>Rows</th><th>Tag points</th><th>Snapshot</th><th></th></tr></thead><tbody id="plants"></tbody></table></div>
+    <p class="error" id="plants-error" hidden></p>
+  </section>
+</main>
+
+<script src="shared/plant-preview.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

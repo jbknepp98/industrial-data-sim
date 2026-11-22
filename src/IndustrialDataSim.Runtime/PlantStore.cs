@@ -322,7 +322,57 @@ public sealed class PlantStore : IDisposable
             connection.Dispose();
             throw new RuntimeFailure("plant.host_running", "Another plant host is already running this simulation. Stop it first; one host per simulation.");
         }
-        return connection; // closing the connection releases the lock
+        return new HostLock(connection, simulation);
+    }
+
+    /// <summary>
+    /// Releases the host lock explicitly before returning the connection. A
+    /// pooled connection keeps its session (and so its advisory locks) until
+    /// the pool reuses it, so merely disposing it would leave the plant looking
+    /// "running elsewhere" to a host started again in the same process.
+    /// </summary>
+    private sealed class HostLock(NpgsqlConnection connection, string simulation) : IDisposable
+    {
+        private bool released;
+
+        public void Dispose()
+        {
+            if (released) return;
+            released = true;
+            try
+            {
+                using var unlock = new NpgsqlCommand("SELECT pg_advisory_unlock(hashtext('flowsim-host:' || @s))", connection);
+                unlock.Parameters.AddWithValue("s", simulation);
+                unlock.ExecuteNonQuery();
+            }
+            catch (Exception error) when (error is NpgsqlException or InvalidOperationException)
+            {
+                // The connection is broken, so its session (and the lock) is gone with it.
+                NpgsqlConnection.ClearPool(connection);
+            }
+            finally { connection.Dispose(); }
+        }
+    }
+
+    /// <summary>
+    /// True when some session holds the simulation's host lock (another process
+    /// or container is delivering it). Reads pg_locks without taking the lock,
+    /// so asking never blocks or disturbs the host that owns it. The key split
+    /// matches pg_try_advisory_lock(bigint): high 32 bits in classid, low 32 in
+    /// objid, objsubid 1.
+    /// </summary>
+    public bool IsHostRunning(string simulation)
+    {
+        using var connection = Open();
+        using var command = new NpgsqlCommand("""
+            WITH k AS (SELECT hashtext('flowsim-host:' || @s)::bigint AS key)
+            SELECT EXISTS (SELECT 1 FROM pg_locks, k
+              WHERE locktype = 'advisory' AND granted AND objsubid = 1
+                AND classid = ((key >> 32) & 4294967295)::oid AND objid = (key & 4294967295)::oid
+                AND database = (SELECT oid FROM pg_database WHERE datname = current_database()))
+            """, connection);
+        command.Parameters.AddWithValue("s", simulation);
+        return command.ExecuteScalar() is true;
     }
 
     // ---------------- removal ----------------

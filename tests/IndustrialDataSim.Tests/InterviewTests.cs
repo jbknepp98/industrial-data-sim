@@ -97,7 +97,7 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
             r =>
             {
                 Assert.False(IsError(LastResults(r).Single()));
-                return Reply("tool_use", Call(InterviewTools.FindStorylines, new { keywords = new[] { "late orders", "labeler jams" } }));
+                return Reply("tool_use", Call(InterviewTools.FindStorylines, new { keywords = new[] { "late orders", "labeler jams" }, askedFor = Array.Empty<object>() }));
             },
             r =>
             {
@@ -239,7 +239,7 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
                 Call(InterviewTools.RecordAudience, new { industry = "aerospace", roles = new[] { "wizard" }, extra = 1 }),
                 Call("build_plant", new { simulation = "Acme" }),
                 Call(InterviewTools.PreviewPlant, new { hours = 500 }),
-                Call(InterviewTools.FindStorylines, new { keywords = new[] { "late orders" } })),
+                Call(InterviewTools.FindStorylines, new { keywords = new[] { "late orders" }, askedFor = Array.Empty<object>() })),
             r => { results = LastResults(r); return Reply("end_turn", Text("Let me fix that.")); });
         var session = Start(model);
         var result = await session.Send("Hello");
@@ -280,7 +280,7 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
     public async Task TheRoundLimitEndsTheTurnAndLeavesAValidHistory()
     {
         var steps = Enumerable.Range(0, 20).Select(_ => (Func<GageMessageRequest, Message>)(r =>
-            Reply("tool_use", Call(InterviewTools.FindStorylines, new { keywords = Array.Empty<string>() })))).ToArray();
+            Reply("tool_use", Call(InterviewTools.FindStorylines, new { keywords = Array.Empty<string>(), askedFor = Array.Empty<object>() })))).ToArray();
         var model = new ScriptedModel(steps);
         var store = new InMemoryInterviewStore();
         var events = new List<InterviewEvent>();
@@ -392,6 +392,8 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
         }
         public void SaveState(Guid id, string needsJson, string? draftModelJson, string? previewJson) => inner.SaveState(id, needsJson, draftModelJson, previewJson);
         public void SetStatus(Guid id, string status) => inner.SetStatus(id, status);
+        public bool MarkApproved(Guid id, string simulation) => inner.MarkApproved(id, simulation);
+        public IReadOnlySet<string> ApprovedSimulations() => inner.ApprovedSimulations();
     }
 
     [Fact]
@@ -481,16 +483,65 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
         JsonObject? found = null;
         var model = new ScriptedModel(
             _ => Reply("tool_use", Call(InterviewTools.RecordAudience, BeverageAudience)),
-            _ => Reply("tool_use", Call(InterviewTools.FindStorylines, new { keywords = new[] { "energy spikes" } })),
+            _ => Reply("tool_use", Call(InterviewTools.FindStorylines, new { keywords = new[] { "energy spikes" }, askedFor = new[] { new { storyline = "energy-per-unit-spike", words = "energy spikes" } } })),
             r => { found = ResultJson(LastResults(r).Single()); return Reply("end_turn", Text("That one isn't in the simulator yet.")); });
         var session = Start(model);
         await session.Send("They want to see energy spikes.");
+        // The ask is recorded by code from askedFor, for the demo guide.
+        Assert.Equal("energy-per-unit-spike", found!["recordedRequests"]![0]!["storyline"]!.GetValue<string>());
+        Assert.Equal("energy spikes", InterviewTools.Requests(session.State).Single()!["words"]!.GetValue<string>());
         var energy = found!["storylines"]!.AsArray().Single(s => s!["id"]!.GetValue<string>() == "energy-per-unit-spike")!;
         Assert.False(energy["available"]!.GetValue<bool>());
         // Its library entry names no closest storyline, so the best available match for the audience is offered.
         string offered = energy["offerInstead"]!["id"]!.GetValue<string>();
         Assert.True(Library().Storylines.Find(offered)!.Available);
         Assert.Contains("Nothing in the library is close", energy["offerInstead"]!["reason"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task UnmetAsksAccumulateFromToolInputsAndSurviveALaterProfileUpdate()
+    {
+        var emptiedProfile = JsonSerializer.SerializeToNode(BeverageAudience)!.AsObject();
+        emptiedProfile["requestedStories"] = new JsonArray();
+        var withRequest = JsonSerializer.SerializeToNode(BeverageAudience)!.AsObject();
+        withRequest["requestedStories"] = new JsonArray("downtime reasons operators type in");
+        var model = new ScriptedModel(
+            _ => Reply("tool_use", Call(InterviewTools.RecordAudience, withRequest)),
+            _ => Reply("tool_use", Call(InterviewTools.FindStorylines, new
+            {
+                keywords = new[] { "golden batch" },
+                askedFor = new object[]
+                {
+                    new { storyline = "golden-batch-syrup-holds", words = "golden batch for the syrup room" },
+                    new { storyline = "labeler-jams-late-orders", words = "late orders" },         // available: not an unmet ask
+                    new { storyline = InterviewTools.NoStoryline, words = "forklift telematics" },
+                    new { storyline = "golden-batch-syrup-holds", words = "golden batch again" }   // same storyline: recorded once
+                }
+            })),
+            // The model updates the profile and forgets requestedStories: nothing recorded is lost.
+            _ => Reply("tool_use", Call(InterviewTools.RecordAudience, emptiedProfile)),
+            _ => Reply("end_turn", Text("Noted.")));
+        var session = Start(model);
+        await session.Send("Bottler; they'd love a golden batch view of the syrup room, late orders, and forklift telematics.");
+
+        var requests = InterviewTools.Requests(session.State).Select(r => r!.AsObject()).ToList();
+        Assert.Equal(["downtime reasons operators type in", "golden batch for the syrup room", "forklift telematics"], requests.Select(r => r["words"]!.GetValue<string>()));
+        Assert.Equal("unmapped", requests[0]["engine"]!.GetValue<string>());
+        Assert.Equal("planned", requests[1]["engine"]!.GetValue<string>());
+        Assert.Equal("quality-hold-traced", requests[1]["offeredInstead"]!["id"]!.GetValue<string>());
+        Assert.Null(requests[2]["storyline"]);
+    }
+
+    [Fact]
+    public async Task AskedForRejectsIdsOutsideTheLibrary()
+    {
+        JsonObject? result = null;
+        var model = new ScriptedModel(
+            _ => Reply("tool_use", Call(InterviewTools.RecordAudience, BeverageAudience),
+                Call(InterviewTools.FindStorylines, new { keywords = Array.Empty<string>(), askedFor = new[] { new { storyline = "made-up", words = "x" } } })),
+            r => { result = ResultJson(LastResults(r)[1]); return Reply("end_turn", Text("OK.")); });
+        await Start(model).Send("Hello");
+        Assert.Equal("$.askedFor[0].storyline", result!["errors"]![0]!["path"]!.GetValue<string>());
     }
 
     // ---------------- live, through the Pulse Gage proxy ----------------

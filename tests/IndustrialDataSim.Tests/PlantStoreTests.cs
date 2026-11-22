@@ -162,8 +162,13 @@ public class PlantStoreTests
             changed["seed"] = 1;
             var other = PlantModelLoader.Load(changed.ToJsonString(), Anchor).Model!;
             Assert.Equal("plant.already_admitted", Assert.Throws<RuntimeFailure>(() => store.Admit(other, changed.ToJsonString())).Error.Code);
+            Assert.False(store.IsHostRunning(name));
             using (var second = store.LockSimulation(name))
+            {
                 Assert.Equal("plant.host_running", Assert.Throws<RuntimeFailure>(() => store.LockSimulation(name)).Error.Code);
+                Assert.True(store.IsHostRunning(name)); // seen through pg_locks without taking the lock
+            }
+            Assert.False(store.IsHostRunning(name));
             store.Remove(name);
             using var check = new NpgsqlCommand($"SELECT count(*) FROM pg_tables WHERE tablename LIKE '{strayModel.TablePrefix}%' ", db);
             Assert.Equal(1L, check.ExecuteScalar()); // the handmade table is untouched

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    The interview web container (phase 7): an ASP.NET Core minimal API that
+    serves the interview page, approves previews and runs approved plants in
+    process (PlantHostingService). Configuration is environment variables only,
+    like the CLI. No NuGet packages beyond the shared framework.
+  -->
+  <PropertyGroup>
+    <AssemblyName>flow-data-simulator-web</AssemblyName>
+    <RootNamespace>IndustrialDataSim.Web</RootNamespace>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../IndustrialDataSim.Core/IndustrialDataSim.Core.csproj" />
+    <ProjectReference Include="../IndustrialDataSim.Runtime/IndustrialDataSim.Runtime.csproj" />
+    <ProjectReference Include="../IndustrialDataSim.Interview/IndustrialDataSim.Interview.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="IndustrialDataSim.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The page and the shared preview renderer are served from the output folder (WebApp sets the web root there). -->
+    <Content Update="wwwroot/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../tools/plant-preview/plant-preview.js" Link="wwwroot/shared/plant-preview.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../tools/plant-preview/plant-preview.css" Link="wwwroot/shared/plant-preview.css" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- The storyline library and demo guide template ship next to the program. -->
+    <Content Include="../../examples/storylines/**" Link="storylines/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

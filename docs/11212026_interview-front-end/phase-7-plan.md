@@ -113,17 +113,34 @@ Output is Markdown and HTML.
 
 <success-criteria>
 <automated-verification>
-- [ ] Build and full tests (Release, live PG) pass
+- [x] Build and full tests (Release, live PG) pass
 </automated-verification>
 <end-to-end-verification>
-- [ ] Run the web project locally against the live stack; in the browser pane, complete an interview as a "bottler, maintenance lead, late orders" user. The preview shows the labeler story. Approve. Status reaches live, and the demo guide lists real tags and times
-- [ ] Verify the approved plant: Postgres rows and Historian tags match the engine (verify script, 0 mismatches)
-- [ ] Restart the web process: the plant logs `snapshot_resumed` and keeps delivering
-- [ ] With Pulse's `DataSim` client disabled: the page shows the `gage.blocked` banner with the fix, and no plant is admitted
-- [ ] BluebirdBev shows "running elsewhere" and is untouched
-- [ ] Remove the test plant from the page; its tables are gone, other tables untouched
+- [x] Run the web project locally against the live stack; in the browser pane, complete an interview as a "bottler, maintenance lead, late orders" user. The preview shows the labeler story. Approve. Status reaches live, and the demo guide lists real tags and times
+- [x] Verify the approved plant: Postgres rows and Historian tags match the engine (verify script, 0 mismatches)
+- [x] Restart the web process: the plant logs `snapshot_resumed` and keeps delivering
+- [x] With Pulse's `DataSim` client disabled: the page shows the `gage.blocked` banner with the fix, and no plant is admitted
+- [x] BluebirdBev shows "running elsewhere" and is untouched
+- [x] Remove the test plant from the page; its tables are gone, other tables untouched
 </end-to-end-verification>
 </success-criteria>
+
+<verification-notes>
+Verified November 22, 2026 (branch feature/phase-7-web). Full Release suite
+1088/1088 with FLOWSIM_TEST_PG. Live: the published linux-arm64 build ran in
+the dev simulator image on the stack network (datasim.env, /certs). Interview
+"bottler, maintenance lead, late orders" → labeler preview → Approve →
+PlanTestWebBottler live in 6 s; demo guide with real tags and times and the
+unmet golden-batch ask. Engine check: 141,821 tag points and 554 rows (23
+tables, 4,515 cells), 0 mismatches, also after a restart that logged
+plant.snapshot_resumed. Gage blocked was simulated in a separate test
+container (wrong FLOWSIM_GAGE_MODEL → gage.model_missing; wrong client secret
+→ gage.client_rejected), not by changing Pulse: banner with the fix, composer
+disabled, a forced send stopped, nothing admitted. A real gage.blocked needs a
+Block usage policy in Pulse and is covered by the endpoint test. BluebirdBev
+showed running elsewhere and was untouched. Removal from the page dropped 23
+tables; the other 28 tables were unchanged.
+</verification-notes>
 
 <post-verification>
 Commit: "web: interview page, approval, in-container plant hosting, demo guide". Proceed to phase 8.
