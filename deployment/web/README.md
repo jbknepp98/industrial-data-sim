@@ -22,7 +22,7 @@ You need:
   `timebase-2-0-beta_default`);
 - the Pulse root CA certificate as a PEM file;
 - a Pulse administrator for steps 1–3;
-- this repository (the image is built from source until a release is published).
+- this repository (build the image from source, or load one a CI run saved).
 
 Commands run from the repository root. Keep the private files (`web.env`,
 `postgres.env`, the CA) outside the repository, for example in
@@ -114,6 +114,15 @@ export TIMEBASE_NETWORK=timebase-2-0-beta_default
 
 ```bash
 docker compose -f deployment/web/compose.snippet.yml build
+```
+
+Or, instead of building, load the image a CI run saved (the `web-image-<rid>`
+artifact of the Verify workflow). It already carries the tag the compose file
+runs, plus the commit it was built from:
+
+```bash
+sha256sum -c SHA256SUMS
+docker load -i flow-data-simulator-web-linux-arm64.tar.gz
 ```
 
 Run `gage-check` before you start the page (it is the same check the page runs

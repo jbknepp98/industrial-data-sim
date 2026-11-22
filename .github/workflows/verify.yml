@@ -122,12 +122,19 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     env:
-      IMAGE: flow-data-simulator-web:${{ github.sha }}
+      IMAGE_COMMIT: flow-data-simulator-web:${{ github.sha }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - run: docker build -f deployment/web/Dockerfile --build-arg VERSION=${{ env.CANDIDATE_VERSION }} -t "$IMAGE" .
+      # The version tag is the one compose.snippet.yml runs, so a loaded
+      # artifact starts with no retagging; the commit tag says where it came from.
+      - name: Compose runs the image this job builds
+        run: |
+          IMAGE="flow-data-simulator-web:$CANDIDATE_VERSION"
+          grep -qx "    image: $IMAGE" deployment/web/compose.snippet.yml || { echo "compose.snippet.yml must run $IMAGE"; exit 1; }
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - run: docker build -f deployment/web/Dockerfile --build-arg VERSION=${{ env.CANDIDATE_VERSION }} -t "$IMAGE" -t "$IMAGE_COMMIT" .
       - name: Image runs as non-root with SIGINT and a health check
         run: |
           test "$(docker inspect "$IMAGE" --format '{{.Config.User}}')" = datasim
@@ -156,7 +163,7 @@ jobs:
           test "$(docker inspect smoke-web --format '{{.State.ExitCode}}')" = 0
       - run: |
           mkdir -p .tools/web-image
-          docker save "$IMAGE" | gzip > .tools/web-image/flow-data-simulator-web-${{ matrix.rid }}.tar.gz
+          docker save "$IMAGE" "$IMAGE_COMMIT" | gzip > .tools/web-image/flow-data-simulator-web-${{ matrix.rid }}.tar.gz
           (cd .tools/web-image && sha256sum *.tar.gz > SHA256SUMS)
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
