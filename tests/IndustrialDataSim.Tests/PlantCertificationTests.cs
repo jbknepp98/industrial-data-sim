@@ -233,7 +233,7 @@ public class PlantCertificationTests
             new JsonObject { ["technician"] = "E1007", ["skill"] = "mechanical", ["at"] = "-4d" })), Anchor);
         foreach (var change in run.Changes.Where(c => c.Table is "trainingrecords" or "workcompliance" or "workinstructions" or "operatorcompliance"))
         {
-            var columns = PlantSchema.Table(change.Table).Columns.ToDictionary(c => c.Name, c => c.Type);
+            var columns = PlantSchema.Table(run.Model, change.Table).Columns.ToDictionary(c => c.Name, c => c.Type);
             if (change.Operation == "insert") Assert.Equal(columns.Keys.Order(), change.Columns.Keys.Order());
             foreach (var (name, value) in change.Columns)
                 if (value is not null)

@@ -7,9 +7,10 @@ namespace IndustrialDataSim.Core.Plant;
 /// </summary>
 public static class PlantQualityValues
 {
-    public static double Value(PlantModel model, PlantQualityParameter parameter, string line, string sku, DateTimeOffset utc)
+    /// <param name="shift">What the product inherited from the batches it was made from (0 when not fed).</param>
+    public static double Value(PlantModel model, PlantQualityParameter parameter, string line, string sku, DateTimeOffset utc, double shift = 0)
     {
-        double value = parameter.Target + parameter.SkuOffsets.GetValueOrDefault(sku);
+        double value = parameter.Target + parameter.SkuOffsets.GetValueOrDefault(sku) + shift;
         foreach (var excursion in model.Quality!.Excursions)
             if (excursion.Parameter == parameter.Name && (excursion.Sku is null || excursion.Sku == sku) &&
                 utc >= excursion.FromUtc && utc < excursion.UntilUtc)

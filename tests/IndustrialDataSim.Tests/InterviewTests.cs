@@ -266,13 +266,13 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
         var model = new ScriptedModel(
             _ => Reply("tool_use", Call(InterviewTools.ComposeModel, new
             {
-                storylines = new[] { "golden-batch-syrup-holds", "no-such-story" }, simulation = "Acme", backfill = "",
+                storylines = new[] { "mcc-trip-impact", "no-such-story" }, simulation = "Acme", backfill = "",
                 lineNames = Array.Empty<object>(), productNames = Array.Empty<object>(), peopleNames = new[] { new { id = "E9999", name = "Nobody" } }
             })),
             r => { result = ResultJson(LastResults(r).Single()); return Reply("end_turn", Text("OK.")); });
         await Start(model).Send("Hello");
         var errors = result!["errors"]!.AsArray();
-        Assert.Contains(errors, e => e!["path"]!.GetValue<string>() == "$.storylines[0]" && e["message"]!.GetValue<string>().Contains("quality-hold-traced"));
+        Assert.Contains(errors, e => e!["path"]!.GetValue<string>() == "$.storylines[0]" && e["message"]!.GetValue<string>().Contains("labeler-jams-late-orders"));
         Assert.Contains(errors, e => e!["path"]!.GetValue<string>() == "$.storylines[1]" && e["code"]!.GetValue<string>() == "tool.unknown_storyline");
     }
 
@@ -465,13 +465,13 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     [Fact]
-    public void PharmaBatchLeadsWithThePlannedGoldenBatchStorylineAndOffersTheClosest()
+    public void PharmaBatchLeadsWithTheGoldenBatchDeviationStoryline()
     {
         var ranked = StorylineRanking.Rank(Library().Storylines, new AudienceProfile("pharma", ["process-engineer"], ["yield", "deviations"]), ["batch"]);
         var top = ranked[0];
         Assert.Equal("golden-batch-pharma-deviation", top.Storyline.Id);
-        Assert.Equal("planned", top.Storyline.Engine); // until phase 4 makes it available
-        Assert.Equal("quality-hold-traced", top.OfferInstead!.Id);
+        Assert.Equal("available", top.Storyline.Engine); // phase 4 made it buildable
+        Assert.Null(top.OfferInstead);
         Assert.Contains(top.Reasons, r => r.Contains("pharma"));
     }
 

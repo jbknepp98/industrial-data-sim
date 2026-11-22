@@ -145,7 +145,8 @@ public class PlantBatchTests
         Assert.DoesNotContain(signals.Tags, t => t.Line == "R1" && t.Measure is "Speed" or "GoodCount" or "RejectCount");
         var recipes = run.Model.Lines[0].Batch!.Recipes;
         int checkedHeat = 0;
-        foreach (var segment in run.Segments.Where(s => s.Line == "R1" && s.State == "Running" && s.Batch?.Phase == "Heat" && s.Batch.From == 0 && s.Batch.To > 0.99))
+        // Heat phases that start on profile (not still warm from the previous batch, which settles first).
+        foreach (var segment in run.Segments.Where(s => s.Line == "R1" && s.State == "Running" && s.Batch?.Phase == "Heat" && s.Batch.From == 0 && s.Batch.To > 0.99 && Math.Abs(s.Batch.StartC - 40) < 0.5))
         {
             var middle = segment.Start + (segment.End - segment.Start) / 2;
             var ramp = recipes.Single(r => r.Id == segment.Batch!.Recipe).Phases[1].TemperatureC;
@@ -199,7 +200,7 @@ public class PlantBatchTests
         Assert.True(resumed >= 2, $"{resumed} interrupted phases resumed");
     }
 
-    /// <summary>Direct-sale batch orders (pharma) complete with their last batch; the lot and quality flow is unchanged.</summary>
+    /// <summary>Direct-sale batch orders (pharma) complete with their last batch; the lot waits for its batches' release.</summary>
     [Fact]
     public void OrderCompletesWithItsLastBatchAndBecomesALot()
     {
@@ -219,7 +220,12 @@ public class PlantBatchTests
             Assert.Equal(last, Time(order["completed_utc"]));
             var lot = tables["lots"].Single(l => Equals(l["production_order"], order["production_order"]));
             Assert.Equal(last, Time(lot["produced_utc"]));
-            Assert.Contains(tables["qualitysamples"], s => Equals(s["lot_id"], lot["lot_id"]));
+            // With batch release testing the batches are sampled, not the lot: the lot is released with its last batch.
+            Assert.DoesNotContain(tables["qualitysamples"], s => Equals(s["lot_id"], lot["lot_id"]));
+            Assert.All(list, b => Assert.Single(tables["qualitysamples"], s => Equals(s["batch_id"], b["batch_id"])));
+            if (lot["released_utc"] is DateTimeOffset released)
+                Assert.Equal(list.Max(b => Time(b["released_utc"])), released);
+            else Assert.Contains(list, b => b["released_utc"] is null);
             completed++;
         }
         Assert.True(completed >= 5, $"{completed} batch orders completed");
@@ -281,7 +287,7 @@ public class PlantBatchTests
         foreach (var change in run.Changes)
         {
             Assert.Contains(change.Table, purposes);
-            var columns = PlantSchema.Table(change.Table).Columns.ToDictionary(c => c.Name, c => c.Type);
+            var columns = PlantSchema.Table(run.Model, change.Table).Columns.ToDictionary(c => c.Name, c => c.Type);
             if (change.Operation == "insert") Assert.Equal(columns.Keys.Order(), change.Columns.Keys.Order());
             foreach (var (name, value) in change.Columns)
                 if (value is not null)

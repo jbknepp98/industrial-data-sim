@@ -39,8 +39,8 @@ on Thursday at 06:40; the line stops at 14:40; the ticket opens at 14:45."
 
 ## Asked for, not in the simulator yet
 
-{UnmetRequests}. For example: "golden batch comparison (planned); showed the
-quality-hold storyline instead".
+{UnmetRequests}. For example: "MCC trip impact (later); showed the
+labeler-jam storyline instead".
 
 ## Close
 

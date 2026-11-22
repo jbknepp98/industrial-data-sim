@@ -107,15 +107,44 @@ Assumes phase 3 is complete: batch lines, phases, records and tags exist.
 
 <success-criteria>
 <automated-verification>
-- [ ] Build and full tests (Release, live PG) pass; packaging golden hashes unchanged
-- [ ] Storylines 5a, 5b and 5c compose, validate and show their drifts in `PlantStorylineTests`
+- [x] Build and full tests (Release, live PG) pass; packaging golden hashes unchanged
+- [x] Storylines 5a, 5b and 5c compose, validate and show their drifts in `PlantStorylineTests`
 </automated-verification>
 <end-to-end-verification>
-- [ ] Docker runs of `PlanTestGolden…` for 5a, 5b and 5c (one at a time; remove each afterwards). For 5b, the held filler lots trace to drifted syrup batches. For 5c, `deviations` shows QA approvals before release. For 5a, `SELECT batch_id, deviation_score, yield_percent FROM …batches ORDER BY start_utc` shows the rise and the recovery after the PM; the `HeatRate` trend in Historian drops during the drift (verify script, 0 mismatches)
-- [ ] Each talk-track step works as written against the running plant (Connect SQL runs; tags exist)
-- [ ] Remove `PlanTestGolden…`
+- [x] Docker runs of `PlanTestGolden…` for 5a, 5b and 5c (one at a time; remove each afterwards). For 5b, the held filler lots trace to drifted syrup batches. For 5c, `deviations` shows QA approvals before release. For 5a, `SELECT batch_id, deviation_score, yield_percent FROM …batches ORDER BY start_utc` shows the rise and the recovery after the PM; the `HeatRate` trend in Historian drops during the drift (verify script, 0 mismatches)
+- [x] Each talk-track step works as written against the running plant (Connect SQL runs; tags exist)
+- [x] Remove `PlanTestGolden…`
 </end-to-end-verification>
 </success-criteria>
+
+<implementation-notes>
+Done November 22, 2026, on `feature/phase-4-golden-batch`. Where the build
+differs from the plan text:
+
+- **Drifts are top level** (`drifts[]` with a `line` field), not
+  `batch.drifts[]`. Storyline fragments are merge patches, and a patch cannot
+  reach into the `lines` array. `drifts` and `maintenance.preventive` are
+  additive in composition.
+- **Batch release testing and deviations live under `quality`**
+  (`quality.batchRelease`, `quality.deviations`), and QA staff under
+  `people.qa`, for the same reason. Deviations require batch release testing.
+- **Lab results "from yield":** each release test can set a
+  `yieldSensitivity`. Fed products inherit their batches' shift by quantity, so
+  5b's filler lots fail while the syrup passes its wider release limits.
+- **`batches.released_utc`** was added so the 5c audit trail can show release
+  after QA closure. The `goldenprofiles` table has a `profile_id` key and
+  `golden_yield_percent`.
+- **Yield is recorded, not applied to quantities**: discharged quantity is
+  still the batch size. This is listed in docs/plant-simulation.md under
+  "Not yet modeled".
+- **Phase 3 follow-ups:** repaired phases reheat at up to 3 °C/min (and warm
+  starts settle onto the ramp). With batch release testing, batches wait in
+  quarantine and are released by their results.
+- **Live (image `flow-data-simulator:2.0.0-dev-golden`, sample interval 30 s, Test
+  Dataset):** `PlanTestGoldenA0629` (5a), `PlanTestGoldenB0631` (5b) and
+  `PlanTestGoldenC0631` (5c) each matched Historian on 116,844 / 120,364 /
+  123,455 points (0 mismatches, 0 missing). Each was then removed.
+</implementation-notes>
 
 <post-verification>
 Commit: "plant: golden batch drift and batch quality". The engine track is complete.

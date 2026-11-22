@@ -210,7 +210,13 @@
                   "end": 0
                 }
               }
-            ]
+            ],
+            "golden": {
+              "yieldPercent": {
+                "target": 97.5,
+                "sigma": 0.3
+              }
+            }
           },
           {
             "id": "RCP-SYR-OR",
@@ -316,7 +322,13 @@
                   "end": 0
                 }
               }
-            ]
+            ],
+            "golden": {
+              "yieldPercent": {
+                "target": 97.5,
+                "sigma": 0.3
+              }
+            }
           },
           {
             "id": "RCP-SYR-BR",
@@ -422,7 +434,13 @@
                   "end": 0
                 }
               }
-            ]
+            ],
+            "golden": {
+              "yieldPercent": {
+                "target": 97.5,
+                "sigma": 0.3
+              }
+            }
           }
         ],
         "feeds": {
@@ -689,6 +707,42 @@
     }
   },
   "incidents": [],
+  "quality": {
+    "parameters": [
+      {
+        "name": "Brix",
+        "unit": "Bx",
+        "target": 11.0,
+        "lower": 10.7,
+        "upper": 11.3,
+        "sigma": 0.04,
+        "skuOffsets": {}
+      }
+    ],
+    "labMinutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "holdMinutes": {
+      "minimum": 240,
+      "maximum": 720
+    },
+    "excursions": [],
+    "batchRelease": {
+      "labMinutes": {
+        "minimum": 15,
+        "maximum": 30
+      },
+      "parameters": [
+        {
+          "name": "Brix",
+          "lower": 10.4,
+          "upper": 11.6,
+          "yieldSensitivity": 0.1
+        }
+      ]
+    }
+  },
   "shipping": {
     "delayHours": {
       "minimum": 2,

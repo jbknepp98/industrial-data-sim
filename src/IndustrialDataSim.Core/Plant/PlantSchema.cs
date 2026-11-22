@@ -92,24 +92,40 @@ public static class PlantSchema
     [
         new("recipes", "Batch recipes, one per SKU made on a batch unit", [Key("recipe_id"), Text("sku"), Whole("phase_count")]),
         new("recipephases", "Recipe phases with duration range and setpoint ramps (JSON)", [Key("recipe_phase_id"), Text("recipe_id"), Whole("sequence"), Text("phase"), Number("minutes_min"), Number("minutes_max"), Text("setpoints_json")]),
-        new("batches", "Batches run on batch units; size is in the unit's capacity unit", [Key("batch_id"), Text("production_order"), Text("recipe_id"), Text("line_id"), Time("start_utc"), Time("end_utc"), Number("size"), Text("status")]),
-        new("batchphases", "Executed phases of each batch; interrupted phases include their Down time", [Key("batch_phase_id"), Text("batch_id"), Whole("sequence"), Text("phase"), Time("start_utc"), Time("end_utc"), Number("planned_minutes"), Number("actual_minutes"), Flag("interrupted")])
+        new("batches", "Batches run on batch units; size is in the unit's capacity unit; deviation_score is the distance from the golden profile (golden when at most the unit's threshold)",
+            [Key("batch_id"), Text("production_order"), Text("recipe_id"), Text("line_id"), Time("start_utc"), Time("end_utc"), Number("size"), Text("status"),
+             Number("yield_percent"), Number("deviation_score"), Flag("golden"), Time("released_utc")]),
+        new("batchphases", "Executed phases of each batch; planned_minutes is the running time, actual_minutes includes Down time", [Key("batch_phase_id"), Text("batch_id"), Whole("sequence"), Text("phase"), Time("start_utc"), Time("end_utc"), Number("planned_minutes"), Number("actual_minutes"), Flag("interrupted")]),
+        new("goldenprofiles", "Golden batch profile per recipe phase: golden running minutes and setpoint ramps (JSON)", [Key("profile_id"), Text("recipe_id"), Whole("sequence"), Text("phase"), Number("golden_minutes"), Text("setpoints_json"), Number("golden_yield_percent")])
     ];
+
+    /// <summary>GxP deviations (quality.deviations) for batches off the golden profile, with QA closure.</summary>
+    public static readonly PlantTable DeviationsTable = new("deviations", "Deviations for batches off the golden profile; a batch is released only after QA closes its deviation",
+        [Key("deviation_id"), Text("batch_id"), Text("phase"), Text("description"), Time("opened_utc"), Time("closed_utc"), Text("qa_approver_id")]);
+
+    /// <summary>
+    /// In plants with a batch unit, quality samples and holds also name the batch
+    /// they belong to (batch release testing); lot rows leave batch_id empty. Other
+    /// plants keep the original columns.
+    /// </summary>
+    private static readonly IReadOnlyList<PlantTable> BatchQualityTables = QualityTables.Select(t => t.Purpose is "qualitysamples" or "qualityholds"
+        ? t with { Description = t.Description + " (or batches, by batch_id)", Columns = t.Columns.Take(2).Append(Text("batch_id")).Concat(t.Columns.Skip(2)).ToList() } : t).ToList();
 
     /// <summary>A batch unit feeding a packaging line (batch.feeds): genealogy from packaging orders to batches.</summary>
     public static readonly PlantTable BatchConsumptionTable = new("batchconsumption", "Intermediate taken from each batch by a fed packaging order",
         [Key("consumption_id"), Text("batch_id"), Text("production_order"), Number("quantity"), Time("consumed_utc")]);
 
     /// <summary>Every table purpose the simulator can create (for removal and lookups).</summary>
-    public static IEnumerable<PlantTable> AllTables => Tables.Concat(QualityTables).Append(LotsTable).Concat(ShippingTables)
-        .Concat(CertificationTables).Concat(OperatorCertificationTables).Concat(BatchTables).Append(BatchConsumptionTable);
+    public static IEnumerable<PlantTable> AllTables => Tables.Concat(BatchQualityTables).Append(LotsTable).Concat(ShippingTables)
+        .Concat(CertificationTables).Concat(OperatorCertificationTables).Concat(BatchTables).Append(BatchConsumptionTable).Append(DeviationsTable);
 
     /// <summary>The tables this plant uses: the core loop plus its enabled areas.</summary>
     public static IReadOnlyList<PlantTable> TablesFor(PlantModel model)
     {
         var tables = Tables.ToList();
         if (model.Quality is not null || model.Shipping is not null) tables.Add(LotsTable);
-        if (model.Quality is not null) tables.AddRange(QualityTables);
+        bool batch = model.Lines.Any(l => l.Batch is not null);
+        if (model.Quality is not null) tables.AddRange(batch ? BatchQualityTables : QualityTables);
         if (model.Shipping is not null) tables.AddRange(ShippingTables);
         if (model.Maintenance.Certification is { } certification)
         {
@@ -118,10 +134,15 @@ public static class PlantSchema
         }
         if (model.Lines.Any(l => l.Batch is not null)) tables.AddRange(BatchTables);
         if (model.Lines.Any(l => l.Batch?.Feeds is not null)) tables.Add(BatchConsumptionTable);
+        if (model.Quality?.Deviations is not null) tables.Add(DeviationsTable);
         return tables;
     }
 
+    /// <summary>A table's widest definition (every column any plant can have), for type lookups.</summary>
     public static PlantTable Table(string purpose) => AllTables.First(t => t.Purpose == purpose);
+
+    /// <summary>The table exactly as this plant creates it.</summary>
+    public static PlantTable Table(PlantModel model, string purpose) => TablesFor(model).First(t => t.Purpose == purpose);
 
     /// <summary>The physical table name: the plant's lower-case prefix plus the purpose.</summary>
     public static string PhysicalName(PlantModel model, string purpose) => model.TablePrefix + purpose;

@@ -34,7 +34,9 @@ public static class PlantConnectSpec
         ("operatorcompliance", "instruction_id", "workinstructions"),
         ("recipes", "sku", "skus"), ("recipephases", "recipe_id", "recipes"),
         ("batches", "production_order", "productionorders"), ("batches", "recipe_id", "recipes"), ("batches", "line_id", "lines"),
-        ("batchphases", "batch_id", "batches"), ("batchconsumption", "batch_id", "batches"), ("batchconsumption", "production_order", "productionorders")
+        ("batchphases", "batch_id", "batches"), ("batchconsumption", "batch_id", "batches"), ("batchconsumption", "production_order", "productionorders"),
+        ("goldenprofiles", "recipe_id", "recipes"), ("qualitysamples", "batch_id", "batches"), ("qualityholds", "batch_id", "batches"),
+        ("deviations", "batch_id", "batches"), ("deviations", "qa_approver_id", "employees")
     ];
 
     public static object Json(PlantModel model)
@@ -51,7 +53,7 @@ public static class PlantConnectSpec
             {
                 name = PlantSchema.PhysicalName(model, t.Purpose), purpose = t.Purpose, t.Description, key = t.Key,
                 columns = t.Columns.Concat(PlantSchema.StandardColumns).Select(c => new { c.Name, c.Type, c.Nullable }),
-                references = Relationships.Where(r => r.Table == t.Purpose && purposes.Contains(r.References))
+                references = Relationships.Where(r => r.Table == t.Purpose && purposes.Contains(r.References) && t.Columns.Any(c => c.Name == r.Column))
                     .Select(r => new { column = r.Column, table = PlantSchema.PhysicalName(model, r.References) }),
                 incrementalQuery = IncrementalQuery(model, t)
             }),
@@ -80,6 +82,7 @@ public static class PlantConnectSpec
                     historianTag = t.Name
                 }))
                 .Concat(model.Skus.Select(s => (object)new { type = "Product", id = s.Code, name = s.Description }))
+                .Concat(model.Lines.SelectMany(l => (l.Batch?.Recipes ?? []).Select(r => (object)new { type = "Recipe", id = r.Id, product = r.Sku, line = l.Id })))
                 .Concat(model.Operators.Concat(model.Technicians).Select(p => (object)new { type = "Person", id = p.Id, name = p.Name, shift = p.Shift, skills = p.Skills })),
             queryProperties = new object[]
             {
@@ -107,7 +110,14 @@ public static class PlantConnectSpec
                 // Batch units are Equipment of their batch line: the line's batches are the unit's history.
                 new { on = "Line", name = "CurrentBatch", query = $"SELECT b.batch_id, b.production_order, b.recipe_id, b.size, b.start_utc, p.phase, p.start_utc AS phase_start_utc FROM {Table("batches")} b LEFT JOIN {Table("batchphases")} p ON p.batch_id = b.batch_id AND p.end_utc IS NULL AND NOT p.is_deleted WHERE b.line_id = [LineId] AND b.status = 'Running' AND NOT b.is_deleted" },
                 new { on = "Equipment", name = "BatchHistory", query = $"SELECT b.batch_id, b.recipe_id, b.size, b.start_utc, b.end_utc, b.status, EXTRACT(EPOCH FROM (b.end_utc - b.start_utc)) / 60 AS cycle_minutes FROM {Table("batches")} b JOIN {Table("equipment")} e ON e.line_id = b.line_id WHERE e.equipment_id = [EquipmentId] AND NOT b.is_deleted ORDER BY b.start_utc DESC LIMIT 50" },
-                new { on = "Line", name = "BatchPhases", query = $"SELECT p.batch_id, p.sequence, p.phase, p.start_utc, p.end_utc, p.planned_minutes, p.actual_minutes, p.interrupted FROM {Table("batchphases")} p JOIN {Table("batches")} b ON b.batch_id = p.batch_id WHERE b.line_id = [LineId] AND NOT p.is_deleted ORDER BY p.start_utc DESC LIMIT 100" }
+                new { on = "Line", name = "BatchPhases", query = $"SELECT p.batch_id, p.sequence, p.phase, p.start_utc, p.end_utc, p.planned_minutes, p.actual_minutes, p.interrupted FROM {Table("batchphases")} p JOIN {Table("batches")} b ON b.batch_id = p.batch_id WHERE b.line_id = [LineId] AND NOT p.is_deleted ORDER BY p.start_utc DESC LIMIT 100" },
+                // Golden batch: batches off the golden profile, and phase-by-phase actual against golden for a recipe's last 10 batches.
+                new { on = "Line", name = "BatchesOffGolden", query = $"SELECT batch_id, recipe_id, start_utc, end_utc, deviation_score, yield_percent, status FROM {Table("batches")} WHERE line_id = [LineId] AND golden = false AND NOT is_deleted ORDER BY start_utc DESC LIMIT 50" },
+                new { on = "Recipe", name = "GoldenComparison", query = $"SELECT b.batch_id, b.start_utc, p.sequence, p.phase, p.planned_minutes AS running_minutes, p.actual_minutes, g.golden_minutes, ROUND(p.planned_minutes - g.golden_minutes, 2) AS minutes_over_golden, b.deviation_score, b.yield_percent, g.golden_yield_percent FROM (SELECT batch_id, recipe_id, start_utc, deviation_score, yield_percent FROM {Table("batches")} WHERE recipe_id = [RecipeId] AND end_utc IS NOT NULL AND NOT is_deleted ORDER BY start_utc DESC LIMIT 10) b JOIN {Table("batchphases")} p ON p.batch_id = b.batch_id AND NOT p.is_deleted JOIN {Table("goldenprofiles")} g ON g.recipe_id = b.recipe_id AND g.sequence = p.sequence ORDER BY b.start_utc DESC, p.sequence" }
+            }).Concat(model.Quality?.Deviations is null ? [] : new object[]
+            {
+                // GxP audit trail: each deviation with its QA approver and the batch's release.
+                new { on = "Line", name = "BatchDeviations", query = $"SELECT d.deviation_id, d.batch_id, d.phase, d.description, d.opened_utc, d.closed_utc, e.employee_name AS qa_approver, b.released_utc FROM {Table("deviations")} d JOIN {Table("batches")} b ON b.batch_id = d.batch_id LEFT JOIN {Table("employees")} e ON e.employee_id = d.qa_approver_id WHERE b.line_id = [LineId] AND NOT d.is_deleted ORDER BY d.opened_utc DESC LIMIT 50" }
             }).Concat(model.Lines.All(l => l.Batch?.Feeds is null) ? [] : new object[]
             {
                 // From each fed order (and its finished lot, when lots exist) back to the batches it consumed.
@@ -144,7 +154,7 @@ public static class PlantConnectSpec
             text.AppendLine("| Column | Type | Null |").AppendLine("| --- | --- | --- |");
             foreach (var column in table.Columns.Concat(PlantSchema.StandardColumns))
                 text.AppendLine($"| `{column.Name}` | {column.Type} | {(column.Nullable ? "yes" : "no")} |");
-            var references = Relationships.Where(r => r.Table == table.Purpose && purposes.Contains(r.References)).ToList();
+            var references = Relationships.Where(r => r.Table == table.Purpose && purposes.Contains(r.References) && table.Columns.Any(c => c.Name == r.Column)).ToList();
             if (references.Count > 0)
             {
                 text.AppendLine().Append("References: ");

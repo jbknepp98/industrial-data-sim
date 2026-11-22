@@ -82,6 +82,9 @@ public sealed class PlantSignals
                 tags.Add(new($"{prefix}.Pressure", "number", "Pressure", line.Id, null));
                 tags.Add(new($"{prefix}.AgitatorSpeed", "number", "AgitatorSpeed", line.Id, null));
                 tags.Add(new($"{prefix}.Level", "number", "Level", line.Id, null));
+                // Golden batch: the running deviation from the golden profile, and how fast the unit heats.
+                tags.Add(new($"{prefix}.BatchDeviation", "number", "BatchDeviation", line.Id, null));
+                tags.Add(new($"{prefix}.HeatRate", "number", "HeatRate", line.Id, null));
             }
             foreach (var unit in line.Equipment)
             {
@@ -134,6 +137,14 @@ public sealed class PlantSignals
             case "BatchId": return segment.Batch?.BatchId ?? "";
             case "Phase": return segment.Batch?.Phase ?? (segment.State == "Changeover" ? "CIP" : "");
             case "Temperature" or "Pressure" or "AgitatorSpeed" or "Level": return BatchValue(tag, segment, utc, noise);
+            case "BatchDeviation": return segment.Deviation ?? 0.0;
+            case "HeatRate":
+            {
+                if (segment.Batch is not { } batch) return 0.0;
+                var phase = run.Model.Lines.First(l => l.Id == tag.Line).Batch!.Recipes.First(r => r.Id == batch.Recipe).Phases[batch.Sequence - 1];
+                double rate = PlantBatchThermal.HeatRate(phase, batch, segment.State, (utc - segment.Start).TotalMinutes, batch.ProgressAt(segment, utc));
+                return rate <= 0 ? 0.0 : Math.Round(Math.Max(0, rate + 0.01 * noise), 3);
+            }
             case "Vibration":
             {
                 double warning = WarningProgress(tag.Line, tag.Equipment!, utc);
@@ -152,20 +163,22 @@ public sealed class PlantSignals
             {
                 if (!running || segment.Sku is null) return null;
                 var parameter = run.Model.Quality!.Parameters.First(p => p.Name == measure["Quality:".Length..]);
-                return PlantQualityValues.Value(run.Model, parameter, tag.Line, segment.Sku, utc);
+                return PlantQualityValues.Value(run.Model, parameter, tag.Line, segment.Sku, utc, segment.QualityShift?.GetValueOrDefault(parameter.Name) ?? 0);
             }
             default: throw new InvalidOperationException("Unknown plant measure.");
         }
     }
 
     // Ambient conditions of an idle batch unit, and how fast a stopped unit returns to them.
-    internal const double AmbientTemperatureC = 20, AmbientPressureBar = 1.0, CoolingMinutes = 45;
+    internal const double AmbientTemperatureC = PlantBatchThermal.AmbientC, AmbientPressureBar = 1.0, CoolingMinutes = PlantBatchThermal.CoolingMinutes;
 
     /// <summary>
     /// A batch unit's process value. Running: the phase's setpoint ramp at the
-    /// phase progress, plus noise. Down mid-phase: temperature and pressure decay
-    /// exponentially toward ambient from where the phase stopped, the agitator is
-    /// stopped and the level holds. Between batches: ambient, empty, agitator off.
+    /// phase progress, plus noise; the temperature follows PlantBatchThermal
+    /// (drift lag, gradual reheat after a stop). Down mid-phase: temperature and
+    /// pressure decay exponentially toward ambient from where the phase stopped,
+    /// the agitator is stopped and the level holds. Between batches: ambient,
+    /// empty, agitator off.
     /// </summary>
     private object BatchValue(PlantTag tag, PlantLineSegment segment, DateTimeOffset utc, double noise)
     {
@@ -181,7 +194,7 @@ public sealed class PlantSignals
         if (segment.State == "Running")
             return tag.Measure switch
             {
-                "Temperature" => Math.Round(phase.TemperatureC.At(progress) + 0.15 * noise, 2),
+                "Temperature" => Math.Round(PlantBatchThermal.Temperature(phase, batch, segment.State, (utc - segment.Start).TotalMinutes, progress) + 0.15 * noise, 2),
                 "Pressure" => Math.Round(Math.Max(0, phase.PressureBar.At(progress) + 0.004 * noise), 3),
                 "AgitatorSpeed" => phase.AgitatorRpm.At(progress) <= 0 ? 0.0 : Math.Round(Math.Max(0, phase.AgitatorRpm.At(progress) + 0.8 * noise), 1),
                 _ => Math.Round(Math.Clamp(phase.LevelPercent.At(progress) + 0.1 * noise, 0, 100), 2)
@@ -189,7 +202,7 @@ public sealed class PlantSignals
         double decay = Math.Exp(-(utc - segment.Start).TotalMinutes / CoolingMinutes);
         return tag.Measure switch
         {
-            "Temperature" => Math.Round(AmbientTemperatureC + (phase.TemperatureC.At(progress) - AmbientTemperatureC) * decay + 0.15 * noise, 2),
+            "Temperature" => Math.Round(PlantBatchThermal.Temperature(phase, batch, segment.State, (utc - segment.Start).TotalMinutes, progress) + 0.15 * noise, 2),
             "Pressure" => Math.Round(Math.Max(0, AmbientPressureBar + (phase.PressureBar.At(progress) - AmbientPressureBar) * decay + 0.004 * noise), 3),
             "AgitatorSpeed" => 0.0,
             _ => Math.Round(Math.Clamp(phase.LevelPercent.At(progress) + 0.1 * noise, 0, 100), 2)

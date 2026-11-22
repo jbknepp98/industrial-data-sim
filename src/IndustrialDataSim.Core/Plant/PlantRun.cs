@@ -27,6 +27,17 @@ public sealed record PlantLineSegment(string Line, DateTimeOffset Start, DateTim
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PlantBatchSegment? Batch { get; init; }
+
+    /// <summary>Batch lines: the BatchDeviation value during this segment (updated at the end of each phase). Null on packaging lines.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? Deviation { get; init; }
+
+    /// <summary>
+    /// The running order's quality shift per parameter, inherited from the batches
+    /// it consumed (a fed line). Null otherwise, so other output is unchanged.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyDictionary<string, double>? QualityShift { get; init; }
 }
 
 /// <summary>
@@ -37,6 +48,12 @@ public sealed record PlantLineSegment(string Line, DateTimeOffset Start, DateTim
 /// </summary>
 public sealed record PlantBatchSegment(string BatchId, string Recipe, int Sequence, string Phase, int PlannedSeconds, double From, double To)
 {
+    /// <summary>How far the temperature trails the setpoint at mid-phase (a golden-batch drift); 0 on profile.</summary>
+    public double LagC { get; init; }
+
+    /// <summary>The process temperature (°C, without noise) at the segment's start; see PlantBatchThermal.</summary>
+    public double StartC { get; init; } = PlantBatchThermal.AmbientC;
+
     /// <summary>The phase's progress at a time inside this segment.</summary>
     public double ProgressAt(PlantLineSegment segment, DateTimeOffset utc) =>
         segment.State == "Running" ? Math.Min(1, From + (utc - segment.Start).TotalSeconds / PlannedSeconds) : From;
