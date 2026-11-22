@@ -42,6 +42,8 @@ def build(preview, title=None, notes=()):
         window = [max(0, failed - max(f['warningHours'], 2) - 1), (repaired if repaired else failed + 2) + 1.5]
         line, unit = f['line'], f['equipment']
         trends = {'speed': series(f'{root}.{line}.Speed', *window), 'vibration': series(f'{root}.{line}.{unit}.Vibration', *window)}
+        if f'{root}.{line}.Temperature' in tags:  # a batch unit has no line speed; show its process temperature
+            trends['temperature'] = series(f'{root}.{line}.Temperature', *window)
         if f'{root}.{line}.{unit}.FillVolume' in tags:
             trends['fill'] = series(f'{root}.{line}.{unit}.FillVolume', *window)
         records = {}
@@ -57,7 +59,8 @@ def build(preview, title=None, notes=()):
         'hours': hours(preview['endUtc']), 'anchorHour': hours(preview['anchorUtc']),
         'lines': sorted({s['line'] for s in preview['segments']}),
         'summary': preview['summary'],
-        'segments': [[s['line'], hours(s['start']), hours(s['end']), s['state'], s['sku'], s['order'], s['reason'], s['unit']] for s in preview['segments']],
+        'segments': [[s['line'], hours(s['start']), hours(s['end']), s['state'], s['sku'], s['order'], s['reason'], s['unit'],
+                      s.get('batch'), s.get('phase')] for s in preview['segments']],
         'incidents': incidents,
         'modes': {m['failure_code']: m['description'] for m in tables.get(prefix + 'failurecodes', [])},
         'pm': [{'line': t['equipment_id'].split('.')[0], 'start': hours(t['started_utc']), 'id': t['ticket_id']} for t in tickets if t['ticket_type'] == 'Preventive'],

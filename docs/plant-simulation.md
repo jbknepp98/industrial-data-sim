@@ -251,6 +251,89 @@ nothing below happens and no extra tables exist.
   `plant.invalid_certification_policy` (unknown policy, or `assignAnyway`
   without safety-critical codes).
 
+## Batch units
+
+A line with `"kind": "batch"` is a batch unit (a reactor, mix tank or
+granulator). It counts as one of the two lines. Lines without `kind` are
+packaging lines, exactly as before. Bases:
+`examples/storylines/bases/chemicals-batch.json` (reactor feeding a drumming
+line), `beverage-syrup-batch.json` (syrup mix tank feeding a filling line) and
+`pharma-batch.json` (granulator selling bulk granulate in multi-batch orders,
+plus a packaging line, with Quality).
+
+```json
+{ "id": "R1", "name": "Reactor R-101", "kind": "batch", "changeoverMinutes": 90, "skus": ["RES-A", "RES-B"],
+  "equipment": [{ "id": "AG-101", "name": "Reactor 101 Agitator", "class": "agitator" }],
+  "batch": {
+    "capacity": 8000, "unit": "kg",
+    "recipes": [{ "id": "RCP-ALKYD-A", "sku": "RES-A", "phases": [
+      { "name": "Heat", "minutes": { "minimum": 60, "maximum": 90 },
+        "setpoints": { "temperatureC": { "start": 40, "end": 180 }, "pressureBar": { "start": 1.0, "end": 2.5 },
+                       "agitatorRpm": { "start": 80, "end": 120 } },
+        "levelPercent": { "start": 75, "end": 75 } } ] }],
+    "feeds": { "line": "D1", "consumption": [{ "sku": "DRUM-A", "intermediate": "RES-A", "perCase": 200 }] } } }
+```
+
+- **Recipes:** one per SKU on the unit, 1–12 phases. Each phase draws its
+  duration from `minutes`, using the batch's own random stream
+  (`batch:BATCH-000001`). Setpoints ramp linearly over the phase's running
+  time. Bounds: −20 to 300 °C, 0–20 bar, 0–500 rpm, level 0–100 %.
+- **Orders** for a batch SKU are in the unit's `unit` and run as
+  ceil(quantity / capacity) batches, back to back. The order completes when its
+  last batch discharges, and the lot, quality and shipping flow is unchanged.
+- **Breakdowns:** failure modes on the unit's equipment work as on any line. A
+  failure mid-phase puts the line Down. After the repair, the phase resumes for
+  its remaining time. Its `batchphases` row is marked `interrupted`, and its
+  `actual_minutes` include the Down time. Batch units have no minor stops.
+- **CIP:** changing recipes uses `changeoverMinutes`, in state `Changeover`
+  with the reason `CIP <from> to <to>`.
+- **`feeds`:** the unit's SKUs named as `intermediate` are consumed by the fed
+  packaging line, never ordered by customers.
+  - A filling order for a consuming SKU creates a batch order (no sales order)
+    when released stock plus batches already on order cannot cover it.
+  - The filling order starts only when released batches hold
+    quantity × `perCase`. It consumes them oldest first, and each take is a
+    `batchconsumption` row (batch, production order, quantity).
+  - With no stock, the fed line waits, Idle, with the reason
+    `Waiting for <intermediate description>` (for example `Waiting for Berry syrup`).
+  - Batch `status`: `Running`, `Released` at discharge, `Consumed` when used up.
+- **Tags per batch line:** `BatchId`, `Phase` (`CIP` during a changeover),
+  `Temperature`, `Pressure`, `AgitatorSpeed` and `Level`, plus `State`, `SKU`,
+  `OrderNumber` and each unit's `Status` and `Vibration`. A batch line has no
+  `Speed` or counts.
+  - While Running, the values follow the phase ramp plus stateless noise.
+  - While Down, temperature and pressure decay toward ambient (20 °C, 1.0 bar;
+    time constant 45 minutes), the agitator is 0 and the level holds.
+  - Between batches, the values are ambient, empty and still.
+- **Tables:** `recipes`, `recipephases` (setpoints as JSON), `batches` and
+  `batchphases` with any batch unit; `batchconsumption` with `feeds`.
+- **Connect spec and Atlas starter:** relationships for the new tables, and
+  the query properties `Line.CurrentBatch`, `Line.BatchPhases`,
+  `Equipment.BatchHistory` and (with `feeds`) `Line.BatchGenealogy`.
+- **Preview:** segments carry `batch` and `phase`, the summary adds `batches`
+  (count, discharged, interrupted phases, mean cycle minutes per recipe), and
+  the review page draws phases as shades of green with a tick at each batch.
+- **Validation errors:** `plant.invalid_line_kind`, `plant.batch_required`,
+  `plant.batch_on_packaging_line`, `plant.recipe_sku`, `plant.ramp_required`,
+  `plant.setpoints_required`, `plant.batch_sku_shared` (a SKU on both a batch
+  and a packaging line) and `plant.invalid_feeds`.
+
+**`EngineVersion` 3** adds batch state to snapshots: the batch in progress,
+its phase and remaining seconds, released intermediate stock and incoming
+batch quantity. Output for plants without a batch unit is byte-identical (the
+golden hashes did not move). A plant restarted on the new image logs
+`plant.snapshot_ignored` once (its version 2 snapshot), replays from its start
+to the same history, and saves version 3 snapshots from then on.
+
+**Live check (November 22, 2026, image `flow-data-simulator:2.0.0-dev-batch`).**
+`PlanTestBatch220600` (chemicals base, 2-day backfill, anchor 06:00:27Z) went
+live in under a minute. Historian matched the engine on 33,403 points (0
+mismatches, 0 missing), and all 28 `batchphases` rows equaled the preview.
+`R1.Temperature` lay on the Heat ramp for all six completed Heat phases
+(maximum residual 0.42 °C). After `docker stop` (exit 130) and start, it logged
+`plant.snapshot_resumed` and matched again. It was then removed (24 tables
+dropped).
+
 ## Connect mapping spec and Atlas starter (milestone 6)
 
 ```
@@ -391,7 +474,8 @@ the simulation name, validates the result and writes the model file.
 ## What the tags show
 
 - **Each line:** `State`, `SKU`, `OrderNumber`, `Speed`, `GoodCount` and
-  `RejectCount`.
+  `RejectCount`. A batch line has `BatchId`, `Phase`, `Temperature`,
+  `Pressure`, `AgitatorSpeed` and `Level` instead of the speed and counts.
 - **Each unit:** `Status` and `Vibration`; fillers also have `FillVolume`.
 
 Every tag is computed from the same run:
@@ -409,14 +493,14 @@ Purposes are `lines`, `equipment`, `skus`, `shifts`, `customers`, `employees`,
 `certifications`, `parts`, `failurecodes`, `salesorders`, `productionorders`,
 `productionruns`, `downtimeevents`, `maintenancetickets`,
 `maintenanceticketstatus` and `partsusage`, plus the optional areas' tables
-(Quality, Shipping and Certification above). The physical name is
+(Quality, Shipping, Certification and batch units above). The physical name is
 `simulationname_purpose` in lower case.
 
 ## Limits (owner decision: keep plants small)
 
 | Item | Limit |
 | --- | --- |
-| Lines | 2 |
+| Lines (a batch unit counts as one) | 2 |
 | Units per line | 6 |
 | SKUs | 6 |
 | Operators | 8 |
@@ -436,8 +520,12 @@ Further rules:
 
 ## Not yet modeled
 
-- **Mixing and CIP:** these phases are part of the changeover block, and there
-  are no mix-tank process tags.
+- **Mixing and CIP on packaging lines:** model them as a batch unit feeding
+  the line (`beverage-syrup-batch`). On a packaging line alone they are still
+  part of the changeover block.
+- **Reheating after a batch-unit repair:** the interrupted phase resumes at its
+  setpoint at once; the temperature does not climb back from where it cooled.
+- **Golden-batch comparison and drift:** phase 4.
 - **Suppliers, purchase orders and raw-material lots:** quality excursions
   stand in for supplier effects.
 - **Utilities correlated with the process,** and multiple sites.

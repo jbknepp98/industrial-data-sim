@@ -174,7 +174,10 @@ public static partial class PlantModelLoader
     {
         var lines = List(root, "lines", "$", 1, MaximumLines, errors, (item, path) =>
         {
-            SessionDefinitionLoader.CheckProperties(item, ["id", "name", "changeoverMinutes", "skus", "equipment"], path, errors);
+            SessionDefinitionLoader.CheckProperties(item, ["id", "name", "kind", "changeoverMinutes", "skus", "equipment", "batch"], path, errors);
+            string kind = item.TryGetProperty("kind", out _) ? Text(item, "kind", path, errors) ?? "packaging" : "packaging";
+            if (kind is not ("packaging" or "batch"))
+                errors.Add(new("plant.invalid_line_kind", path + ".kind", "Use \"packaging\" (a continuous line, the default) or \"batch\" (a batch unit that runs recipes)."));
             var lineSkus = List(item, "skus", path, 1, MaximumSkus, errors, (sku, skuPath) =>
             {
                 string code = sku.ValueKind == JsonValueKind.String ? sku.GetString()! : "";
@@ -186,16 +189,124 @@ public static partial class PlantModelLoader
             {
                 SessionDefinitionLoader.CheckProperties(unit, ["id", "name", "class"], unitPath, errors);
                 string cls = Text(unit, "class", unitPath, errors) ?? "";
-                if (cls is not ("filler" or "capper" or "labeler" or "packer" or "palletizer" or "conveyor" or "mixer" or "other"))
-                    errors.Add(new("plant.invalid_equipment_class", unitPath + ".class", "Use filler, capper, labeler, packer, palletizer, conveyor, mixer or other."));
+                if (cls is not ("filler" or "capper" or "labeler" or "packer" or "palletizer" or "conveyor" or "mixer" or "reactor" or "agitator" or "pump" or "jacket" or "valve" or "other"))
+                    errors.Add(new("plant.invalid_equipment_class", unitPath + ".class", "Use filler, capper, labeler, packer, palletizer, conveyor, mixer, reactor, agitator, pump, jacket, valve or other."));
                 return new PlantEquipment(Id(unit, "id", unitPath, errors) ?? "", Text(unit, "name", unitPath, errors) ?? "", cls);
             });
             Unique(equipment.Select(e => e.Id), path + ".equipment", "equipment id", errors);
+            PlantBatchUnit? batch = null;
+            if (kind == "batch") batch = BatchUnit(item, path, lineSkus, errors);
+            else if (item.TryGetProperty("batch", out _))
+                errors.Add(new("plant.batch_on_packaging_line", path + ".batch", "Only a line with \"kind\": \"batch\" has a batch section. Set kind to \"batch\" or remove batch."));
             return new PlantLine(Id(item, "id", path, errors) ?? "", Text(item, "name", path, errors) ?? "",
-                Integer(item, "changeoverMinutes", path, 0, 480, errors), lineSkus, equipment);
+                Integer(item, "changeoverMinutes", path, 0, 480, errors), lineSkus, equipment) { Kind = kind, Batch = batch };
         });
         Unique(lines.Select(l => l.Id), "$.lines", "line id", errors);
+        for (int i = 0; i < lines.Count; i++)
+        {
+            if (lines[i].Batch is not { } batch) continue;
+            string path = $"$.lines[{i}]";
+            // A batch SKU is in kg or L, a packaging SKU in cases: one SKU cannot be both.
+            foreach (var sku in lines[i].Skus)
+                if (lines.Any(l => l.Batch is null && l.Skus.Contains(sku)))
+                    errors.Add(new("plant.batch_sku_shared", path + ".skus", $"SKU {sku} is made on this batch unit and on a packaging line. Give the batch product its own SKU, and use batch.feeds to let the packaging line consume it."));
+            if (batch.Feeds is not { } feeds) continue;
+            string feedsPath = path + ".batch.feeds";
+            var fed = lines.FirstOrDefault(l => l.Id == feeds.Line);
+            if (fed is null || fed.Batch is not null)
+                errors.Add(new("plant.invalid_feeds", feedsPath + ".line", "Reference the id of a packaging line declared under lines."));
+            for (int c = 0; c < feeds.Consumption.Count; c++)
+            {
+                var use = feeds.Consumption[c];
+                string usePath = $"{feedsPath}.consumption[{c}]";
+                if (fed is not null && !fed.Skus.Contains(use.Sku))
+                    errors.Add(new("plant.invalid_feeds", usePath + ".sku", $"Reference a SKU the fed line {feeds.Line} makes."));
+                if (!lines[i].Skus.Contains(use.Intermediate))
+                    errors.Add(new("plant.invalid_feeds", usePath + ".intermediate", "Reference a SKU this batch unit makes (listed under the line's skus)."));
+            }
+            Unique(feeds.Consumption.Select(c => c.Sku), feedsPath + ".consumption", "consuming SKU", errors);
+        }
+        if (lines.Count(l => l.Batch?.Feeds is not null) > 0)
+        {
+            var consumers = lines.Where(l => l.Batch?.Feeds is not null).SelectMany(l => l.Batch!.Feeds!.Consumption.Select(c => c.Sku)).ToList();
+            if (consumers.Count != consumers.Distinct(StringComparer.Ordinal).Count())
+                errors.Add(new("plant.invalid_feeds", "$.lines", "Each packaging SKU can consume the intermediate of one batch unit only."));
+        }
         return lines;
+    }
+
+    private static PlantBatchUnit? BatchUnit(JsonElement line, string linePath, IReadOnlyList<string> lineSkus, ValidationErrors errors)
+    {
+        string path = linePath + ".batch";
+        if (!line.TryGetProperty("batch", out var item) || item.ValueKind != JsonValueKind.Object)
+        {
+            errors.Add(new("plant.batch_required", path, "A batch line needs batch with capacity, unit and recipes (and optionally feeds)."));
+            return null;
+        }
+        SessionDefinitionLoader.CheckProperties(item, ["capacity", "unit", "recipes", "feeds"], path, errors);
+        double capacity = Number(item, "capacity", path, 1, 1_000_000, errors);
+        string unit = Text(item, "unit", path, errors) ?? "";
+        PlantRamp Ramp(JsonElement parent, string name, string parentPath, double minimum, double maximum, string example)
+        {
+            string rampPath = $"{parentPath}.{name}";
+            if (!parent.TryGetProperty(name, out var ramp) || ramp.ValueKind != JsonValueKind.Object)
+            {
+                errors.Add(new("plant.ramp_required", rampPath, $"Supply {name} as an object with start and end, for example {example}."));
+                return new(minimum, minimum);
+            }
+            SessionDefinitionLoader.CheckProperties(ramp, ["start", "end"], rampPath, errors);
+            return new(Number(ramp, "start", rampPath, minimum, maximum, errors), Number(ramp, "end", rampPath, minimum, maximum, errors));
+        }
+        var recipes = List(item, "recipes", path, 1, MaximumSkus, errors, (recipe, recipePath) =>
+        {
+            SessionDefinitionLoader.CheckProperties(recipe, ["id", "sku", "phases"], recipePath, errors);
+            string sku = Text(recipe, "sku", recipePath, errors) ?? "";
+            if (!lineSkus.Contains(sku))
+                errors.Add(new("plant.recipe_sku", recipePath + ".sku", "Reference a SKU made on this batch line (listed under the line's skus)."));
+            var phases = List(recipe, "phases", recipePath, 1, 12, errors, (phase, phasePath) =>
+            {
+                SessionDefinitionLoader.CheckProperties(phase, ["name", "minutes", "setpoints", "levelPercent"], phasePath, errors);
+                string name = Id(phase, "name", phasePath, errors) ?? "";
+                var minutes = Range(phase, "minutes", phasePath, 1, 1440, errors);
+                PlantRamp temperature = new(20, 20), pressure = new(1, 1), agitator = new(0, 0);
+                if (!phase.TryGetProperty("setpoints", out var setpoints) || setpoints.ValueKind != JsonValueKind.Object)
+                    errors.Add(new("plant.setpoints_required", phasePath + ".setpoints", "Supply setpoints with temperatureC, pressureBar and agitatorRpm, each as {\"start\": …, \"end\": …}."));
+                else
+                {
+                    string setpointsPath = phasePath + ".setpoints";
+                    SessionDefinitionLoader.CheckProperties(setpoints, ["temperatureC", "pressureBar", "agitatorRpm"], setpointsPath, errors);
+                    temperature = Ramp(setpoints, "temperatureC", setpointsPath, -20, 300, "{\"start\": 25, \"end\": 80}");
+                    pressure = Ramp(setpoints, "pressureBar", setpointsPath, 0, 20, "{\"start\": 1.0, \"end\": 2.5}");
+                    agitator = Ramp(setpoints, "agitatorRpm", setpointsPath, 0, 500, "{\"start\": 60, \"end\": 120}");
+                }
+                var level = Ramp(phase, "levelPercent", phasePath, 0, 100, "{\"start\": 0, \"end\": 65}");
+                return new PlantPhase(name, minutes, temperature, pressure, agitator, level);
+            });
+            return new PlantRecipe(Id(recipe, "id", recipePath, errors) ?? "", sku, phases);
+        });
+        Unique(recipes.Select(r => r.Id), path + ".recipes", "recipe id", errors);
+        foreach (var sku in lineSkus)
+            if (recipes.Count(r => r.Sku == sku) != 1)
+                errors.Add(new("plant.recipe_sku", path + ".recipes", $"Give SKU {sku} exactly one recipe on this batch line."));
+        PlantFeeds? feeds = null;
+        if (item.TryGetProperty("feeds", out var feedsItem))
+        {
+            string feedsPath = path + ".feeds";
+            if (feedsItem.ValueKind != JsonValueKind.Object)
+                errors.Add(new("plant.object_required", feedsPath, "Supply feeds as an object with line and consumption, or leave it out."));
+            else
+            {
+                SessionDefinitionLoader.CheckProperties(feedsItem, ["line", "consumption"], feedsPath, errors);
+                var consumption = List(feedsItem, "consumption", feedsPath, 1, MaximumSkus, errors, (use, usePath) =>
+                {
+                    SessionDefinitionLoader.CheckProperties(use, ["sku", "intermediate", "perCase"], usePath, errors);
+                    return new PlantConsumption(Text(use, "sku", usePath, errors) ?? "", Text(use, "intermediate", usePath, errors) ?? "",
+                        Number(use, "perCase", usePath, 0.001, 100_000, errors));
+                });
+                feeds = new PlantFeeds(Text(feedsItem, "line", feedsPath, errors) ?? "", consumption);
+            }
+        }
+        return new PlantBatchUnit(capacity, unit, recipes, feeds);
     }
 
     private static (IReadOnlyList<PlantPerson>, IReadOnlyList<PlantPerson>) People(JsonElement root, IReadOnlyList<PlantShift> shifts,

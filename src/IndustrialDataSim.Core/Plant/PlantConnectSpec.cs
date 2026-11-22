@@ -31,7 +31,10 @@ public static class PlantConnectSpec
         ("inventorytransactions", "lot_id", "lots"), ("shipments", "sales_order", "salesorders"), ("shipments", "lot_id", "lots"),
         ("trainingrecords", "employee_id", "employees"), ("workcompliance", "ticket_id", "maintenancetickets"), ("workcompliance", "technician_id", "employees"),
         ("workinstructions", "line_id", "lines"), ("operatorcompliance", "run_id", "productionruns"), ("operatorcompliance", "operator_id", "employees"),
-        ("operatorcompliance", "instruction_id", "workinstructions")
+        ("operatorcompliance", "instruction_id", "workinstructions"),
+        ("recipes", "sku", "skus"), ("recipephases", "recipe_id", "recipes"),
+        ("batches", "production_order", "productionorders"), ("batches", "recipe_id", "recipes"), ("batches", "line_id", "lines"),
+        ("batchphases", "batch_id", "batches"), ("batchconsumption", "batch_id", "batches"), ("batchconsumption", "production_order", "productionorders")
     ];
 
     public static object Json(PlantModel model)
@@ -99,6 +102,18 @@ public static class PlantConnectSpec
             }).Concat(model.Maintenance.Certification?.Operators is null ? [] : new object[]
             {
                 new { on = "Line", name = "UncertifiedRuns", query = $"SELECT c.run_id, c.operator_id, c.instruction_id, c.reason, r.sku, r.start_utc, r.end_utc, r.good_cases, r.reject_cases FROM {Table("operatorcompliance")} c JOIN {Table("productionruns")} r ON r.run_id = c.run_id WHERE r.line_id = [LineId] AND NOT c.certified AND NOT c.is_deleted ORDER BY r.start_utc DESC" }
+            }).Concat(model.Lines.All(l => l.Batch is null) ? [] : new object[]
+            {
+                // Batch units are Equipment of their batch line: the line's batches are the unit's history.
+                new { on = "Line", name = "CurrentBatch", query = $"SELECT b.batch_id, b.production_order, b.recipe_id, b.size, b.start_utc, p.phase, p.start_utc AS phase_start_utc FROM {Table("batches")} b LEFT JOIN {Table("batchphases")} p ON p.batch_id = b.batch_id AND p.end_utc IS NULL AND NOT p.is_deleted WHERE b.line_id = [LineId] AND b.status = 'Running' AND NOT b.is_deleted" },
+                new { on = "Equipment", name = "BatchHistory", query = $"SELECT b.batch_id, b.recipe_id, b.size, b.start_utc, b.end_utc, b.status, EXTRACT(EPOCH FROM (b.end_utc - b.start_utc)) / 60 AS cycle_minutes FROM {Table("batches")} b JOIN {Table("equipment")} e ON e.line_id = b.line_id WHERE e.equipment_id = [EquipmentId] AND NOT b.is_deleted ORDER BY b.start_utc DESC LIMIT 50" },
+                new { on = "Line", name = "BatchPhases", query = $"SELECT p.batch_id, p.sequence, p.phase, p.start_utc, p.end_utc, p.planned_minutes, p.actual_minutes, p.interrupted FROM {Table("batchphases")} p JOIN {Table("batches")} b ON b.batch_id = p.batch_id WHERE b.line_id = [LineId] AND NOT p.is_deleted ORDER BY p.start_utc DESC LIMIT 100" }
+            }).Concat(model.Lines.All(l => l.Batch?.Feeds is null) ? [] : new object[]
+            {
+                // From each fed order (and its finished lot, when lots exist) back to the batches it consumed.
+                new { on = "Line", name = "BatchGenealogy", query = model.Quality is not null || model.Shipping is not null
+                    ? $"SELECT c.production_order, l.lot_id, c.batch_id, c.quantity, c.consumed_utc FROM {Table("batchconsumption")} c JOIN {Table("productionorders")} o ON o.production_order = c.production_order LEFT JOIN {Table("lots")} l ON l.production_order = c.production_order WHERE o.line_id = [LineId] AND NOT c.is_deleted ORDER BY c.consumed_utc DESC LIMIT 100"
+                    : $"SELECT c.production_order, c.batch_id, c.quantity, c.consumed_utc FROM {Table("batchconsumption")} c JOIN {Table("productionorders")} o ON o.production_order = c.production_order WHERE o.line_id = [LineId] AND NOT c.is_deleted ORDER BY c.consumed_utc DESC LIMIT 100" }
             })
         };
     }

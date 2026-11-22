@@ -87,9 +87,22 @@ public static class PlantSchema
         new("operatorcompliance", "Operator certificate check when each run starts", [Key("compliance_id"), Text("run_id"), Text("operator_id"), Text("instruction_id"), Flag("certified"), Text("reason"), Time("checked_utc"), Time("signoff_utc")])
     ];
 
+    /// <summary>Batch units (lines with kind "batch"): recipes, batches and their phases.</summary>
+    public static readonly IReadOnlyList<PlantTable> BatchTables =
+    [
+        new("recipes", "Batch recipes, one per SKU made on a batch unit", [Key("recipe_id"), Text("sku"), Whole("phase_count")]),
+        new("recipephases", "Recipe phases with duration range and setpoint ramps (JSON)", [Key("recipe_phase_id"), Text("recipe_id"), Whole("sequence"), Text("phase"), Number("minutes_min"), Number("minutes_max"), Text("setpoints_json")]),
+        new("batches", "Batches run on batch units; size is in the unit's capacity unit", [Key("batch_id"), Text("production_order"), Text("recipe_id"), Text("line_id"), Time("start_utc"), Time("end_utc"), Number("size"), Text("status")]),
+        new("batchphases", "Executed phases of each batch; interrupted phases include their Down time", [Key("batch_phase_id"), Text("batch_id"), Whole("sequence"), Text("phase"), Time("start_utc"), Time("end_utc"), Number("planned_minutes"), Number("actual_minutes"), Flag("interrupted")])
+    ];
+
+    /// <summary>A batch unit feeding a packaging line (batch.feeds): genealogy from packaging orders to batches.</summary>
+    public static readonly PlantTable BatchConsumptionTable = new("batchconsumption", "Intermediate taken from each batch by a fed packaging order",
+        [Key("consumption_id"), Text("batch_id"), Text("production_order"), Number("quantity"), Time("consumed_utc")]);
+
     /// <summary>Every table purpose the simulator can create (for removal and lookups).</summary>
     public static IEnumerable<PlantTable> AllTables => Tables.Concat(QualityTables).Append(LotsTable).Concat(ShippingTables)
-        .Concat(CertificationTables).Concat(OperatorCertificationTables);
+        .Concat(CertificationTables).Concat(OperatorCertificationTables).Concat(BatchTables).Append(BatchConsumptionTable);
 
     /// <summary>The tables this plant uses: the core loop plus its enabled areas.</summary>
     public static IReadOnlyList<PlantTable> TablesFor(PlantModel model)
@@ -103,6 +116,8 @@ public static class PlantSchema
             tables.AddRange(CertificationTables);
             if (certification.Operators is not null) tables.AddRange(OperatorCertificationTables);
         }
+        if (model.Lines.Any(l => l.Batch is not null)) tables.AddRange(BatchTables);
+        if (model.Lines.Any(l => l.Batch?.Feeds is not null)) tables.Add(BatchConsumptionTable);
         return tables;
     }
 

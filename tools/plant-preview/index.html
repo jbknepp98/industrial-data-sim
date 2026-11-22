@@ -8,6 +8,7 @@
   --accent: #2f6fdb;
   --run: #2e8b6a; --change: #c98a1b; --down: #c8413b; --maint: #7a5cc8; --minor: #e07b39; --idle: #b8c2c9;
   --warn-band: rgba(200,65,59,.10);
+  --ph1: #1f6f54; --ph2: #2e8b6a; --ph3: #4aa585; --ph4: #6dbfa0; --ph5: #2a7f8f; --ph6: #4b9fb0;
   --display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
   --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -15,10 +16,12 @@
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #0f1418; --panel: #172027; --ink: #e2e9ee; --muted: #93a3ae; --rule: #2a3640; --chip: #22303a;
   --accent: #6c9cf0; --run: #4fbf95; --change: #e2a94a; --down: #ef6b64; --maint: #a68cf0; --minor: #f19a5e; --idle: #4b5862;
+  --ph1: #2f8f6c; --ph2: #4fbf95; --ph3: #7ad3b1; --ph4: #a3e3c9; --ph5: #3aa3b5; --ph6: #6cc3d3;
   --warn-band: rgba(239,107,100,.14); color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #0f1418; --panel: #172027; --ink: #e2e9ee; --muted: #93a3ae; --rule: #2a3640; --chip: #22303a;
   --accent: #6c9cf0; --run: #4fbf95; --change: #e2a94a; --down: #ef6b64; --maint: #a68cf0; --minor: #f19a5e; --idle: #4b5862;
+  --ph1: #2f8f6c; --ph2: #4fbf95; --ph3: #7ad3b1; --ph4: #a3e3c9; --ph5: #3aa3b5; --ph6: #6cc3d3;
   --warn-band: rgba(239,107,100,.14); color-scheme: dark }
 body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
 .wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 72px;
@@ -32,6 +35,7 @@ p { margin: 0; max-width: 70ch; color: var(--muted); }
 .eyebrow { font: 500 .72rem var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 header { display: grid; gap: 8px; }
 section { display: grid; gap: 12px; min-width: 0; }
+[hidden] { display: none !important; } /* optional sections stay hidden although section sets display */
 .panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 16px; min-width: 0; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
 .fact { background: var(--panel); padding: 12px 14px; display: grid; gap: 2px; }
@@ -96,6 +100,13 @@ ul.gaps b { color: var(--ink); font-weight: 600; }
     </div>
   </section>
 
+  <section id="batch-section" hidden>
+    <h2>Batches</h2>
+    <p class="note">On batch lines the running time is split into recipe phases (shades of green in the timeline above; hover for the batch and phase). Down time inside a phase stretches it, and the phase resumes where it stopped.</p>
+    <div class="legend" id="phase-legend"></div>
+    <div class="cols" id="batch-records"></div>
+  </section>
+
   <section id="cert-section" hidden>
     <h2>Work done without a current certificate</h2>
     <p class="note">Safety-critical tickets assigned to a technician whose certificate had lapsed, and runs started by an operator without a current work-instruction certificate.</p>
@@ -120,6 +131,8 @@ const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).
 const NS = 'http://www.w3.org/2000/svg';
 const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
 const STATE = { Running: '--run', Changeover: '--change', Down: '--down', Maintenance: '--maint', MinorStop: '--minor', Signoff: '--change', Idle: '--idle' };
+const PHASES = [];
+const PHASE = name => { if (!PHASES.includes(name)) PHASES.push(name); return '--ph' + (PHASES.indexOf(name) % 6 + 1); };
 const PRIORITY = { Critical: '--down', High: '--down', Medium: '--change', Low: '--muted' };
 let D, START;
 const at = h => new Date(START.getTime() + h * 3600e3);
@@ -141,6 +154,7 @@ function facts() {
   ];
   if (s.qualitySamples) items.splice(6, 0, [s.qualityHolds + ' of ' + s.qualitySamples, 'Lots held by Quality']);
   if (s.shipments) items.splice(7, 0, [s.shipments, 'Shipments']);
+  if (s.batches) items.splice(4, 0, [s.batches.total, 'Batches, ' + s.batches.discharged + ' discharged']);
   document.getElementById('facts').innerHTML = items.map(([b, t]) => `<div class="fact"><b>${b}</b><span>${t}</span></div>`).join('');
   document.getElementById('legend').innerHTML = Object.entries(STATE).filter(([k]) => k !== 'Signoff' || D.segments.some(g => g[3] === 'Signoff'))
     .map(([k, v]) => `<span><i class="sw" style="background:var(${v})"></i>${k === 'MinorStop' ? 'Minor stop' : k === 'Signoff' ? 'Supervisor sign-off' : k}</span>`).join('');
@@ -161,8 +175,15 @@ function gantt() {
   lines.forEach((line, i) => {
     const y = 22 + i * (rowH + tickRow + 14);
     el('text', { x: 0, y: y + rowH / 2 + 4, 'font-size': 12, fill: css('--ink') }, svg).textContent = line;
-    for (const [l, a, b, state] of D.segments) if (l === line)
-      el('rect', { x: x(a), y, width: Math.max(.4, x(b) - x(a)), height: rowH, fill: css(STATE[state] || '--idle') }, svg);
+    let lastBatch = null;
+    for (const [l, a, b, state, sku, order, reason, unit, batch, phase] of D.segments) if (l === line) {
+      // Batch lines: running time is drawn per recipe phase, with a tick at each new batch.
+      const fill = state === 'Running' && phase ? css(PHASE(phase)) : css(STATE[state] || '--idle');
+      const r = el('rect', { x: x(a), y, width: Math.max(.4, x(b) - x(a)), height: rowH, fill }, svg);
+      if (batch) el('title', {}, r).textContent = `${batch} · ${phase}${state === 'Running' ? '' : ' (' + state + ')'} · ${fmt(a)}`;
+      if (batch && batch !== lastBatch && state === 'Running') el('line', { x1: x(a), x2: x(a), y1: y - 3, y2: y + rowH + 3, stroke: css('--ink'), 'stroke-width': 1 }, svg);
+      if (batch) lastBatch = batch;
+    }
     for (const pm of D.pm) if (pm.line === line && pm.start != null) {
       const g = el('g', {}, svg);
       el('rect', { x: x(pm.start) - 4, y: y + rowH + 5, width: 8, height: 8, fill: css('--maint') }, g);
@@ -220,7 +241,7 @@ function show(inc) {
     (t ? `<span class="chip">${t.ticket_id} · ${t.priority}</span>` : '');
   const steps = [
     ['Signals warn', inc.warning ? fmt(inc.failed - inc.warning) : '—', inc.warning ? `Vibration starts rising ${inc.warning} h before` : 'No warning period'],
-    ['Unit fails', fmt(inc.failed), 'Line speed drops to zero'],
+    ['Unit fails', fmt(inc.failed), inc.trends.temperature ? 'The batch phase stops where it is' : 'Line speed drops to zero'],
     ['Detector fires', t ? fmtIso(t.created_utc) : '—', t ? `Downtime ${r.downtime.downtime_id} and ticket opened` : 'After the preview ends'],
     ['Assigned', t ? fmtIso(t.assigned_utc) : '—', t && t.technician_id ? `Technician ${t.technician_id}` : 'Waiting'],
     ['Repair starts', t ? fmtIso(t.started_utc) : '—', 'Technician on site'],
@@ -234,7 +255,8 @@ function show(inc) {
   }
   const charts = document.getElementById('inc-charts');
   charts.innerHTML = '';
-  chart(charts, `${inc.line}.Speed (cases/min)`, inc.trends.speed, inc, { lo: 0, color: '--run' });
+  if (inc.trends.temperature) chart(charts, `${inc.line}.Temperature (°C): relaxes toward ambient while the batch unit is down`, inc.trends.temperature, inc, { color: '--run' });
+  else chart(charts, `${inc.line}.Speed (cases/min)`, inc.trends.speed, inc, { lo: 0, color: '--run' });
   chart(charts, `${inc.line}.${inc.unit}.Vibration (mm/s): shaded band is the warning period`, inc.trends.vibration, inc, { lo: 0, color: '--down' });
   if (inc.trends.fill) chart(charts, `${inc.line}.${inc.unit}.FillVolume (oz, only while filling)`, inc.trends.fill, inc, { color: '--accent', gaps: true });
   document.getElementById('inc-records').innerHTML = t
@@ -251,6 +273,16 @@ function certification() {
   document.getElementById('cert-records').innerHTML =
     (a ? (a.length ? rowsTable('Uncertified safety-critical assignments', clean(a)) : '<p>No safety-critical ticket went to an uncertified technician.</p>') : '') +
     (r ? (r.length ? rowsTable('Runs by an uncertified operator', clean(r)) : '<p>Every checked run had a certified operator.</p>') : '');
+}
+
+function batches() {
+  const b = D.summary.batches;
+  if (!b) return;
+  document.getElementById('batch-section').hidden = false;
+  document.getElementById('phase-legend').innerHTML = PHASES.map(p => `<span><i class="sw" style="background:var(${PHASE(p)})"></i>${p}</span>`).join('');
+  const recipes = b.recipes.map(r => ({ recipe: r.recipe, sku: r.sku, batches: r.batches, mean_cycle_minutes: r.meanCycleMinutes }));
+  document.getElementById('batch-records').innerHTML =
+    rowsTable(`${b.total} batches, ${b.discharged} discharged, ${b.interruptedPhases} phases interrupted by a breakdown`, recipes);
 }
 
 function tables() {
@@ -276,7 +308,7 @@ fetch('page-data.json').then(r => r.json()).then(data => {
     document.getElementById('notes-section').hidden = false;
     document.getElementById('notes').innerHTML = D.notes.map(n => `<li>${n.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</li>`).join('');
   }
-  facts(); gantt(); certification(); tables();
+  facts(); gantt(); batches(); certification(); tables();
   const first = D.incidents.find(i => i.planted) || D.incidents[0];
   if (first) show(first); else document.getElementById('inc-title').textContent = 'No breakdowns in this window.';
 }).catch(() => { document.getElementById('inc-title').textContent = 'Preview data did not load. Reload the page.'; });

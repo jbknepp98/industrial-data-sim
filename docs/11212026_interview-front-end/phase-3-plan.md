@@ -137,13 +137,48 @@ Live Postgres test for the new tables.
 
 <success-criteria>
 <automated-verification>
-- [ ] Build and full test suite (Release, `FLOWSIM_TEST_PG` set) pass
-- [ ] Packaging golden hashes unchanged
+- [x] Build and full test suite (Release, `FLOWSIM_TEST_PG` set) pass
+- [x] Packaging golden hashes unchanged
 </automated-verification>
 <end-to-end-verification>
-- [ ] `plant preview` of `chemicals-batch.json` shows batches with phases; render the page and check the Gantt chart visually
-- [ ] Build and run `PlanTestBatch…` in Docker: Historian `…R1.Temperature` follows the Heat ramp for a known batch (run the verify script, 0 mismatches); `batchphases` rows match the preview
-- [ ] Remove `PlanTestBatch…`
+- [x] `plant preview` of `chemicals-batch.json` shows batches with phases; render the page and check the Gantt chart visually
+- [x] Build and run `PlanTestBatch…` in Docker: Historian `…R1.Temperature` follows the Heat ramp for a known batch (run the verify script, 0 mismatches); `batchphases` rows match the preview
+- [x] Remove `PlanTestBatch…`
+
+Results (November 22, 2026, branch `feature/phase-3-batch-area`, image
+`flow-data-simulator:2.0.0-dev-batch` built from this source; `2.0.0-dev` and
+BluebirdBev untouched):
+
+- Release build with 0 warnings. The full suite passed 1053 of 1053 tests with
+  `FLOWSIM_TEST_PG` set, including the new `PlantBatchTests` and
+  `PlantStoreTests.BatchTablesAreCreatedFilledAndRemoved`. The four packaging
+  golden hashes are unchanged; EngineVersion is 3.
+- Resume equivalence covers all three batch bases at fixed instants, plus
+  snapshots taken mid-phase, mid-failure (chemicals) and while the filler
+  waits for syrup.
+- The rendered preview of the chemicals base shows phases as shades of green
+  with a tick per batch. A batch breakdown charts Temperature: it ramps in
+  Heat, cools while Down, and resumes the phase after the repair.
+- `PlanTestBatch220600` (chemicals base, 2-day backfill) went live in under a
+  minute. Historian matched the engine on 33,403 points (0 mismatches, 0
+  missing), and all 28 `batchphases` rows equaled the preview.
+- `R1.Temperature` lay on the Heat ramp for all 6 completed Heat phases (max
+  residual 0.42 °C, mean about 0). Example: BATCH-000003 (RCP-ALKYD-A, 40 → 180
+  °C) read 109.96 °C at mid-phase.
+- After `docker stop` (exit 130) and start, it logged `plant.snapshot_resumed`
+  and matched again (33,414 points, 0 mismatches). It was then removed (24
+  tables dropped, none left).
+
+Deviations from the text above, all small:
+
+- Natural keys were added as first columns: `recipephases.recipe_phase_id`,
+  `batchphases.batch_phase_id` and `batchconsumption.consumption_id`.
+- `feeds` sits inside the batch line's `batch` section, as
+  `{ line, consumption: [{ sku, intermediate, perCase }] }`.
+- Fed intermediates come from make-to-order batch orders with no sales order.
+- The wait reason names the intermediate: `Waiting for Berry syrup`.
+- `Line.BatchPhases` and `Line.BatchGenealogy` were added to the required
+  query properties.
 </end-to-end-verification>
 </success-criteria>
 

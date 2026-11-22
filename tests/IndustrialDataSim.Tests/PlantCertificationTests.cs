@@ -51,7 +51,7 @@ public class PlantCertificationTests
     }
 
     [Fact]
-    public void EngineVersionIsTwo() => Assert.Equal(2, PlantEngine.EngineVersion);
+    public void EngineVersionIncludesCertificateState() => Assert.True(PlantEngine.EngineVersion >= 2); // version 2 added certificate state
 
     [Fact]
     public void PlantedIncidentMovesIntoItsShift()

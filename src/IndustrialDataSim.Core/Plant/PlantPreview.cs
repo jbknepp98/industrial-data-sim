@@ -22,7 +22,7 @@ public static class PlantPreview
             summary = Summary(run, tables),
             tables = tables.ToDictionary(t => run.Model.TablePrefix + t.Key, t => t.Value),
             changeCount = run.Changes.Count,
-            segments = run.Segments.Select(s => new { s.Line, s.Start, s.End, s.State, s.Sku, s.Order, s.Reason, s.Unit }),
+            segments = run.Segments.Select(s => new { s.Line, s.Start, s.End, s.State, s.Sku, s.Order, s.Reason, s.Unit, batch = s.Batch?.BatchId, phase = s.Batch?.Phase }),
             failures = run.Failures,
             tags = signals.Tags.Select(tag => new
             {
@@ -120,7 +120,19 @@ public static class PlantPreview
                     var productionRun = Rows("productionruns").FirstOrDefault(p => Equals(p["run_id"], r["run_id"]));
                     return new { run = r["run_id"], line = productionRun?["line_id"], sku = productionRun?["sku"], operatorId = r["operator_id"], instruction = r["instruction_id"],
                         reason = r["reason"], startUtc = productionRun?["start_utc"], signoffUtc = r["signoff_utc"], goodCases = productionRun?["good_cases"], rejectCases = productionRun?["reject_cases"] };
+                }).ToList(),
+            // Batch units (null without one): batches run, and the mean cycle time of discharged batches per recipe.
+            batches = run.Model.Lines.All(l => l.Batch is null) ? null : new
+            {
+                total = Rows("batches").Count,
+                discharged = Rows("batches").Count(b => b["end_utc"] is DateTimeOffset),
+                interruptedPhases = Rows("batchphases").Count(p => p["interrupted"] is true),
+                recipes = run.Model.Lines.SelectMany(l => l.Batch?.Recipes ?? []).Select(recipe =>
+                {
+                    var done = Rows("batches").Where(b => Equals(b["recipe_id"], recipe.Id) && b["end_utc"] is DateTimeOffset).ToList();
+                    return new { recipe = recipe.Id, sku = recipe.Sku, batches = done.Count, meanCycleMinutes = Mean(done.Select(b => Minutes(b, "start_utc", "end_utc"))) };
                 }).ToList()
+            }
         };
     }
 

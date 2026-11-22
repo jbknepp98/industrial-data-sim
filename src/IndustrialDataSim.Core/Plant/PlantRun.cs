@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace IndustrialDataSim.Core.Plant;
 
 /// <summary>
@@ -16,7 +18,29 @@ public sealed record PlantRecordChange(long Sequence, DateTimeOffset Utc, string
 /// Maintenance (the faulted or serviced unit).
 /// </summary>
 public sealed record PlantLineSegment(string Line, DateTimeOffset Start, DateTimeOffset End, string State,
-    string? Sku, string? Order, string? Reason, string? Unit, double CasesPerMinute, double RejectPercent);
+    string? Sku, string? Order, string? Reason, string? Unit, double CasesPerMinute, double RejectPercent)
+{
+    /// <summary>
+    /// Batch lines: the batch and phase this segment belongs to (Running in that
+    /// phase, or Down while it is interrupted). Null on packaging lines and between
+    /// batches; left out of JSON when null, so packaging output is unchanged.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PlantBatchSegment? Batch { get; init; }
+}
+
+/// <summary>
+/// One stretch of a batch phase: Sequence is the phase's 1-based position in the
+/// recipe and PlannedSeconds its drawn running time; From and To are the phase's
+/// progress (0–1) at the segment's start and end. Progress advances one second
+/// per second only while Running, and setpoints ramp linearly with it.
+/// </summary>
+public sealed record PlantBatchSegment(string BatchId, string Recipe, int Sequence, string Phase, int PlannedSeconds, double From, double To)
+{
+    /// <summary>The phase's progress at a time inside this segment.</summary>
+    public double ProgressAt(PlantLineSegment segment, DateTimeOffset utc) =>
+        segment.State == "Running" ? Math.Min(1, From + (utc - segment.Start).TotalSeconds / PlannedSeconds) : From;
+}
 
 /// <summary>A breakdown: the unit failed at FailedUtc and was back in service at RepairedUtc.</summary>
 public sealed record PlantFailure(string Line, string Equipment, string Mode, DateTimeOffset FailedUtc,
