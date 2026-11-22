@@ -409,8 +409,9 @@ Phase 4 of the interview front end. It makes the golden-batch storylines 5a,
 - **Preview:** `summary.batches.comparison` (one row per discharged batch:
   cycle minutes, yield, deviation score, golden, status) and
   `summary.batches.drifts` (each window, ended early by its cleaning PM when
-  that happened). The review page shows a batch comparison table with the rows
-  started inside a drift window shaded.
+  that happened). The review page's batch comparison table (rows started
+  inside a drift window shaded) is on `feature/phase-4-golden-preview`, built on
+  phase 7's shared renderer.
 - **Validation errors:** `plant.invalid_drift`, `plant.invalid_drift_time`,
   `plant.invalid_golden`, `plant.unknown_phase`, `plant.no_batch_line`,
   `plant.qa_required`, `plant.batch_release_required` and `plant.unused_qa`.
