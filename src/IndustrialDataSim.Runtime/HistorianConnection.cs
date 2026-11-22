@@ -47,14 +47,22 @@ public sealed class HistorianConnection
     internal HttpClient CreateClient()
     {
         Validate();
+        return new HttpClient(CreatePulseTrustHandler(CaFile)) { Timeout = TimeSpan.FromSeconds(20) };
+    }
+
+    /// <summary>
+    /// The TLS and redirect policy every Timebase call uses (Historian and the
+    /// Pulse Gage proxy alike). Redirects are disabled so neither bearer tokens
+    /// nor client secrets can be forwarded to another origin. A custom root
+    /// replaces trust anchors, never hostname or validity checks.
+    /// </summary>
+    internal static HttpClientHandler CreatePulseTrustHandler(string? caFile)
+    {
         var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false };
-        // A custom root replaces trust anchors, never hostname or validity checks.
-        // Redirects are disabled so neither bearer tokens nor client secrets can
-        // be forwarded to another origin, and a POST is never retried on 401.
-        if (!string.IsNullOrEmpty(CaFile))
+        if (!string.IsNullOrEmpty(caFile))
         {
             var roots = new X509Certificate2Collection();
-            try { roots.ImportFromPemFile(CaFile); }
+            try { roots.ImportFromPemFile(caFile); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException)
             { handler.Dispose(); throw new RuntimeFailure("connection.ca_file", "Cannot read the PEM trust bundle. Check its format, permissions and root CA; do not disable TLS verification."); }
             if (roots.Count == 0) { handler.Dispose(); throw new RuntimeFailure("connection.ca_file", "The PEM trust bundle contains no certificates. Export the trusted root CA in PEM format."); }
@@ -69,6 +77,6 @@ public sealed class HistorianConnection
                 return chain.Build(certificate);
             };
         }
-        return new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
+        return handler;
     }
 }
