@@ -73,6 +73,13 @@ main { flex: 1; display: grid; grid-template-columns: minmax(340px, 5fr) 7fr; ga
 .msg p + p, .msg p + ul, .msg ul + p { margin-top: 8px; }
 .msg ul, .msg ol { margin: 6px 0 0; padding-left: 20px; }
 .msg code { font: .85em var(--mono); background: var(--chip); padding: 1px 4px; border-radius: 4px; }
+.msg > * + * { margin-top: 8px; }
+.msg hr { border: none; border-top: 1px solid var(--rule); margin: 10px 0; }
+.msg .mdh { font: 600 .98rem var(--display); }
+.msg .mdtable { overflow-x: auto; }
+.msg table { border-collapse: collapse; font-size: .85rem; }
+.msg th, .msg td { text-align: left; padding: 3px 10px 3px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.msg th { color: var(--muted); font-weight: 500; }
 .msg.user { align-self: flex-end; background: var(--tint-blue); }
 .msg.assistant { align-self: flex-start; background: var(--bg); }
 .msg.notice { align-self: stretch; max-width: none; background: transparent; border: 1px dashed var(--rule); color: var(--muted); font-size: .88rem; }

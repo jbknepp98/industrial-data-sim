@@ -109,7 +109,7 @@ try
         previewStored = session.State.PreviewJson is not null,
         previewBytes = session.State.PreviewJson?.Length,
         storylines = session.State.Needs["chosenStorylines"]?.ToJsonString(),
-        requestedStories = session.State.Needs["audience"]?["requestedStories"]?.ToJsonString(),
+        requests = InterviewTools.Requests(session.State).ToJsonString(), // unmet asks, recorded from find_storylines askedFor
         usage = new { inputTokens = u.InputTokens, outputTokens = u.OutputTokens, cacheReadTokens = u.CacheReadTokens, cacheWriteTokens = u.CacheWriteTokens }
     }));
     return 0;

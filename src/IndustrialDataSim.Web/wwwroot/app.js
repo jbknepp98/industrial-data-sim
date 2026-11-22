@@ -128,24 +128,40 @@ $('new-interview').addEventListener('click', () => {
 
 // ---------------- rendering: chat ----------------
 
-// A small, safe subset of Markdown for the interviewer's replies: paragraphs,
-// bullet and numbered lists, **bold**, *italic* and `code`. Text is escaped first.
+// A small, safe subset of Markdown for the interviewer's replies: headings,
+// paragraphs, bullet and numbered lists, pipe tables, rules, **bold**,
+// *italic* and `code`. Every piece of text is escaped first.
 function formatText(text) {
   const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*\w])\*([^*]+)\*(?!\w)/g, '$1<em>$2</em>');
-  const blocks = [];
-  let list = null;
+  const cells = line => line.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+  const out = [];
+  let list = null, paragraph = null, table = null;
+  const close = () => {
+    if (list) out.push(`<${list.type}>${list.items.map(i => `<li>${i}</li>`).join('')}</${list.type}>`);
+    if (paragraph) out.push(`<p>${paragraph.join('<br>')}</p>`);
+    if (table) out.push(`<div class="mdtable"><table>${table.map((row, i) => `<tr>${row.map(c => i === 0 ? `<th>${inline(c)}</th>` : `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</table></div>`);
+    list = paragraph = table = null;
+  };
   for (const raw of text.split('\n')) {
     const line = raw.trimEnd();
-    const bullet = /^\s*[-•]\s+(.*)/.exec(line), numbered = /^\s*\d+[.)]\s+(.*)/.exec(line);
-    if (bullet || numbered) {
+    const heading = /^\s*#{1,6}\s+(.*)/.exec(line);
+    const bullet = /^\s*[-•*]\s+(.*)/.exec(line), numbered = /^\s*\d+[.)]\s+(.*)/.exec(line);
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      if (!table) { close(); table = []; }
+      const row = cells(line);
+      if (!row.every(c => /^:?-{2,}:?$/.test(c))) table.push(row);
+    } else if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { close(); out.push('<hr>'); }
+    else if (heading) { close(); out.push(`<p class="mdh">${inline(heading[1])}</p>`); }
+    else if (bullet || numbered) {
       const type = bullet ? 'ul' : 'ol';
-      if (!list || list.type !== type) { list = { type, items: [] }; blocks.push(list); }
+      if (!list || list.type !== type) { close(); list = { type, items: [] }; }
       list.items.push(inline((bullet || numbered)[1]));
-    } else if (line.trim() === '') { list = null; }
-    else if (list && /^\s{2,}/.test(raw)) { list.items[list.items.length - 1] += ' ' + inline(line.trim()); }
-    else { list = null; const last = blocks[blocks.length - 1]; if (typeof last === 'string' && !last.endsWith('\n\n')) blocks[blocks.length - 1] = last + '<br>' + inline(line); else blocks.push(inline(line)); }
+    } else if (line.trim() === '') close();
+    else if (list && /^\s{2,}/.test(raw)) list.items[list.items.length - 1] += ' ' + inline(line.trim());
+    else { if (!paragraph) { close(); paragraph = []; } paragraph.push(inline(line)); }
   }
-  return blocks.map(b => typeof b === 'string' ? `<p>${b}</p>` : `<${b.type}>${b.items.map(i => `<li>${i}</li>`).join('')}</${b.type}>`).join('');
+  close();
+  return out.join('');
 }
 
 function messageElement(item) {
@@ -285,7 +301,7 @@ function renderLive() {
     try {
       const data = await api('GET', '/api/plants');
       const plant = data.plants.find(p => p.simulation === name);
-      if (!plant) { $('live-facts').innerHTML = '<dt>Status</dt><dd>Removed</dd>'; return; }
+      if (!plant) { $('live-facts').innerHTML = '<dt>Status</dt><dd>Removed from flow_data_sim</dd>'; $('live-downloads').innerHTML = ''; clearInterval(liveTimer); return; }
       const h = plant.hosting;
       $('live-facts').innerHTML = [
         ['Status', `<span class="badge ${esc(h.state)}">${esc(h.state.replace('_', ' '))}</span>${h.message ? ` <span class="muted">${esc(h.message)}</span>` : ''}`],

@@ -432,7 +432,12 @@ Core, so Core has no LLM dependency.
     (`StorylineRanking`): industry 4 points, each matching role 2, each
     matching KPI 2, each keyword 2. An unavailable storyline carries
     `offerInstead`: its `closest` entry, or the best available match when
-    `closest` is null.
+    `closest` is null. Its required `askedFor` field lists every story the
+    user explicitly asked for so far, each mapped by the model to a library
+    id or `none`. Code then records the asks whose storyline is planned,
+    later or `none` in the needs profile's `requests` list (never shrinks; a
+    later `record_audience` without `requestedStories` cannot erase it). The
+    demo guide's "Asked for, not in the simulator yet" section reads it.
   - `compose_model` runs `PlantStorylines.Compose` with the overrides, applies
     renames, then `PlantModelLoader`. Errors come back with field paths.
   - `preview_plant` runs the engine and stores the full preview (tags sampled
@@ -473,6 +478,66 @@ Measured cost through Gage (`anthropic/claude`, Claude Sonnet 4.6), November
 system prompt and tools, about 6,000 tokens, resent on every call. Pulse
 reported no cache reads. The SDK request carries no `cache_control`, so caching
 would need a change to `GageMessageRequest`.
+
+## The web container (phase 7)
+
+`src/IndustrialDataSim.Web` (program `flow-data-simulator-web`) is an ASP.NET
+Core minimal API with a plain HTML/JS page (no framework, no CDN; Flow design
+tokens, light and dark). It calls Core, Runtime and the interview service
+directly, and runs approved plants in its own process (no Docker socket).
+
+**The page has no login.** It listens on `http://127.0.0.1:8480` by default.
+In Docker it listens on `0.0.0.0:8480` inside the container
+(`FLOWSIM_WEB_URLS=http://0.0.0.0:8480`). Publish it only on the host
+(`-p 127.0.0.1:8480:8480`) or a trusted network, never on a public
+interface. Requests are refused unless their Host header is in
+`FLOWSIM_WEB_ALLOWED_HOSTS` (default `localhost;127.0.0.1;[::1]`). A
+state-changing request (POST, DELETE) whose `Origin` header names another
+site is also refused. Bodies must be JSON and at most 64 KiB.
+
+Environment: the simulator container's settings (`TIMEBASE_PULSE_URL`,
+`TIMEBASE_CLIENT_ID`, `TIMEBASE_CLIENT_SECRET`, `TIMEBASE_CA_BUNDLE`,
+`TIMEBASE_BASE_URL`, `TIMEBASE_DATASET`, `FLOWSIM_PG_CONNECTION`), plus
+optional `FLOWSIM_GAGE_MODEL`, `FLOWSIM_STORYLINES` (default: the
+`storylines` folder shipped next to the program), `FLOWSIM_WEB_URLS` and
+`FLOWSIM_WEB_ALLOWED_HOSTS`. Run it with `--stop-signal SIGINT
+--stop-timeout 150`, so a stop lets each plant finish its in-flight batch (the
+host waits up to 150 s).
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /` | The page |
+| `POST /api/interviews` | Start an interview |
+| `GET /api/interviews/{id}` | Chat history, storyline cards, needs, approval summary, preview |
+| `POST /api/interviews/{id}/messages` | `{"text": …}`; the turn's events stream back as server-sent events (`assistant_text`, `tool_activity`, `preview_ready`, `stopped`, `refusal`, `error`, `done`). One message at a time per interview: a second send meanwhile gets 409 `interview.busy`. The turn completes and is stored even if the browser leaves |
+| `POST /api/interviews/{id}/approve` | Needs `{"confirm": true}` (else 400). Admits the draft with the anchor fixed now, records `flowsim_interviews.approved_simulation`, starts hosting; returns the table prefix, tag root and tables |
+| `GET /api/plants` | `plant status` fields plus `managed` and `hosting` (`starting`, `backfilling`, `live`, `stopped`, `error` with code and message, `running_elsewhere`, `not_hosted`) |
+| `POST /api/plants/{name}/stop`, `/start` | Only plants approved on the page (else 403 `plant.not_owned`) |
+| `DELETE /api/plants/{name}?confirm=true` | Stops the plant, then `PlantStore.Remove`. Only plants approved on the page |
+| `GET /api/plants/{name}/connect-spec[?format=json]`, `/atlas-starter`, `/demo-guide[?format=html]` | Downloads |
+| `GET /api/health[?refresh=true]` | Database and Gage status. The Gage check (one short metered message) runs at startup and on refresh, at most every 30 s; interview turns update it in between |
+
+**Hosting** (`PlantHostingService`): `flowsim_web_plants` records each plant
+approved on the page and its Stop/Start switch, so a restart starts the same
+plants. Each plant has its own task. It takes the simulation's advisory host
+lock first; a plant whose lock another process holds (for example the
+`bluebirdbev-plant` container) shows `running_elsewhere`, is checked again
+every 30 s and is never written from here. A failure is shown with its error
+code and retried with doubling backoff (5 s to 5 min) without affecting other
+plants. A restart resumes each plant from its snapshot
+(`plant.snapshot_resumed`). Logs are JSON lines on standard output with an
+`event` code and the `simulation` name.
+
+**Demo guide** (`DemoGuide`): fills `examples/storylines/demo-guide.md` from
+the needs profile, the unmet asks and each chosen storyline's talk track,
+with the plant's real tag root and table prefix. The moments ("LB-202's
+vibration starts rising on Fri Nov 20 at 16:34 UTC …") come from running the
+admitted model again at its stored anchor, so their times match the live
+plant. Markdown, or HTML with `?format=html`.
+
+**Preview renderer:** the page and `tools/plant-preview/index.html` share
+`tools/plant-preview/plant-preview.js` and `plant-preview.css`, which the web
+project links into `wwwroot/shared/`.
 
 ## Storyline library and composing a model
 
