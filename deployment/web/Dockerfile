@@ -1,7 +1,7 @@
 # flow-data-simulator-web: the interview page with in-container plant hosting.
 #
 # Build from the repository root (BuildKit picks up Dockerfile.dockerignore):
-#   docker build -f deployment/web/Dockerfile -t flow-data-simulator-web:2.0.0-dev .
+#   docker build -f deployment/web/Dockerfile -t flow-data-simulator-web:2.0.0-rc.1 .
 # Native linux-arm64 and linux-x64 images come from the same file
 # (docker buildx build --platform linux/amd64,linux/arm64 ...). The web image is
 # Docker-only, so osx-arm64 and win-x64 do not apply to it.
@@ -12,7 +12,7 @@
 # The storyline library, base models and demo guide template are published
 # next to the web program (./storylines).
 
-ARG VERSION=2.0.0-dev
+ARG VERSION=2.0.0-rc.1
 
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH

@@ -10,8 +10,9 @@ permissions:
 
 # Candidate under test. Bump the rc number for any behavior-changing repair;
 # 1.1.0-rc.1: open-ended sessions candidate (owner-approved design, November 21, 2026).
+# 2.0.0-rc.1: plant simulation and the web interview (owner-approved candidate, November 22, 2026).
 env:
-  CANDIDATE_VERSION: 1.1.0-rc.1
+  CANDIDATE_VERSION: 2.0.0-rc.1
 
 concurrency:
   group: verify-${{ github.ref }}
@@ -126,7 +127,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - run: docker build -f deployment/web/Dockerfile --build-arg VERSION=2.0.0-dev -t "$IMAGE" .
+      - run: docker build -f deployment/web/Dockerfile --build-arg VERSION=${{ env.CANDIDATE_VERSION }} -t "$IMAGE" .
       - name: Image runs as non-root with SIGINT and a health check
         run: |
           test "$(docker inspect "$IMAGE" --format '{{.Config.User}}')" = datasim

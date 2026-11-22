@@ -1,3 +1,19 @@
+# industrial-data-sim 2.0.0-rc.1: release candidate
+
+Candidate, not a release. Approved by the owner on November 22, 2026 as the
+first 2.0.0 candidate: the plant simulation (Postgres rows and Historian tags
+from one clock, snapshots, Quality, Shipping, certification, batch units and
+golden batch drift, `EngineVersion` 4) and the web interview container
+`flow-data-simulator-web` (Claude through Pulse Gage, approval in the page,
+in-container hosting). The tag `v2.0.0-rc.1` goes on the version-only commit
+whose CI run passes every job, including the new `web-image` job.
+
+- Deployment: [deployment/web/README.md](../deployment/web/README.md).
+- What it does and the live acceptance of November 22, 2026:
+  [plant-simulation.md](plant-simulation.md#packaging-and-live-acceptance-phase-8).
+- Before 2.0.0: a fresh install from the CI-built images and a multi-day
+  soak of the two audience plants. The 1.x session host is unchanged.
+
 # industrial-data-sim 1.0.1: release notes
 
 Released November 21, 2026, with the owner's approval. This is the 1.0.0 program (no runtime code change)
