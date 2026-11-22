@@ -1,0 +1,2922 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "Timebase Pulse API",
+    "description": "Timebase common services (e.g. Identity, Users, Clients, Roles, License Management, etc.)",
+    "version": "v1"
+  },
+  "paths": {
+    "/api/clients": {
+      "post": {
+        "tags": [
+          "Clients"
+        ],
+        "summary": "Create a client",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientDto"
+              },
+              "example": {
+                "cid": "New Client Id"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Clients"
+        ],
+        "summary": "Get a list of all clients",
+        "responses": {
+          "200": {
+            "description": "List of Clients",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ClientDto"
+                  }
+                },
+                "example": [
+                  {
+                    "id": 12,
+                    "cid": "Client name",
+                    "rl": [
+                      "Client redirect url"
+                    ],
+                    "gl": [
+                      "client_credentials",
+                      "refresh_token"
+                    ],
+                    "sl": [
+                      "openid",
+                      "profile",
+                      "email"
+                    ],
+                    "te": 3600,
+                    "re": 2592000,
+                    "en": true,
+                    "cd": "2026-11-10T15:25:56.8642855+00:00"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clients/{id}": {
+      "get": {
+        "tags": [
+          "Clients"
+        ],
+        "summary": "Get a client by Id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A single Client",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientDto"
+                },
+                "example": {
+                  "id": 12,
+                  "cid": "Client name",
+                  "rl": [
+                    "Client redirect url"
+                  ],
+                  "gl": [
+                    "client_credentials",
+                    "refresh_token"
+                  ],
+                  "sl": [
+                    "openid",
+                    "profile",
+                    "email"
+                  ],
+                  "te": 3600,
+                  "re": 2592000,
+                  "en": true,
+                  "cd": "2026-11-10T15:25:56.8656047+00:00"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Clients"
+        ],
+        "summary": "Update a client",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientDto"
+              },
+              "example": {
+                "cid": "Client name",
+                "rl": [
+                  "Client redirect url"
+                ],
+                "gl": [
+                  "client_credentials",
+                  "refresh_token"
+                ],
+                "sl": [
+                  "openid",
+                  "profile",
+                  "email"
+                ],
+                "te": 3600,
+                "re": 2592000,
+                "en": true
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Clients"
+        ],
+        "summary": "Delete a client",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/gage/client-policies": {
+      "get": {
+        "tags": [
+          "Gage Client Policies"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GagePolicyDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gage/client-policies/{id}": {
+      "get": {
+        "tags": [
+          "Gage Client Policies"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GagePolicyDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Gage Client Policies"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GagePolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GagePolicyDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Gage Client Policies"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gage/models": {
+      "get": {
+        "tags": [
+          "Gage Models"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GageModelCatalogDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gage/providers": {
+      "get": {
+        "tags": [
+          "Gage Providers"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GageProviderDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Gage Providers"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GageProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GageProviderDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gage/providers/{id}": {
+      "get": {
+        "tags": [
+          "Gage Providers"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GageProviderDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Gage Providers"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GageProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GageProviderDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Gage Providers"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gage/proxy/v1/chat/completions": {
+      "post": {
+        "tags": [
+          "Gage Proxy"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/gage/proxy/v1/messages": {
+      "post": {
+        "tags": [
+          "Gage Proxy"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/gage/usage": {
+      "get": {
+        "tags": [
+          "Gage Usage"
+        ],
+        "parameters": [
+          {
+            "name": "clientId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GageUsagePage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gage/user-policies": {
+      "get": {
+        "tags": [
+          "Gage User Policies"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GagePolicyDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gage/user-policies/{id}": {
+      "get": {
+        "tags": [
+          "Gage User Policies"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GagePolicyDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Gage User Policies"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GagePolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GagePolicyDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Gage User Policies"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/oauth-protected-resource": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Protected resource metadata (RFC 9728): the authorization server and scopes for the MCP endpoint",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectedResourceMetadataDocument"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/oauth-protected-resource/mcp": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Protected resource metadata (RFC 9728) for /mcp, at the path-suffixed address some clients request",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectedResourceMetadataDocument"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/token": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Request an Access Token",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": { }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/auth/userinfo": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Get authenticated user's information",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/revoke": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Revoke a token",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/.well-known/jwks.json": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Get a set of public Json web keys to validate the issued tokens",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonWebKeySet"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/.well-known/openid-configuration": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Get a list of OpenId metadata for client discovery, including URLs for authorization, token exchange, etc.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenIdConnectConfiguration"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instances/{instanceId}": {
+      "get": {
+        "tags": [
+          "Instances"
+        ],
+        "summary": "Get the cached instance by its component-issued InstanceId.",
+        "parameters": [
+          {
+            "name": "instanceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/instances/{instanceId}/licenses": {
+      "get": {
+        "tags": [
+          "Instances"
+        ],
+        "summary": "Get the cached LicenseJwtDto bundle for an instance. Clients must verify each JWT against PortalPublicKey before trusting the contents.",
+        "parameters": [
+          {
+            "name": "instanceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LicenseJwtDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/instances/{instanceId}/relationships": {
+      "get": {
+        "tags": [
+          "Instances"
+        ],
+        "summary": "Get cached relationships for an instance (both source-side and target-side).",
+        "parameters": [
+          {
+            "name": "instanceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InstanceRelationshipDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Create a user",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserDto"
+              },
+              "example": {
+                "id": "User account (e.g. email address)",
+                "fn": "Firstname",
+                "ln": "Lastname",
+                "pw": "Password"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get a list of all users",
+        "responses": {
+          "200": {
+            "description": "List of Users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserDto"
+                  }
+                },
+                "example": [
+                  {
+                    "un": "User account (e.g. email address)",
+                    "fn": "Firstname",
+                    "ln": "Lastname"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{id}": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get a user by Id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A single User",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDto"
+                },
+                "example": {
+                  "un": "User account (e.g. email address)",
+                  "fn": "Firstname",
+                  "ln": "Lastname"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ClientDto": {
+        "title": "Client",
+        "type": "object",
+        "properties": {
+          "cid": {
+            "title": "Client Id",
+            "type": "string",
+            "description": "Unique identifier",
+            "nullable": true
+          },
+          "cs": {
+            "title": "Client Secret",
+            "type": "string",
+            "description": "For \"confidential flows\", e.g. Client Credentials",
+            "format": "password",
+            "nullable": true
+          },
+          "ru": {
+            "title": "Redirect Urls",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "For \"authorization flows\"",
+            "nullable": true
+          },
+          "aud": {
+            "title": "Allowed Audiences",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "For \"authorization flows\"",
+            "nullable": true
+          },
+          "gt": {
+            "title": "Grant Types",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "OAuth2 grant types allowed on this client",
+            "nullable": true
+          },
+          "sl": {
+            "title": "Scopes",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Permissions granted to the client",
+            "nullable": true
+          },
+          "te": {
+            "title": "Token Expiry (seconds)",
+            "type": "integer",
+            "description": "Expiry of access tokens (default 1 hour)",
+            "format": "int32",
+            "nullable": true
+          },
+          "re": {
+            "title": "Refresh Token Expiry (seconds)",
+            "type": "integer",
+            "description": "Expiry for refresh tokens (default of 30 days)",
+            "format": "int32",
+            "nullable": true
+          },
+          "en": {
+            "title": "Enabled",
+            "type": "boolean",
+            "description": "To disable a client if needed",
+            "nullable": true
+          },
+          "cd": {
+            "title": "Date and time created",
+            "type": "string",
+            "description": "Timestamp of creation",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Client object"
+      },
+      "EnforcementPolicy": {
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "ExternalLoginDto": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "key": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FieldDto": {
+        "title": "Field",
+        "type": "object",
+        "properties": {
+          "n": {
+            "title": "Name",
+            "type": "string",
+            "nullable": true
+          },
+          "v": {
+            "title": "Value",
+            "type": "string",
+            "nullable": true
+          },
+          "vi": {
+            "title": "Visibility",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "GageModelCatalogDto": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GageModelDto"
+            },
+            "description": "All enabled logical models across enabled providers.",
+            "nullable": true
+          },
+          "default": {
+            "type": "string",
+            "description": "The resolved install-wide default handle; null when the catalog is empty.",
+            "nullable": true
+          },
+          "pulseLicense": {
+            "$ref": "#/components/schemas/GagePulseLicenseDto"
+          }
+        },
+        "additionalProperties": false,
+        "description": "The model-discovery catalog every Gage-enabled consuming app pins at startup and is pushed\nwhenever it changes: all enabled logical models across enabled providers,\nplus the resolved Timebase.Pulse.Shared.Gage.GageModelCatalogDto.Default - the full handle of the model an administrator marked\nas the install-wide default, or, until one is marked, the alphabetically-first handle - resolved\ncentrally in Pulse so every consumer receives the same answer. Served by\n`GET /api/gage/models` and broadcast verbatim as the hub's `GageCatalogChanged`\nmessage. An empty catalog is a normal response: an empty list and a null default, never an\nerror."
+      },
+      "GageModelDto": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "wire": {
+            "$ref": "#/components/schemas/GageWire"
+          }
+        },
+        "additionalProperties": false,
+        "description": "One usable model in the discovery catalog: the full handle a caller passes to the\nproxy (`providerId/logicalModelId`), its human-friendly display name, and the wire of its\nprovider - verbatim - so the caller knows which front door to use. Deliberately a strict subset\nof what the administrator-only provider catalog exposes: never the API key, the real upstream\nmodel id, the provider endpoint, or the upstream path."
+      },
+      "GagePolicyDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "metrics": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MetricLimitDto"
+            },
+            "nullable": true
+          },
+          "allowedModels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "description": "A policy as returned to admin clients (client or user; the shape is identical)."
+      },
+      "GagePolicyRequest": {
+        "type": "object",
+        "properties": {
+          "metrics": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MetricLimitDto"
+            },
+            "nullable": true
+          },
+          "allowedModels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Create/update payload for a policy. The id comes from the route."
+      },
+      "GageProviderDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "wire": {
+            "$ref": "#/components/schemas/GageWire"
+          },
+          "endpoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "upstreamPath": {
+            "type": "string",
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "hasApiKey": {
+            "type": "boolean"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogicalModelDto"
+            },
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "description": "A provider as returned to admin clients. Deliberately omits the raw `ApiKey` - it is never\nechoed back - exposing only whether one is set via Timebase.Pulse.Shared.Gage.GageProviderDto.HasApiKey.\nTimebase.Pulse.Shared.Gage.GageProviderDto.UpstreamPath is the raw configured value (null when unset, meaning the wire's\ncanonical path applies), so an editor can distinguish \"defaulted\" from \"configured\"."
+      },
+      "GageProviderRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "wire": {
+            "$ref": "#/components/schemas/GageWire"
+          },
+          "endpoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "upstreamPath": {
+            "type": "string",
+            "nullable": true
+          },
+          "apiKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogicalModelRequest"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Create/update payload for a provider. Unlike Timebase.Pulse.Shared.Gage.GageProviderDto this carries the raw\nTimebase.Pulse.Shared.Gage.GageProviderRequest.ApiKey the admin sets. Timebase.Pulse.Shared.Gage.GageProviderRequest.UpstreamPath is optional - null/empty means\nthe wire's canonical path."
+      },
+      "GagePulseLicenseDto": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/GagePulseLicenseState"
+          },
+          "graceEndsAtUtc": {
+            "type": "string",
+            "description": "When grace runs out, so a host can say how long is left. Null on a licensed Pulse and on a tier that\ndeclares no grace.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "gageEntitled": {
+            "type": "boolean",
+            "description": "Whether Pulse's effective entitlements grant `GageEnabled`."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Pulse's licence position, carried on the catalog so a Gage-proxied host can report it without being\nable to verify a licence that is not bound to it."
+      },
+      "GagePulseLicenseState": {
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "type": "integer",
+        "description": "Where Pulse's own licence stands. Numbered to match the client-side\n`Timebase.Core.Agent.Providers.GagePulseLicenseState`, the way Timebase.Pulse.Domain.Gage.GageWire matches\nits client-side copy: the value crosses the wire as a number, so the numbering is the contract.",
+        "format": "int32"
+      },
+      "GageUsagePage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageLogEntryDto"
+            },
+            "nullable": true
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false,
+        "description": "A page of usage records plus the total count of the (filtered) set."
+      },
+      "GageWire": {
+        "enum": [
+          0,
+          1
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "InstanceDto": {
+        "title": "Instance",
+        "type": "object",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string",
+            "nullable": true
+          },
+          "iid": {
+            "title": "Instance Id",
+            "type": "string",
+            "nullable": true
+          },
+          "oid": {
+            "title": "Organization Id",
+            "type": "string",
+            "nullable": true
+          },
+          "l": {
+            "title": "Label",
+            "type": "string",
+            "nullable": true
+          },
+          "t": {
+            "title": "Instance Type",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "st": {
+            "title": "Status",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "fl": {
+            "title": "Fields",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldDto"
+            },
+            "nullable": true
+          },
+          "ll": {
+            "title": "Logs",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogDto"
+            },
+            "nullable": true
+          },
+          "nl": {
+            "title": "Notes",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoteDto"
+            },
+            "nullable": true
+          },
+          "cd": {
+            "title": "Created At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ud": {
+            "title": "Updated At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "on": {
+            "title": "Organization Name",
+            "type": "string",
+            "nullable": true
+          },
+          "hb": {
+            "title": "Heartbeat",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "hl": {
+            "title": "Health",
+            "type": "string",
+            "nullable": true
+          },
+          "ver": {
+            "title": "Version",
+            "type": "string",
+            "nullable": true
+          },
+          "m": {
+            "title": "Reported Metrics",
+            "type": "object",
+            "additionalProperties": { },
+            "nullable": true
+          },
+          "sz": {
+            "title": "Size",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "age": {
+            "title": "Age",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "tc": {
+            "title": "Tag Count",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "meas": {
+            "title": "Measures",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "ev": {
+            "title": "Events",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "ch": {
+            "title": "Charts",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "db": {
+            "title": "Dashboards",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "msg": {
+            "title": "Messages",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "lv": {
+            "title": "License Validity",
+            "type": "string",
+            "nullable": true
+          },
+          "lx": {
+            "title": "License Expiry",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lge": {
+            "title": "License Grace Ends",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lc": {
+            "title": "License Count",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "cons": {
+            "title": "Entitlement Consumption",
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InstanceEntitlementDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "InstanceEntitlementDto": {
+        "title": "Entitlement Consumption",
+        "type": "object",
+        "properties": {
+          "u": {
+            "title": "Used",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "l": {
+            "title": "Limit",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "w": {
+            "title": "Window",
+            "type": "string",
+            "format": "date-span",
+            "nullable": true
+          },
+          "p": {
+            "title": "Policy",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "InstanceRelationshipDto": {
+        "title": "InstanceRelationship",
+        "type": "object",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string",
+            "nullable": true
+          },
+          "sid": {
+            "title": "Source Instance Id",
+            "type": "string",
+            "nullable": true
+          },
+          "tid": {
+            "title": "Target Instance Id",
+            "type": "string",
+            "nullable": true
+          },
+          "t": {
+            "title": "Relationship Type",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "fl": {
+            "title": "Fields",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldDto"
+            },
+            "nullable": true
+          },
+          "nl": {
+            "title": "Notes",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoteDto"
+            },
+            "nullable": true
+          },
+          "ll": {
+            "title": "Logs",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogDto"
+            },
+            "nullable": true
+          },
+          "cd": {
+            "title": "Created At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ud": {
+            "title": "Updated At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "JsonWebKey": {
+        "type": "object",
+        "properties": {
+          "alg": {
+            "type": "string",
+            "nullable": true
+          },
+          "crv": {
+            "type": "string",
+            "nullable": true
+          },
+          "d": {
+            "type": "string",
+            "nullable": true
+          },
+          "dp": {
+            "type": "string",
+            "nullable": true
+          },
+          "dq": {
+            "type": "string",
+            "nullable": true
+          },
+          "e": {
+            "type": "string",
+            "nullable": true
+          },
+          "k": {
+            "type": "string",
+            "nullable": true
+          },
+          "key_ops": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "kid": {
+            "type": "string",
+            "nullable": true
+          },
+          "kty": {
+            "type": "string",
+            "nullable": true
+          },
+          "n": {
+            "type": "string",
+            "nullable": true
+          },
+          "oth": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "p": {
+            "type": "string",
+            "nullable": true
+          },
+          "q": {
+            "type": "string",
+            "nullable": true
+          },
+          "qi": {
+            "type": "string",
+            "nullable": true
+          },
+          "use": {
+            "type": "string",
+            "nullable": true
+          },
+          "x": {
+            "type": "string",
+            "nullable": true
+          },
+          "x5c": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "x5t": {
+            "type": "string",
+            "nullable": true
+          },
+          "x5t#S256": {
+            "type": "string",
+            "nullable": true
+          },
+          "x5u": {
+            "type": "string",
+            "nullable": true
+          },
+          "y": {
+            "type": "string",
+            "nullable": true
+          },
+          "pub": {
+            "type": "string",
+            "nullable": true
+          },
+          "priv": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": { }
+      },
+      "JsonWebKeySet": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonWebKey"
+            },
+            "nullable": true,
+            "readOnly": true
+          }
+        },
+        "additionalProperties": { }
+      },
+      "LicenseDto": {
+        "title": "License",
+        "type": "object",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string",
+            "nullable": true
+          },
+          "iid": {
+            "title": "Instance Id",
+            "type": "string",
+            "nullable": true
+          },
+          "oid": {
+            "title": "Options Id",
+            "type": "string",
+            "nullable": true
+          },
+          "t": {
+            "title": "License Type",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "st": {
+            "title": "Status",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "ds": {
+            "title": "Display State",
+            "type": "string",
+            "nullable": true
+          },
+          "ed": {
+            "title": "Effective Date",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "xd": {
+            "title": "Expiry Date",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "mx": {
+            "title": "Maintenance Expiry",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "pid": {
+            "title": "Predecessor License Id",
+            "type": "string",
+            "nullable": true
+          },
+          "prr": {
+            "title": "Predecessor Redacted",
+            "type": "boolean",
+            "nullable": true
+          },
+          "ml": {
+            "title": "Metrics",
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MetricDto"
+            },
+            "nullable": true
+          },
+          "gp": {
+            "title": "Grace Period",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "ll": {
+            "title": "Logs",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogDto"
+            },
+            "nullable": true
+          },
+          "cd": {
+            "title": "Created At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ud": {
+            "title": "Updated At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "il": {
+            "title": "Instance Label",
+            "type": "string",
+            "nullable": true
+          },
+          "iuid": {
+            "title": "Instance Uid",
+            "type": "string",
+            "nullable": true
+          },
+          "it": {
+            "title": "Instance Type",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "orgid": {
+            "title": "Organization Id",
+            "type": "string",
+            "nullable": true
+          },
+          "on": {
+            "title": "Organization Name",
+            "type": "string",
+            "nullable": true
+          },
+          "tn": {
+            "title": "Template Name",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "LicenseJwtDto": {
+        "type": "object",
+        "properties": {
+          "license": {
+            "$ref": "#/components/schemas/LicenseDto"
+          },
+          "jwt": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "LogDto": {
+        "title": "Log",
+        "type": "object",
+        "properties": {
+          "uid": {
+            "title": "User Id",
+            "type": "string",
+            "nullable": true
+          },
+          "a": {
+            "title": "Action",
+            "type": "string",
+            "nullable": true
+          },
+          "c": {
+            "title": "Context",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "cid": {
+            "title": "Context Id",
+            "type": "string",
+            "nullable": true
+          },
+          "dt": {
+            "title": "Date Time",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "m": {
+            "title": "Metadata",
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "v": {
+            "title": "Visibility",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "LogicalModelDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "realModelId": {
+            "type": "string",
+            "nullable": true
+          },
+          "fallbackEnabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "isDefault": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "description": "A logical model as returned to admin clients. Timebase.Pulse.Shared.Gage.LogicalModelDto.IsDefault is the stored\ninstall-wide default flag, so an editor can round-trip the administrator's choice."
+      },
+      "LogicalModelRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "realModelId": {
+            "type": "string",
+            "nullable": true
+          },
+          "fallbackEnabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "isDefault": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "description": "A logical model in a create/update provider request. Timebase.Pulse.Shared.Gage.LogicalModelRequest.IsDefault marks the\ninstall-wide default model; at most one model in the request may carry it, it must be enabled on\nan enabled provider, and the command handler clears the flag on every other provider's models.\nDefaults to false so a caller that predates it is unaffected."
+      },
+      "MetricDto": {
+        "title": "Metric",
+        "type": "object",
+        "properties": {
+          "l": {
+            "title": "Limit",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "w": {
+            "title": "Window",
+            "type": "string",
+            "format": "date-span",
+            "nullable": true
+          },
+          "p": {
+            "title": "Policy",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MetricLimitDto": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "format": "double"
+          },
+          "window": {
+            "type": "string",
+            "format": "date-span",
+            "nullable": true
+          },
+          "policy": {
+            "$ref": "#/components/schemas/EnforcementPolicy"
+          }
+        },
+        "additionalProperties": false,
+        "description": "A metric on a policy, as exchanged over the admin API."
+      },
+      "NoteDto": {
+        "title": "Note",
+        "type": "object",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string",
+            "nullable": true
+          },
+          "uid": {
+            "title": "User Id",
+            "type": "string",
+            "nullable": true
+          },
+          "un": {
+            "title": "User Name",
+            "type": "string",
+            "nullable": true
+          },
+          "m": {
+            "title": "Message",
+            "type": "string",
+            "nullable": true
+          },
+          "v": {
+            "title": "Visibility",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "cd": {
+            "title": "Created At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ud": {
+            "title": "Updated At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpenIdConnectConfiguration": {
+        "type": "object",
+        "properties": {
+          "acr_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "authorization_details_types_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "authorization_endpoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "authorization_encryption_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "authorization_encryption_enc_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "authorization_response_iss_parameter_supported": {
+            "type": "boolean"
+          },
+          "authorization_signing_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "backchannel_authentication_endpoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "backchannel_authentication_request_signing_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "backchannel_token_delivery_modes_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "backchannel_user_code_parameter_supported": {
+            "type": "boolean"
+          },
+          "check_session_iframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "claims_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "claims_locales_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "claims_parameter_supported": {
+            "type": "boolean"
+          },
+          "claim_types_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "code_challenge_methods_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "device_authorization_endpoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "display_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "dpop_signing_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "end_session_endpoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "frontchannel_logout_session_supported": {
+            "type": "string",
+            "nullable": true
+          },
+          "frontchannel_logout_supported": {
+            "type": "string",
+            "nullable": true
+          },
+          "grant_types_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "http_logout_supported": {
+            "type": "boolean"
+          },
+          "id_token_encryption_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "id_token_encryption_enc_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "id_token_signing_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "introspection_endpoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "introspection_endpoint_auth_methods_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "introspection_endpoint_auth_signing_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "issuer": {
+            "type": "string",
+            "nullable": true
+          },
+          "jwks_uri": {
+            "type": "string",
+            "nullable": true
+          },
+          "logout_session_supported": {
+            "type": "boolean"
+          },
+          "op_policy_uri": {
+            "type": "string",
+            "nullable": true
+          },
+          "op_tos_uri": {
+            "type": "string",
+            "nullable": true
+          },
+          "prompt_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "pushed_authorization_request_endpoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "registration_endpoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "request_object_encryption_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "request_object_encryption_enc_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "request_object_signing_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "request_parameter_supported": {
+            "type": "boolean"
+          },
+          "request_uri_parameter_supported": {
+            "type": "boolean"
+          },
+          "require_pushed_authorization_requests": {
+            "type": "boolean"
+          },
+          "require_request_uri_registration": {
+            "type": "boolean"
+          },
+          "response_modes_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "response_types_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "revocation_endpoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "revocation_endpoint_auth_methods_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "revocation_endpoint_auth_signing_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "service_documentation": {
+            "type": "string",
+            "nullable": true
+          },
+          "scopes_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "subject_types_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "token_endpoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "token_endpoint_auth_methods_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "token_endpoint_auth_signing_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "tls_client_certificate_bound_access_tokens": {
+            "type": "boolean"
+          },
+          "ui_locales_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "userinfo_endpoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "userinfo_encryption_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "userinfo_encryption_enc_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          },
+          "userinfo_signing_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "readOnly": true
+          }
+        },
+        "additionalProperties": { }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "instance": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": { }
+      },
+      "ProtectedResourceMetadataDocument": {
+        "type": "object",
+        "properties": {
+          "resource": {
+            "type": "string",
+            "description": "This resource's identifier - Pulse's own `/mcp` URL.",
+            "nullable": true
+          },
+          "authorization_servers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Issuer URLs a client may authenticate against; Pulse's `/auth`.",
+            "nullable": true
+          },
+          "bearer_methods_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "How the token is presented - the Authorization header.",
+            "nullable": true
+          },
+          "scopes_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Advertised for the client to request, matching the set Pulse's own OIDC discovery document\nadvertises. `offline_access` is what earns a refresh token, but note Pulse issues one based\non the REGISTERED client's scopes rather than the requested scope, so the client registration\nmust carry it too or the session expires unrenewably.",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "The document body. Field names are the wire names from RFC 9728 section 2 and are pinned with\nSystem.Text.Json.Serialization.JsonPropertyNameAttribute rather than left to a serializer naming policy, so the\ncontract does not move if the host's JSON options change."
+      },
+      "TokenResponseDto": {
+        "title": "Token Request",
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string",
+            "description": "Access Token",
+            "nullable": true
+          },
+          "token_type": {
+            "title": "Token Type",
+            "type": "string",
+            "description": "Token Type",
+            "nullable": true
+          },
+          "expires_in": {
+            "title": "Expires In (seconds)",
+            "type": "integer",
+            "description": "Expires In",
+            "format": "int32"
+          },
+          "refresh_expires_in": {
+            "title": "Refresh Expires In (seconds)",
+            "type": "integer",
+            "description": "Refresh Expires In",
+            "format": "int32",
+            "nullable": true
+          },
+          "not_before_policy": {
+            "title": "Not Before Policy",
+            "type": "integer",
+            "description": "Not Before Policy",
+            "format": "int32",
+            "nullable": true
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string",
+            "description": "Scope",
+            "nullable": true
+          },
+          "id_token": {
+            "title": "Id Token",
+            "type": "string",
+            "description": "Id Token",
+            "nullable": true
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string",
+            "description": "Refresh Token",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Token request object"
+      },
+      "UsageLogEntryDto": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "clientId": {
+            "type": "string",
+            "nullable": true
+          },
+          "userId": {
+            "type": "string",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
+          },
+          "promptTokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "outputTokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "estimated": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "description": "A usage record as returned by the usage query (audit fields only; no internal charges).\nCacheReadTokens is the share of PromptTokens served from the\nprovider's prompt cache, and Estimated flags an entry whose token figures are\nthe proxy's chars/4 heuristic because the upstream sent no usage accounting."
+      },
+      "UserDto": {
+        "title": "User",
+        "type": "object",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string",
+            "description": "Identifier",
+            "nullable": true
+          },
+          "un": {
+            "title": "Username",
+            "type": "string",
+            "description": "Identifier",
+            "nullable": true
+          },
+          "fn": {
+            "title": "Firstname",
+            "type": "string",
+            "description": "Firstname",
+            "nullable": true
+          },
+          "ln": {
+            "title": "Lastname",
+            "type": "string",
+            "description": "Lastname",
+            "nullable": true
+          },
+          "pw": {
+            "title": "Password",
+            "type": "string",
+            "description": "User's password (hashed)",
+            "format": "password",
+            "nullable": true
+          },
+          "ad": {
+            "title": "Is Administrator",
+            "type": "boolean",
+            "description": "User is Pulse Administrator",
+            "nullable": true
+          },
+          "st": {
+            "title": "Status",
+            "type": "integer",
+            "description": "Status of the user",
+            "format": "int32",
+            "nullable": true
+          },
+          "cd": {
+            "title": "Created At",
+            "type": "string",
+            "description": "Timestamp of creation",
+            "format": "date-time",
+            "nullable": true
+          },
+          "els": {
+            "title": "External Logins",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExternalLoginDto"
+            },
+            "description": "A list of external logins associated with the user",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "User object"
+      }
+    },
+    "securitySchemes": {
+      "Bearer": {
+        "type": "http",
+        "description": "Paste ONLY the raw Pulse JWT (no 'Bearer ' prefix) - Swagger adds the scheme.",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [
+    {
+      "Bearer": [ ]
+    }
+  ],
+  "tags": [
+    {
+      "name": "Identity"
+    },
+    {
+      "name": "Clients"
+    },
+    {
+      "name": "Users"
+    }
+  ]
+}
