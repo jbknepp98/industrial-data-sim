@@ -35,6 +35,7 @@ public class PlantSnapshotTests
     {
         "areas" => Model(true),
         "core" => Model(false),
+        _ when PlantBatchTests.BatchBases.Contains(variant) => PlantBatchTests.Model(variant),
         _ => PlantCertificationTests.Model(["uncertified-technician-closure", "uncertified-operator-run"], json =>
         {
             var certification = json["maintenance"]!["certification"]!;
@@ -69,10 +70,47 @@ public class PlantSnapshotTests
     {
         { "areas", 0.5 }, { "areas", 13.25 }, { "areas", 101 }, { "areas", 333.0167 }, { "areas", 480 },
         { "core", 7 }, { "core", 250.5 }, { "core", 470 },
-        { "certification", 0.25 }, { "certification", 50.5 }, { "certification", 98 }, { "certification", 120.75 }, { "certification", 200 }
+        { "certification", 0.25 }, { "certification", 50.5 }, { "certification", 98 }, { "certification", 120.75 }, { "certification", 200 },
+        { "chemicals-batch", 0.5 }, { "chemicals-batch", 37.4 }, { "chemicals-batch", 121 }, { "chemicals-batch", 250.25 },
+        { "beverage-syrup-batch", 3.1 }, { "beverage-syrup-batch", 77.75 }, { "beverage-syrup-batch", 190 },
+        { "pharma-batch", 11.6 }, { "pharma-batch", 140.2 }
     };
 
-    /// <summary>Hours after the plant start (14 days before the anchor for Bluebird, 6 for the beverage base) at which a snapshot is taken.</summary>
+    /// <summary>
+    /// Batch bases resumed from snapshots taken in the middle of a running phase,
+    /// in the middle of a failure that interrupted a phase, and while a fed line
+    /// waits for its intermediate: the hardest instants for batch state.
+    /// </summary>
+    [Theory]
+    [InlineData("chemicals-batch")]
+    [InlineData("beverage-syrup-batch")]
+    [InlineData("pharma-batch")]
+    public void ResumingABatchPlantMidPhaseAndMidFailureReproducesTheFullRun(string variant)
+    {
+        var model = Model(variant);
+        var end = Anchor.AddDays(7);
+        var full = PlantEngine.Run(model, end);
+        static DateTimeOffset Middle(PlantLineSegment s) =>
+            new(s.Start.UtcTicks + (s.End - s.Start).Ticks / 2 - (s.Start.UtcTicks + (s.End - s.Start).Ticks / 2) % TimeSpan.TicksPerSecond, TimeSpan.Zero);
+        var batchLine = model.Lines.Single(l => l.Batch is not null).Id;
+        var instants = new List<DateTimeOffset>
+        {
+            Middle(full.Segments.First(s => s.Line == batchLine && s.State == "Running" && s.Batch is { Sequence: > 1 } && (s.End - s.Start).TotalMinutes > 10)),
+            Middle(full.Segments.Last(s => s.Line == batchLine && s.State == "Running" && s.Batch is not null && s.End < end.AddDays(-2)))
+        };
+        if (full.Segments.FirstOrDefault(s => s.Line == batchLine && s.State == "Down" && s.Batch is not null && s.End < end.AddDays(-1)) is { } down) instants.Add(Middle(down));
+        else Assert.NotEqual("chemicals-batch", variant); // the chemicals base must cover a snapshot mid-failure
+        if (full.Segments.FirstOrDefault(s => s.State == "Idle" && s.Reason?.StartsWith("Waiting for", StringComparison.Ordinal) == true && (s.End - s.Start).TotalMinutes > 2 && s.End < end.AddDays(-1)) is { } waiting)
+            instants.Add(Middle(waiting));
+        foreach (var at in instants)
+        {
+            var snapshot = PlantEngine.Run(model, end, null, at).Snapshot!;
+            Assert.Equal(3, snapshot.EngineVersion);
+            AssertContinues(full, PlantEngine.Run(model, end, snapshot, null).Run, at);
+        }
+    }
+
+    /// <summary>Hours after the plant start (14 days before the anchor for Bluebird, 6 for the beverage and batch bases) at which a snapshot is taken.</summary>
     [Theory]
     [MemberData(nameof(Instants))]
     public void ResumingFromASnapshotReproducesTheFullRunExactly(string variant, double hoursAfterStart)
@@ -121,7 +159,7 @@ public class PlantSnapshotTests
                 Assert.True(Json(expected.ValueAt(tag, t)!) == Json(actual.ValueAt(tag, t)!), $"{tag.Name} at {t:O}");
                 compared++;
             }
-        Assert.True(compared > 1000);
+        Assert.True(compared > 1000, $"{compared} comparisons from {at:O}");
     }
 
     [Fact]
@@ -129,8 +167,9 @@ public class PlantSnapshotTests
     {
         var model = Model(true);
         var snapshot = PlantEngine.Run(model, Anchor, null, model.StartUtc.AddDays(2)).Snapshot!;
-        Assert.Equal(2, snapshot.EngineVersion);
+        Assert.Equal(3, snapshot.EngineVersion);
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { EngineVersion = 1 }, null)); // stored before certification
+        Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { EngineVersion = 2 }, null)); // stored before batch units
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { EngineVersion = PlantEngine.EngineVersion + 1 }, null));
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { State = "{not json" }, null));
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(model, Anchor, snapshot with { ChangeSequence = snapshot.ChangeSequence + 1 }, null));
@@ -143,6 +182,11 @@ public class PlantSnapshotTests
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(withoutSection, Anchor, certifiedSnapshot, null));
         var plainSnapshot = PlantEngine.Run(withoutSection, Anchor, null, withoutSection.StartUtc.AddDays(2)).Snapshot!;
         Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(certified, Anchor, plainSnapshot, null));
+        // A fed batch plant's snapshot does not fit the same plant without feeds.
+        var fed = Model("beverage-syrup-batch");
+        var fedSnapshot = PlantEngine.Run(fed, Anchor, null, fed.StartUtc.AddDays(2)).Snapshot!;
+        var unfed = PlantBatchTests.Model("beverage-syrup-batch", j => j["lines"]![0]!["batch"]!.AsObject().Remove("feeds"));
+        Assert.Throws<PlantSnapshotException>(() => PlantEngine.Run(unfed, Anchor, fedSnapshot, null));
     }
 
     [Fact]

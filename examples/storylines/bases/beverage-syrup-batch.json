@@ -1,0 +1,702 @@
+{
+  "schemaVersion": 1,
+  "kind": "plant",
+  "simulation": "BeverageSyrup",
+  "seed": 20261123,
+  "timeline": {
+    "backfill": "6d"
+  },
+  "sampleIntervalMs": 10000,
+  "shifts": [
+    {
+      "name": "CrewA",
+      "startHour": 12,
+      "hours": 12
+    },
+    {
+      "name": "CrewB",
+      "startHour": 0,
+      "hours": 12
+    }
+  ],
+  "skus": [
+    {
+      "code": "SYR-LL",
+      "description": "Lemon-lime syrup",
+      "casesPerMinute": 1,
+      "rejectPercent": 0,
+      "fillTarget": 1,
+      "fillUnit": "L"
+    },
+    {
+      "code": "SYR-OR",
+      "description": "Orange syrup",
+      "casesPerMinute": 1,
+      "rejectPercent": 0,
+      "fillTarget": 1,
+      "fillUnit": "L"
+    },
+    {
+      "code": "SYR-BR",
+      "description": "Berry syrup",
+      "casesPerMinute": 1,
+      "rejectPercent": 0,
+      "fillTarget": 1,
+      "fillUnit": "L"
+    },
+    {
+      "code": "BB-LL-20",
+      "description": "Bluebird Lemon-Lime 20 oz, 24 pk",
+      "casesPerMinute": 4.58,
+      "rejectPercent": 0.8,
+      "fillTarget": 20.0,
+      "fillUnit": "oz"
+    },
+    {
+      "code": "BB-OR-20",
+      "description": "Bluebird Orange 20 oz, 24 pk",
+      "casesPerMinute": 4.58,
+      "rejectPercent": 0.8,
+      "fillTarget": 20.0,
+      "fillUnit": "oz"
+    },
+    {
+      "code": "BB-BR-20",
+      "description": "Bluebird Berry 20 oz, 24 pk",
+      "casesPerMinute": 4.58,
+      "rejectPercent": 1.2,
+      "fillTarget": 20.0,
+      "fillUnit": "oz"
+    }
+  ],
+  "lines": [
+    {
+      "id": "MX1",
+      "name": "Syrup Mix Tank 1",
+      "kind": "batch",
+      "changeoverMinutes": 45,
+      "skus": [
+        "SYR-LL",
+        "SYR-OR",
+        "SYR-BR"
+      ],
+      "equipment": [
+        {
+          "id": "TK-101",
+          "name": "Syrup Mix Tank 101",
+          "class": "mixer"
+        },
+        {
+          "id": "AG-101",
+          "name": "Mix Tank 101 Agitator",
+          "class": "agitator"
+        },
+        {
+          "id": "PU-101",
+          "name": "Syrup Transfer Pump 101",
+          "class": "pump"
+        },
+        {
+          "id": "VL-101",
+          "name": "Sugar Dosing Valve 101",
+          "class": "valve"
+        }
+      ],
+      "batch": {
+        "capacity": 6000,
+        "unit": "L",
+        "recipes": [
+          {
+            "id": "RCP-SYR-LL",
+            "sku": "SYR-LL",
+            "phases": [
+              {
+                "name": "Dissolve",
+                "minutes": {
+                  "minimum": 35,
+                  "maximum": 50
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 25,
+                    "end": 62
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 120,
+                    "end": 180
+                  }
+                },
+                "levelPercent": {
+                  "start": 0,
+                  "end": 70
+                }
+              },
+              {
+                "name": "Blend",
+                "minutes": {
+                  "minimum": 25,
+                  "maximum": 40
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 62,
+                    "end": 48
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 180,
+                    "end": 150
+                  }
+                },
+                "levelPercent": {
+                  "start": 70,
+                  "end": 92
+                }
+              },
+              {
+                "name": "BrixPhHold",
+                "minutes": {
+                  "minimum": 20,
+                  "maximum": 35
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 48,
+                    "end": 42
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 60,
+                    "end": 60
+                  }
+                },
+                "levelPercent": {
+                  "start": 92,
+                  "end": 92
+                }
+              },
+              {
+                "name": "Transfer",
+                "minutes": {
+                  "minimum": 25,
+                  "maximum": 35
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 42,
+                    "end": 38
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.2
+                  },
+                  "agitatorRpm": {
+                    "start": 60,
+                    "end": 0
+                  }
+                },
+                "levelPercent": {
+                  "start": 92,
+                  "end": 0
+                }
+              }
+            ]
+          },
+          {
+            "id": "RCP-SYR-OR",
+            "sku": "SYR-OR",
+            "phases": [
+              {
+                "name": "Dissolve",
+                "minutes": {
+                  "minimum": 35,
+                  "maximum": 50
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 25,
+                    "end": 62
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 120,
+                    "end": 180
+                  }
+                },
+                "levelPercent": {
+                  "start": 0,
+                  "end": 70
+                }
+              },
+              {
+                "name": "Blend",
+                "minutes": {
+                  "minimum": 25,
+                  "maximum": 40
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 62,
+                    "end": 48
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 180,
+                    "end": 150
+                  }
+                },
+                "levelPercent": {
+                  "start": 70,
+                  "end": 92
+                }
+              },
+              {
+                "name": "BrixPhHold",
+                "minutes": {
+                  "minimum": 20,
+                  "maximum": 35
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 48,
+                    "end": 42
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 60,
+                    "end": 60
+                  }
+                },
+                "levelPercent": {
+                  "start": 92,
+                  "end": 92
+                }
+              },
+              {
+                "name": "Transfer",
+                "minutes": {
+                  "minimum": 25,
+                  "maximum": 35
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 42,
+                    "end": 38
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.2
+                  },
+                  "agitatorRpm": {
+                    "start": 60,
+                    "end": 0
+                  }
+                },
+                "levelPercent": {
+                  "start": 92,
+                  "end": 0
+                }
+              }
+            ]
+          },
+          {
+            "id": "RCP-SYR-BR",
+            "sku": "SYR-BR",
+            "phases": [
+              {
+                "name": "Dissolve",
+                "minutes": {
+                  "minimum": 35,
+                  "maximum": 50
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 25,
+                    "end": 62
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 120,
+                    "end": 180
+                  }
+                },
+                "levelPercent": {
+                  "start": 0,
+                  "end": 70
+                }
+              },
+              {
+                "name": "Blend",
+                "minutes": {
+                  "minimum": 25,
+                  "maximum": 40
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 62,
+                    "end": 48
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 180,
+                    "end": 150
+                  }
+                },
+                "levelPercent": {
+                  "start": 70,
+                  "end": 92
+                }
+              },
+              {
+                "name": "BrixPhHold",
+                "minutes": {
+                  "minimum": 20,
+                  "maximum": 35
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 48,
+                    "end": 42
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 60,
+                    "end": 60
+                  }
+                },
+                "levelPercent": {
+                  "start": 92,
+                  "end": 92
+                }
+              },
+              {
+                "name": "Transfer",
+                "minutes": {
+                  "minimum": 25,
+                  "maximum": 35
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 42,
+                    "end": 38
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.2
+                  },
+                  "agitatorRpm": {
+                    "start": 60,
+                    "end": 0
+                  }
+                },
+                "levelPercent": {
+                  "start": 92,
+                  "end": 0
+                }
+              }
+            ]
+          }
+        ],
+        "feeds": {
+          "line": "L1",
+          "consumption": [
+            {
+              "sku": "BB-LL-20",
+              "intermediate": "SYR-LL",
+              "perCase": 2.4
+            },
+            {
+              "sku": "BB-OR-20",
+              "intermediate": "SYR-OR",
+              "perCase": 2.4
+            },
+            {
+              "sku": "BB-BR-20",
+              "intermediate": "SYR-BR",
+              "perCase": 2.5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "L1",
+      "name": "Filling Line 1",
+      "changeoverMinutes": 60,
+      "skus": [
+        "BB-LL-20",
+        "BB-OR-20",
+        "BB-BR-20"
+      ],
+      "equipment": [
+        {
+          "id": "FL-201",
+          "name": "Filler and Capper 201",
+          "class": "filler"
+        },
+        {
+          "id": "LB-202",
+          "name": "Labeler 202",
+          "class": "labeler"
+        },
+        {
+          "id": "CS-203",
+          "name": "Case Packer 203",
+          "class": "packer"
+        }
+      ]
+    }
+  ],
+  "people": {
+    "operators": [
+      {
+        "id": "E1001",
+        "name": "Maria Lopez",
+        "shift": "CrewA",
+        "line": "MX1"
+      },
+      {
+        "id": "E1002",
+        "name": "Dwayne Carter",
+        "shift": "CrewB",
+        "line": "MX1"
+      },
+      {
+        "id": "E1009",
+        "name": "Kenji Tanaka",
+        "shift": "CrewA",
+        "line": "L1"
+      },
+      {
+        "id": "E1010",
+        "name": "Rosa Delgado",
+        "shift": "CrewB",
+        "line": "L1"
+      }
+    ],
+    "technicians": [
+      {
+        "id": "E1007",
+        "name": "Jake Morrison",
+        "shift": "CrewA",
+        "skills": [
+          "mechanical",
+          "electrical"
+        ]
+      },
+      {
+        "id": "E1008",
+        "name": "Lena Fischer",
+        "shift": "CrewB",
+        "skills": [
+          "electrical",
+          "mechanical"
+        ]
+      }
+    ]
+  },
+  "customers": [
+    {
+      "id": "CUST-01",
+      "name": "Ozark Grocers"
+    },
+    {
+      "id": "CUST-02",
+      "name": "Midwest Fuel and Food"
+    },
+    {
+      "id": "CUST-03",
+      "name": "Springfield Distributing"
+    }
+  ],
+  "parts": [
+    {
+      "id": "PRT-AG-SEAL",
+      "description": "Agitator mechanical seal",
+      "unitCost": 640.0
+    },
+    {
+      "id": "PRT-PU-IMP",
+      "description": "Transfer pump impeller",
+      "unitCost": 410.0
+    },
+    {
+      "id": "PRT-FL-SEAL",
+      "description": "Filler valve seal kit",
+      "unitCost": 122.5
+    },
+    {
+      "id": "PRT-LB-GRIP",
+      "description": "Labeler gripper pad set",
+      "unitCost": 48.0
+    }
+  ],
+  "demand": {
+    "ordersPerDay": 3.4,
+    "casesPerOrder": {
+      "minimum": 1200,
+      "maximum": 1500
+    },
+    "dueDays": {
+      "minimum": 2,
+      "maximum": 3.5
+    }
+  },
+  "maintenance": {
+    "detectionMinutes": 5,
+    "responseMinutes": {
+      "minimum": 10,
+      "maximum": 35
+    },
+    "failureModes": [
+      {
+        "code": "AG101-SEAL",
+        "line": "MX1",
+        "equipment": "AG-101",
+        "description": "Mix tank 101 agitator seal leak",
+        "mtbfRunHours": 45,
+        "repairMinutes": {
+          "minimum": 60,
+          "maximum": 150
+        },
+        "skill": "mechanical",
+        "priority": "High",
+        "warningHours": 6,
+        "parts": [
+          {
+            "part": "PRT-AG-SEAL",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "code": "PU101-CAV",
+        "line": "MX1",
+        "equipment": "PU-101",
+        "description": "Syrup transfer pump 101 cavitation",
+        "mtbfRunHours": 120,
+        "repairMinutes": {
+          "minimum": 30,
+          "maximum": 90
+        },
+        "skill": "mechanical",
+        "priority": "Medium",
+        "warningHours": 4,
+        "parts": [
+          {
+            "part": "PRT-PU-IMP",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "code": "FL201-VALVE",
+        "line": "L1",
+        "equipment": "FL-201",
+        "description": "Filler 201 valve leak, low fills",
+        "mtbfRunHours": 160,
+        "repairMinutes": {
+          "minimum": 60,
+          "maximum": 120
+        },
+        "skill": "mechanical",
+        "priority": "Medium",
+        "warningHours": 12,
+        "parts": [
+          {
+            "part": "PRT-FL-SEAL",
+            "quantity": 2
+          }
+        ]
+      },
+      {
+        "code": "LB202-JAM",
+        "line": "L1",
+        "equipment": "LB-202",
+        "description": "Labeler 202 label jam (worn gripper pads)",
+        "mtbfRunHours": 40,
+        "repairMinutes": {
+          "minimum": 30,
+          "maximum": 75
+        },
+        "skill": "mechanical",
+        "priority": "High",
+        "warningHours": 8,
+        "parts": [
+          {
+            "part": "PRT-LB-GRIP",
+            "quantity": 1
+          }
+        ]
+      }
+    ],
+    "preventive": [
+      {
+        "code": "PM-MX1-WEEKLY",
+        "line": "MX1",
+        "equipment": "AG-101",
+        "description": "Mix tank 101 weekly agitator and seal inspection",
+        "everyDays": 7,
+        "startHour": 14,
+        "durationMinutes": 90,
+        "skill": "mechanical"
+      },
+      {
+        "code": "PM-L1-WEEKLY",
+        "line": "L1",
+        "equipment": "FL-201",
+        "description": "Filling line weekly filler and labeler PM",
+        "everyDays": 7,
+        "startHour": 16,
+        "durationMinutes": 120,
+        "skill": "mechanical"
+      }
+    ],
+    "minorStops": {
+      "perRunHour": 0.4,
+      "minutes": {
+        "minimum": 1,
+        "maximum": 4
+      }
+    }
+  },
+  "incidents": [],
+  "shipping": {
+    "delayHours": {
+      "minimum": 2,
+      "maximum": 10
+    },
+    "carriers": [
+      "Ozark Freight",
+      "Midwest Carriers"
+    ]
+  }
+}

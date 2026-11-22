@@ -288,6 +288,41 @@ public class PlantStoreTests
         finally { try { store.Remove(name); } catch (RuntimeFailure) { } }
     }
 
+    /// <summary>
+    /// A fed batch plant: recipes, batches, phases and the consumption genealogy
+    /// are created, hold exactly the engine's rows, and removal drops them.
+    /// </summary>
+    [Fact]
+    public void BatchTablesAreCreatedFilledAndRemoved()
+    {
+        if (Connection is not { } connection) return;
+        string name = Unique();
+        var json = PlantBatchTests.Json("beverage-syrup-batch", j => j["simulation"] = name);
+        var model = PlantModelLoader.Load(json.ToJsonString(), Anchor).Model!;
+        using var store = new PlantStore(connection);
+        using var db = new NpgsqlConnection(connection);
+        db.Open();
+        string[] purposes = ["recipes", "recipephases", "batches", "batchphases", "batchconsumption"];
+        long Tables()
+        {
+            using var count = new NpgsqlCommand($"SELECT count(*) FROM pg_tables WHERE tablename IN ({string.Join(", ", purposes.Select(p => $"'{model.TablePrefix}{p}'"))})", db);
+            return (long)count.ExecuteScalar()!;
+        }
+        try
+        {
+            store.Admit(model, json.ToJsonString());
+            Assert.Equal(5L, Tables());
+            var run = PlantEngine.Run(model, Anchor.AddHours(1));
+            store.ApplyChanges(model, run.Changes, Anchor);
+            AssertTablesMatchEngine(connection, model, Anchor);
+            using var genealogy = new NpgsqlCommand($"SELECT count(*) FROM \"{model.TablePrefix}batchconsumption\" c JOIN \"{model.TablePrefix}batches\" b ON b.batch_id = c.batch_id JOIN \"{model.TablePrefix}lots\" l ON l.production_order = c.production_order WHERE b.end_utc <= c.consumed_utc", db);
+            Assert.True((long)genealogy.ExecuteScalar()! >= 1);
+            store.Remove(name);
+            Assert.Equal(0L, Tables());
+        }
+        finally { try { store.Remove(name); } catch (RuntimeFailure) { } }
+    }
+
     /// <summary>An interrupted tag batch is sent again: intent cleared, cursor kept, counted.</summary>
     [Fact]
     public void InterruptedTagBatchIsResentNotSkipped()

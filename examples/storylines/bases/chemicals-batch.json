@@ -1,0 +1,628 @@
+{
+  "schemaVersion": 1,
+  "kind": "plant",
+  "simulation": "ChemicalsBatch",
+  "seed": 20261124,
+  "timeline": {
+    "backfill": "6d"
+  },
+  "sampleIntervalMs": 10000,
+  "shifts": [
+    {
+      "name": "CrewA",
+      "startHour": 12,
+      "hours": 12
+    },
+    {
+      "name": "CrewB",
+      "startHour": 0,
+      "hours": 12
+    }
+  ],
+  "skus": [
+    {
+      "code": "RES-A",
+      "description": "Alkyd resin A",
+      "casesPerMinute": 1,
+      "rejectPercent": 0,
+      "fillTarget": 1,
+      "fillUnit": "kg"
+    },
+    {
+      "code": "RES-B",
+      "description": "Polyester resin B",
+      "casesPerMinute": 1,
+      "rejectPercent": 0,
+      "fillTarget": 1,
+      "fillUnit": "kg"
+    },
+    {
+      "code": "DRUM-A",
+      "description": "Alkyd resin A, 200 kg drum",
+      "casesPerMinute": 1.2,
+      "rejectPercent": 0.5,
+      "fillTarget": 200,
+      "fillUnit": "kg"
+    },
+    {
+      "code": "DRUM-B",
+      "description": "Polyester resin B, 200 kg drum",
+      "casesPerMinute": 1.2,
+      "rejectPercent": 0.5,
+      "fillTarget": 200,
+      "fillUnit": "kg"
+    }
+  ],
+  "lines": [
+    {
+      "id": "R1",
+      "name": "Reactor R-101",
+      "kind": "batch",
+      "changeoverMinutes": 90,
+      "skus": [
+        "RES-A",
+        "RES-B"
+      ],
+      "equipment": [
+        {
+          "id": "R-101",
+          "name": "Reactor 101",
+          "class": "reactor"
+        },
+        {
+          "id": "AG-101",
+          "name": "Reactor 101 Agitator",
+          "class": "agitator"
+        },
+        {
+          "id": "JK-101",
+          "name": "Reactor 101 Heating Jacket",
+          "class": "jacket"
+        },
+        {
+          "id": "PU-101",
+          "name": "Discharge Pump 101",
+          "class": "pump"
+        },
+        {
+          "id": "VL-101",
+          "name": "Bottom Outlet Valve 101",
+          "class": "valve"
+        }
+      ],
+      "batch": {
+        "capacity": 8000,
+        "unit": "kg",
+        "recipes": [
+          {
+            "id": "RCP-ALKYD-A",
+            "sku": "RES-A",
+            "phases": [
+              {
+                "name": "Charge",
+                "minutes": {
+                  "minimum": 30,
+                  "maximum": 45
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 25,
+                    "end": 40
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 40,
+                    "end": 80
+                  }
+                },
+                "levelPercent": {
+                  "start": 0,
+                  "end": 75
+                }
+              },
+              {
+                "name": "Heat",
+                "minutes": {
+                  "minimum": 60,
+                  "maximum": 90
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 40,
+                    "end": 180
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 2.5
+                  },
+                  "agitatorRpm": {
+                    "start": 80,
+                    "end": 120
+                  }
+                },
+                "levelPercent": {
+                  "start": 75,
+                  "end": 75
+                }
+              },
+              {
+                "name": "React",
+                "minutes": {
+                  "minimum": 120,
+                  "maximum": 180
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 180,
+                    "end": 185
+                  },
+                  "pressureBar": {
+                    "start": 2.5,
+                    "end": 3.0
+                  },
+                  "agitatorRpm": {
+                    "start": 120,
+                    "end": 120
+                  }
+                },
+                "levelPercent": {
+                  "start": 75,
+                  "end": 72
+                }
+              },
+              {
+                "name": "Cool",
+                "minutes": {
+                  "minimum": 60,
+                  "maximum": 90
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 185,
+                    "end": 60
+                  },
+                  "pressureBar": {
+                    "start": 3.0,
+                    "end": 1.2
+                  },
+                  "agitatorRpm": {
+                    "start": 120,
+                    "end": 80
+                  }
+                },
+                "levelPercent": {
+                  "start": 72,
+                  "end": 72
+                }
+              },
+              {
+                "name": "Discharge",
+                "minutes": {
+                  "minimum": 30,
+                  "maximum": 45
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 60,
+                    "end": 55
+                  },
+                  "pressureBar": {
+                    "start": 1.2,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 80,
+                    "end": 0
+                  }
+                },
+                "levelPercent": {
+                  "start": 72,
+                  "end": 0
+                }
+              }
+            ]
+          },
+          {
+            "id": "RCP-POLY-B",
+            "sku": "RES-B",
+            "phases": [
+              {
+                "name": "Charge",
+                "minutes": {
+                  "minimum": 30,
+                  "maximum": 45
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 25,
+                    "end": 40
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 40,
+                    "end": 80
+                  }
+                },
+                "levelPercent": {
+                  "start": 0,
+                  "end": 75
+                }
+              },
+              {
+                "name": "Heat",
+                "minutes": {
+                  "minimum": 60,
+                  "maximum": 90
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 40,
+                    "end": 210
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 2.5
+                  },
+                  "agitatorRpm": {
+                    "start": 80,
+                    "end": 120
+                  }
+                },
+                "levelPercent": {
+                  "start": 75,
+                  "end": 75
+                }
+              },
+              {
+                "name": "React",
+                "minutes": {
+                  "minimum": 120,
+                  "maximum": 180
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 210,
+                    "end": 215
+                  },
+                  "pressureBar": {
+                    "start": 2.5,
+                    "end": 3.0
+                  },
+                  "agitatorRpm": {
+                    "start": 120,
+                    "end": 120
+                  }
+                },
+                "levelPercent": {
+                  "start": 75,
+                  "end": 72
+                }
+              },
+              {
+                "name": "Cool",
+                "minutes": {
+                  "minimum": 60,
+                  "maximum": 90
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 215,
+                    "end": 60
+                  },
+                  "pressureBar": {
+                    "start": 3.0,
+                    "end": 1.2
+                  },
+                  "agitatorRpm": {
+                    "start": 120,
+                    "end": 80
+                  }
+                },
+                "levelPercent": {
+                  "start": 72,
+                  "end": 72
+                }
+              },
+              {
+                "name": "Discharge",
+                "minutes": {
+                  "minimum": 30,
+                  "maximum": 45
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 60,
+                    "end": 55
+                  },
+                  "pressureBar": {
+                    "start": 1.2,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 80,
+                    "end": 0
+                  }
+                },
+                "levelPercent": {
+                  "start": 72,
+                  "end": 0
+                }
+              }
+            ]
+          }
+        ],
+        "feeds": {
+          "line": "D1",
+          "consumption": [
+            {
+              "sku": "DRUM-A",
+              "intermediate": "RES-A",
+              "perCase": 200
+            },
+            {
+              "sku": "DRUM-B",
+              "intermediate": "RES-B",
+              "perCase": 200
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "D1",
+      "name": "Drumming Line 1",
+      "changeoverMinutes": 30,
+      "skus": [
+        "DRUM-A",
+        "DRUM-B"
+      ],
+      "equipment": [
+        {
+          "id": "DF-201",
+          "name": "Drum Filler 201",
+          "class": "filler"
+        },
+        {
+          "id": "CV-202",
+          "name": "Drum Conveyor 202",
+          "class": "conveyor"
+        },
+        {
+          "id": "PL-203",
+          "name": "Palletizer 203",
+          "class": "palletizer"
+        }
+      ]
+    }
+  ],
+  "people": {
+    "operators": [
+      {
+        "id": "E1001",
+        "name": "Maria Lopez",
+        "shift": "CrewA",
+        "line": "R1"
+      },
+      {
+        "id": "E1002",
+        "name": "Dwayne Carter",
+        "shift": "CrewB",
+        "line": "R1"
+      },
+      {
+        "id": "E1009",
+        "name": "Kenji Tanaka",
+        "shift": "CrewA",
+        "line": "D1"
+      },
+      {
+        "id": "E1010",
+        "name": "Rosa Delgado",
+        "shift": "CrewB",
+        "line": "D1"
+      }
+    ],
+    "technicians": [
+      {
+        "id": "E1007",
+        "name": "Jake Morrison",
+        "shift": "CrewA",
+        "skills": [
+          "mechanical",
+          "electrical"
+        ]
+      },
+      {
+        "id": "E1008",
+        "name": "Lena Fischer",
+        "shift": "CrewB",
+        "skills": [
+          "electrical",
+          "mechanical"
+        ]
+      }
+    ]
+  },
+  "customers": [
+    {
+      "id": "CUST-11",
+      "name": "Gulf Coatings"
+    },
+    {
+      "id": "CUST-12",
+      "name": "Prairie Paint Works"
+    },
+    {
+      "id": "CUST-13",
+      "name": "Lakeside Adhesives"
+    }
+  ],
+  "parts": [
+    {
+      "id": "PRT-AG-SEAL",
+      "description": "Agitator double mechanical seal",
+      "unitCost": 1850.0
+    },
+    {
+      "id": "PRT-PU-SEAL",
+      "description": "Discharge pump seal kit",
+      "unitCost": 520.0
+    },
+    {
+      "id": "PRT-JK-TRAP",
+      "description": "Jacket steam trap",
+      "unitCost": 310.0
+    },
+    {
+      "id": "PRT-DF-NOZ",
+      "description": "Drum filler nozzle",
+      "unitCost": 260.0
+    }
+  ],
+  "demand": {
+    "ordersPerDay": 1.6,
+    "casesPerOrder": {
+      "minimum": 40,
+      "maximum": 80
+    },
+    "dueDays": {
+      "minimum": 2,
+      "maximum": 4
+    }
+  },
+  "maintenance": {
+    "detectionMinutes": 5,
+    "responseMinutes": {
+      "minimum": 10,
+      "maximum": 35
+    },
+    "failureModes": [
+      {
+        "code": "AG101-SEAL",
+        "line": "R1",
+        "equipment": "AG-101",
+        "description": "Reactor 101 agitator seal failure",
+        "mtbfRunHours": 60,
+        "repairMinutes": {
+          "minimum": 90,
+          "maximum": 240
+        },
+        "skill": "mechanical",
+        "priority": "Critical",
+        "warningHours": 8,
+        "parts": [
+          {
+            "part": "PRT-AG-SEAL",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "code": "JK101-TRAP",
+        "line": "R1",
+        "equipment": "JK-101",
+        "description": "Reactor 101 jacket steam trap failed closed",
+        "mtbfRunHours": 150,
+        "repairMinutes": {
+          "minimum": 45,
+          "maximum": 120
+        },
+        "skill": "mechanical",
+        "priority": "High",
+        "warningHours": 6,
+        "parts": [
+          {
+            "part": "PRT-JK-TRAP",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "code": "PU101-SEAL",
+        "line": "R1",
+        "equipment": "PU-101",
+        "description": "Discharge pump 101 seal leak",
+        "mtbfRunHours": 200,
+        "repairMinutes": {
+          "minimum": 45,
+          "maximum": 120
+        },
+        "skill": "mechanical",
+        "priority": "Medium",
+        "warningHours": 4,
+        "parts": [
+          {
+            "part": "PRT-PU-SEAL",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "code": "DF201-NOZ",
+        "line": "D1",
+        "equipment": "DF-201",
+        "description": "Drum filler 201 nozzle drip",
+        "mtbfRunHours": 80,
+        "repairMinutes": {
+          "minimum": 20,
+          "maximum": 60
+        },
+        "skill": "mechanical",
+        "priority": "Medium",
+        "warningHours": 4,
+        "parts": [
+          {
+            "part": "PRT-DF-NOZ",
+            "quantity": 1
+          }
+        ]
+      }
+    ],
+    "preventive": [
+      {
+        "code": "PM-R1-WEEKLY",
+        "line": "R1",
+        "equipment": "AG-101",
+        "description": "Reactor 101 weekly agitator and jacket inspection",
+        "everyDays": 7,
+        "startHour": 14,
+        "durationMinutes": 120,
+        "skill": "mechanical"
+      },
+      {
+        "code": "PM-D1-WEEKLY",
+        "line": "D1",
+        "equipment": "DF-201",
+        "description": "Drumming line weekly filler PM",
+        "everyDays": 7,
+        "startHour": 16,
+        "durationMinutes": 60,
+        "skill": "mechanical"
+      }
+    ],
+    "minorStops": {
+      "perRunHour": 0.4,
+      "minutes": {
+        "minimum": 1,
+        "maximum": 4
+      }
+    }
+  },
+  "incidents": [],
+  "shipping": {
+    "delayHours": {
+      "minimum": 4,
+      "maximum": 24
+    },
+    "carriers": [
+      "Gulf Bulk Logistics",
+      "Prairie Freight"
+    ]
+  }
+}

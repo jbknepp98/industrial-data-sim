@@ -41,9 +41,50 @@ public sealed record PlantSku(string Code, string Description, double CasesPerMi
     double FillTarget, string FillUnit);
 
 public sealed record PlantLine(string Id, string Name, int ChangeoverMinutes, IReadOnlyList<string> Skus,
-    IReadOnlyList<PlantEquipment> Equipment);
+    IReadOnlyList<PlantEquipment> Equipment)
+{
+    /// <summary>"packaging" (a continuous line, the default) or "batch" (a batch unit running recipes).</summary>
+    public string Kind { get; init; } = "packaging";
 
-/// <summary>Class "filler" adds a fill-volume signal; every unit has status and vibration.</summary>
+    /// <summary>The batch unit's capacity and recipes; set exactly when Kind is "batch".</summary>
+    public PlantBatchUnit? Batch { get; init; }
+}
+
+/// <summary>
+/// A batch unit: each batch holds at most Capacity (in Unit, for example kg or
+/// L) and runs its SKU's recipe, one phase after another. Orders for its SKUs
+/// are in Unit and run as ceil(quantity / Capacity) batches. With Feeds set,
+/// some of its SKUs are intermediates consumed by a packaging line.
+/// </summary>
+public sealed record PlantBatchUnit(double Capacity, string Unit, IReadOnlyList<PlantRecipe> Recipes, PlantFeeds? Feeds)
+{
+    public PlantRecipe RecipeFor(string sku) => Recipes.First(r => r.Sku == sku);
+}
+
+/// <summary>One recipe per SKU made on a batch unit: its phases in order.</summary>
+public sealed record PlantRecipe(string Id, string Sku, IReadOnlyList<PlantPhase> Phases);
+
+/// <summary>A start and end value; setpoints ramp linearly from Start to End over a phase's running time.</summary>
+public sealed record PlantRamp(double Start, double End)
+{
+    public double At(double progress) => Start + (End - Start) * progress;
+}
+
+/// <summary>A recipe phase (Charge, Heat, React, Hold, Cool, Discharge …): its duration range and setpoint ramps.</summary>
+public sealed record PlantPhase(string Name, PlantRange Minutes, PlantRamp TemperatureC, PlantRamp PressureBar, PlantRamp AgitatorRpm,
+    PlantRamp LevelPercent);
+
+/// <summary>
+/// A batch unit feeding a packaging line: each case of a consuming SKU uses
+/// PerCase of the intermediate (in the batch unit's Unit). A packaging order
+/// for a consuming SKU starts only when released batches hold enough of its
+/// intermediate, and consumes them first in, first out.
+/// </summary>
+public sealed record PlantFeeds(string Line, IReadOnlyList<PlantConsumption> Consumption);
+
+public sealed record PlantConsumption(string Sku, string Intermediate, double PerCase);
+
+/// <summary>Class "filler" adds a fill-volume signal; every unit has status and vibration. Batch units use reactor, agitator, pump, jacket and valve.</summary>
 public sealed record PlantEquipment(string Id, string Name, string Class);
 
 /// <summary>An operator or technician. Skills apply to technicians only.</summary>

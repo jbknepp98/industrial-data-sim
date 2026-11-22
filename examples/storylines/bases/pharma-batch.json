@@ -1,0 +1,639 @@
+{
+  "schemaVersion": 1,
+  "kind": "plant",
+  "simulation": "PharmaBatch",
+  "seed": 20261125,
+  "timeline": {
+    "backfill": "6d"
+  },
+  "sampleIntervalMs": 10000,
+  "shifts": [
+    {
+      "name": "CrewA",
+      "startHour": 12,
+      "hours": 12
+    },
+    {
+      "name": "CrewB",
+      "startHour": 0,
+      "hours": 12
+    }
+  ],
+  "skus": [
+    {
+      "code": "BLD-MET",
+      "description": "Metformin 500 mg granulate (bulk)",
+      "casesPerMinute": 1,
+      "rejectPercent": 0,
+      "fillTarget": 1,
+      "fillUnit": "kg"
+    },
+    {
+      "code": "BLD-LIS",
+      "description": "Lisinopril 10 mg granulate (bulk)",
+      "casesPerMinute": 1,
+      "rejectPercent": 0,
+      "fillTarget": 1,
+      "fillUnit": "kg"
+    },
+    {
+      "code": "PK-MET-60",
+      "description": "Metformin 500 mg, 60 ct bottle, 24 pk",
+      "casesPerMinute": 4.0,
+      "rejectPercent": 0.6,
+      "fillTarget": 60,
+      "fillUnit": "ct"
+    },
+    {
+      "code": "PK-LIS-30",
+      "description": "Lisinopril 10 mg, 30 ct bottle, 24 pk",
+      "casesPerMinute": 4.2,
+      "rejectPercent": 0.6,
+      "fillTarget": 30,
+      "fillUnit": "ct"
+    }
+  ],
+  "lines": [
+    {
+      "id": "G1",
+      "name": "Granulation Suite G1",
+      "kind": "batch",
+      "changeoverMinutes": 120,
+      "skus": [
+        "BLD-MET",
+        "BLD-LIS"
+      ],
+      "equipment": [
+        {
+          "id": "GV-101",
+          "name": "High-Shear Granulator 101",
+          "class": "reactor"
+        },
+        {
+          "id": "IM-101",
+          "name": "Granulator 101 Impeller",
+          "class": "agitator"
+        },
+        {
+          "id": "JK-101",
+          "name": "Granulator 101 Jacket",
+          "class": "jacket"
+        },
+        {
+          "id": "VL-101",
+          "name": "Granulator 101 Discharge Valve",
+          "class": "valve"
+        }
+      ],
+      "batch": {
+        "capacity": 600,
+        "unit": "kg",
+        "recipes": [
+          {
+            "id": "RCP-MET-GRAN",
+            "sku": "BLD-MET",
+            "phases": [
+              {
+                "name": "Charge",
+                "minutes": {
+                  "minimum": 20,
+                  "maximum": 30
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 22,
+                    "end": 22
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 0,
+                    "end": 50
+                  }
+                },
+                "levelPercent": {
+                  "start": 0,
+                  "end": 55
+                }
+              },
+              {
+                "name": "DryMix",
+                "minutes": {
+                  "minimum": 10,
+                  "maximum": 15
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 22,
+                    "end": 23
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 150,
+                    "end": 150
+                  }
+                },
+                "levelPercent": {
+                  "start": 55,
+                  "end": 55
+                }
+              },
+              {
+                "name": "WetGranulate",
+                "minutes": {
+                  "minimum": 25,
+                  "maximum": 40
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 23,
+                    "end": 30
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 200,
+                    "end": 250
+                  }
+                },
+                "levelPercent": {
+                  "start": 55,
+                  "end": 68
+                }
+              },
+              {
+                "name": "Dry",
+                "minutes": {
+                  "minimum": 60,
+                  "maximum": 90
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 30,
+                    "end": 55
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 0.6
+                  },
+                  "agitatorRpm": {
+                    "start": 30,
+                    "end": 30
+                  }
+                },
+                "levelPercent": {
+                  "start": 68,
+                  "end": 60
+                }
+              },
+              {
+                "name": "Discharge",
+                "minutes": {
+                  "minimum": 15,
+                  "maximum": 25
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 55,
+                    "end": 35
+                  },
+                  "pressureBar": {
+                    "start": 0.6,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 30,
+                    "end": 0
+                  }
+                },
+                "levelPercent": {
+                  "start": 60,
+                  "end": 0
+                }
+              }
+            ]
+          },
+          {
+            "id": "RCP-LIS-GRAN",
+            "sku": "BLD-LIS",
+            "phases": [
+              {
+                "name": "Charge",
+                "minutes": {
+                  "minimum": 20,
+                  "maximum": 30
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 22,
+                    "end": 22
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 0,
+                    "end": 50
+                  }
+                },
+                "levelPercent": {
+                  "start": 0,
+                  "end": 55
+                }
+              },
+              {
+                "name": "DryMix",
+                "minutes": {
+                  "minimum": 10,
+                  "maximum": 15
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 22,
+                    "end": 23
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 150,
+                    "end": 150
+                  }
+                },
+                "levelPercent": {
+                  "start": 55,
+                  "end": 55
+                }
+              },
+              {
+                "name": "WetGranulate",
+                "minutes": {
+                  "minimum": 25,
+                  "maximum": 40
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 23,
+                    "end": 30
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 200,
+                    "end": 250
+                  }
+                },
+                "levelPercent": {
+                  "start": 55,
+                  "end": 68
+                }
+              },
+              {
+                "name": "Dry",
+                "minutes": {
+                  "minimum": 60,
+                  "maximum": 90
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 30,
+                    "end": 55
+                  },
+                  "pressureBar": {
+                    "start": 1.0,
+                    "end": 0.6
+                  },
+                  "agitatorRpm": {
+                    "start": 30,
+                    "end": 30
+                  }
+                },
+                "levelPercent": {
+                  "start": 68,
+                  "end": 60
+                }
+              },
+              {
+                "name": "Discharge",
+                "minutes": {
+                  "minimum": 15,
+                  "maximum": 25
+                },
+                "setpoints": {
+                  "temperatureC": {
+                    "start": 55,
+                    "end": 35
+                  },
+                  "pressureBar": {
+                    "start": 0.6,
+                    "end": 1.0
+                  },
+                  "agitatorRpm": {
+                    "start": 30,
+                    "end": 0
+                  }
+                },
+                "levelPercent": {
+                  "start": 60,
+                  "end": 0
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "P1",
+      "name": "Bottle Packaging Line P1",
+      "changeoverMinutes": 90,
+      "skus": [
+        "PK-MET-60",
+        "PK-LIS-30"
+      ],
+      "equipment": [
+        {
+          "id": "FL-301",
+          "name": "Tablet Counter and Filler 301",
+          "class": "filler"
+        },
+        {
+          "id": "CP-302",
+          "name": "Capper 302",
+          "class": "capper"
+        },
+        {
+          "id": "LB-303",
+          "name": "Labeler 303",
+          "class": "labeler"
+        }
+      ]
+    }
+  ],
+  "people": {
+    "operators": [
+      {
+        "id": "E1001",
+        "name": "Maria Lopez",
+        "shift": "CrewA",
+        "line": "G1"
+      },
+      {
+        "id": "E1002",
+        "name": "Dwayne Carter",
+        "shift": "CrewB",
+        "line": "G1"
+      },
+      {
+        "id": "E1009",
+        "name": "Kenji Tanaka",
+        "shift": "CrewA",
+        "line": "P1"
+      },
+      {
+        "id": "E1010",
+        "name": "Rosa Delgado",
+        "shift": "CrewB",
+        "line": "P1"
+      }
+    ],
+    "technicians": [
+      {
+        "id": "E1007",
+        "name": "Jake Morrison",
+        "shift": "CrewA",
+        "skills": [
+          "mechanical",
+          "electrical"
+        ]
+      },
+      {
+        "id": "E1008",
+        "name": "Lena Fischer",
+        "shift": "CrewB",
+        "skills": [
+          "electrical",
+          "mechanical"
+        ]
+      }
+    ]
+  },
+  "customers": [
+    {
+      "id": "CUST-21",
+      "name": "Riverbend Contract Tableting"
+    },
+    {
+      "id": "CUST-22",
+      "name": "Central Pharmacy Distributors"
+    },
+    {
+      "id": "CUST-23",
+      "name": "Northstar Health Wholesale"
+    }
+  ],
+  "parts": [
+    {
+      "id": "PRT-IM-SEAL",
+      "description": "Impeller shaft seal",
+      "unitCost": 1450.0
+    },
+    {
+      "id": "PRT-VL-GSK",
+      "description": "Discharge valve gasket",
+      "unitCost": 95.0
+    },
+    {
+      "id": "PRT-FL-SENS",
+      "description": "Counter photo sensor",
+      "unitCost": 380.0
+    },
+    {
+      "id": "PRT-LB-GRIP",
+      "description": "Labeler gripper pad set",
+      "unitCost": 48.0
+    }
+  ],
+  "demand": {
+    "ordersPerDay": 3.0,
+    "casesPerOrder": {
+      "minimum": 1200,
+      "maximum": 1500
+    },
+    "dueDays": {
+      "minimum": 3,
+      "maximum": 6
+    }
+  },
+  "maintenance": {
+    "detectionMinutes": 5,
+    "responseMinutes": {
+      "minimum": 10,
+      "maximum": 35
+    },
+    "failureModes": [
+      {
+        "code": "IM101-SEAL",
+        "line": "G1",
+        "equipment": "IM-101",
+        "description": "Granulator 101 impeller seal failure",
+        "mtbfRunHours": 50,
+        "repairMinutes": {
+          "minimum": 60,
+          "maximum": 180
+        },
+        "skill": "mechanical",
+        "priority": "High",
+        "warningHours": 6,
+        "parts": [
+          {
+            "part": "PRT-IM-SEAL",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "code": "VL101-LEAK",
+        "line": "G1",
+        "equipment": "VL-101",
+        "description": "Granulator 101 discharge valve leak",
+        "mtbfRunHours": 160,
+        "repairMinutes": {
+          "minimum": 30,
+          "maximum": 90
+        },
+        "skill": "mechanical",
+        "priority": "Medium",
+        "warningHours": 3,
+        "parts": [
+          {
+            "part": "PRT-VL-GSK",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "code": "FL301-COUNT",
+        "line": "P1",
+        "equipment": "FL-301",
+        "description": "Counter 301 miscount (dirty sensor)",
+        "mtbfRunHours": 60,
+        "repairMinutes": {
+          "minimum": 20,
+          "maximum": 60
+        },
+        "skill": "electrical",
+        "priority": "High",
+        "warningHours": 8,
+        "parts": [
+          {
+            "part": "PRT-FL-SENS",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "code": "LB303-JAM",
+        "line": "P1",
+        "equipment": "LB-303",
+        "description": "Labeler 303 label jam",
+        "mtbfRunHours": 45,
+        "repairMinutes": {
+          "minimum": 20,
+          "maximum": 50
+        },
+        "skill": "mechanical",
+        "priority": "Medium",
+        "warningHours": 6,
+        "parts": [
+          {
+            "part": "PRT-LB-GRIP",
+            "quantity": 1
+          }
+        ]
+      }
+    ],
+    "preventive": [
+      {
+        "code": "PM-G1-WEEKLY",
+        "line": "G1",
+        "equipment": "IM-101",
+        "description": "Granulator 101 weekly impeller and seal inspection",
+        "everyDays": 7,
+        "startHour": 14,
+        "durationMinutes": 90,
+        "skill": "mechanical"
+      },
+      {
+        "code": "PM-P1-WEEKLY",
+        "line": "P1",
+        "equipment": "FL-301",
+        "description": "Packaging line weekly counter and labeler PM",
+        "everyDays": 7,
+        "startHour": 16,
+        "durationMinutes": 90,
+        "skill": "mechanical"
+      }
+    ],
+    "minorStops": {
+      "perRunHour": 0.4,
+      "minutes": {
+        "minimum": 1,
+        "maximum": 4
+      }
+    }
+  },
+  "incidents": [],
+  "quality": {
+    "parameters": [
+      {
+        "name": "Assay",
+        "unit": "pct",
+        "target": 100.0,
+        "lower": 98.0,
+        "upper": 102.0,
+        "sigma": 0.5,
+        "skuOffsets": {}
+      },
+      {
+        "name": "Moisture",
+        "unit": "pct",
+        "target": 2.0,
+        "lower": 1.5,
+        "upper": 2.5,
+        "sigma": 0.12,
+        "skuOffsets": {}
+      }
+    ],
+    "labMinutes": {
+      "minimum": 120,
+      "maximum": 360
+    },
+    "holdMinutes": {
+      "minimum": 1440,
+      "maximum": 4320
+    },
+    "excursions": []
+  },
+  "shipping": {
+    "delayHours": {
+      "minimum": 6,
+      "maximum": 30
+    },
+    "carriers": [
+      "Northstar Logistics",
+      "MedFreight"
+    ]
+  }
+}

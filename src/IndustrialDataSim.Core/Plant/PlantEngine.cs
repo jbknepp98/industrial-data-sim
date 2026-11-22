@@ -32,8 +32,12 @@ public static class PlantEngine
     /// snapshot from another version is discarded and the plant replays from its
     /// start, which is always correct, only slower.
     /// </summary>
-    /// <remarks>Version 2: the snapshot holds certificate state (maintenance.certification).</remarks>
-    public const int EngineVersion = 2;
+    /// <remarks>
+    /// Version 2: the snapshot holds certificate state (maintenance.certification).
+    /// Version 3: the snapshot holds batch state (the running batch and phase, released
+    /// intermediate stock and incoming batch quantity).
+    /// </remarks>
+    public const int EngineVersion = 3;
 
     public static PlantRun Run(PlantModel model, DateTimeOffset endUtc) => Run(model, endUtc, null, null).Run;
 
@@ -86,7 +90,7 @@ public static class PlantEngine
     private sealed class ProductionOrder
     {
         public required string Id { get; init; }
-        public required string SalesOrder { get; init; }
+        public string? SalesOrder { get; init; }            // null for a batch order that replenishes a fed line's intermediate
         public required string Sku { get; init; }
         public required string Line { get; init; }
         public required double GoodTarget { get; init; }
@@ -100,7 +104,7 @@ public static class PlantEngine
         public bool Checked { get; set; }            // the operator certification check has been made
         public bool Uncertified { get; set; }        // ran anyway without a current certificate
 
-        public OrderRef Ref() => new(Id, SalesOrder, Sku, Due);
+        public OrderRef Ref() => new(Id, SalesOrder!, Sku, Due);
     }
 
     private sealed class Ticket
@@ -141,6 +145,33 @@ public static class PlantEngine
         public Ticket? PendingPreventive;
         public string? ChangeoverDowntime;
         public double GoodTotal, RejectTotal;      // over closed segments, for the count signals
+        public BatchState? CurrentBatch;           // batch lines: the batch in progress
+        public PlantBatchSegment? SegmentBatch;    // batch lines: the batch phase of the open segment, from its start
+    }
+
+    /// <summary>
+    /// The batch in progress on a batch line. Planned holds every phase's drawn
+    /// duration (whole seconds, from the batch's own random stream); Remaining is
+    /// the current phase's running time still to go, as of the last time the line
+    /// started running. A failure stops the clock; the repair resumes it.
+    /// </summary>
+    private sealed class BatchState
+    {
+        public required string Id { get; init; }
+        public required string Recipe { get; init; }
+        public required double Size { get; init; }
+        public required int[] Planned { get; init; }
+        public int Phase { get; set; }
+        public DateTimeOffset PhaseStart { get; set; }
+        public long Remaining { get; set; }
+        public bool Interrupted { get; set; }
+    }
+
+    /// <summary>A released batch of an intermediate in stock for a fed line, with the quantity not yet consumed.</summary>
+    private sealed class StockBatch
+    {
+        public required string Id { get; init; }
+        public double Remaining { get; set; }
     }
 
     private sealed class TechnicianRuntime(PlantPerson person)
@@ -150,19 +181,22 @@ public static class PlantEngine
         public int Completed;
     }
 
-    // ---------------- snapshot layout (EngineVersion 2) ----------------
+    // ---------------- snapshot layout (EngineVersion 3) ----------------
 
     private sealed record StateDto(
         long EventOrder, long ChangeSequence, long FailureCount, double Stock, DateTimeOffset CalendarUntil,
         DateTime[] PreventiveNextDue, int[] PreventiveDueIndex, ulong FailureDraws, ulong MinorDraws,
         Dictionary<string, int> Counters, List<LineDto> Lines, List<TechnicianDto> Technicians,
         List<Ticket> OpenTickets, List<FailureDto> Failures, List<EventDto> Events,
-        Dictionary<string, CertificateDto>? Certificates = null); // null for plants without certification
+        Dictionary<string, CertificateDto>? Certificates = null, // null for plants without certification
+        Dictionary<string, List<StockBatch>>? IntermediateStock = null, // null for plants without batch.feeds
+        Dictionary<string, double>? IntermediateIncoming = null);
 
     private sealed record LineDto(string Id, string State, DateTimeOffset StateStart, string? Sku, string? Reason, string? Unit,
         ProductionOrder? Current, List<ProductionOrder> Queue, int Version, DateTimeOffset RunningSince, double Rate, double Reject,
         Dictionary<string, double> HoursToFailure, double HoursToMinorStop, List<string> PlantedFailures,
-        string? PendingPreventive, string? ChangeoverDowntime, double GoodTotal, double RejectTotal);
+        string? PendingPreventive, string? ChangeoverDowntime, double GoodTotal, double RejectTotal,
+        BatchState? CurrentBatch = null, PlantBatchSegment? SegmentBatch = null);
 
     private sealed record TechnicianDto(string Id, bool Busy, int Completed);
 
@@ -206,6 +240,12 @@ public static class PlantEngine
         private readonly PlantCertification? certification;
         private readonly List<(PlantCertificateIssue Issue, int ValidDays)> certificateIssues = [];
         private Dictionary<string, CertificateDto> certificates = new(StringComparer.Ordinal);
+        // Batch units feeding packaging lines: released intermediate stock (first in, first
+        // out) and the quantity still to come from released batch orders, per intermediate SKU.
+        private readonly bool feeds;
+        private Dictionary<string, List<StockBatch>> intermediateStock = new(StringComparer.Ordinal);
+        private Dictionary<string, double> intermediateIncoming = new(StringComparer.Ordinal);
+        private readonly IReadOnlyList<PlantSku> orderable;
 
         public Simulation(PlantModel model, DateTimeOffset end)
         {
@@ -234,6 +274,15 @@ public static class PlantEngine
                     .Concat((certification.Operators?.WorkInstructions ?? []).SelectMany(w => w.Issued.Select(i => (i, w.ValidDays))));
                 certificateIssues = all.OrderBy(i => i.i.IssuedUtc).ToList();
             }
+            foreach (var use in model.Lines.SelectMany(l => l.Batch?.Feeds?.Consumption ?? []))
+            {
+                feeds = true;
+                intermediateStock.TryAdd(use.Intermediate, []);
+                intermediateIncoming.TryAdd(use.Intermediate, 0);
+            }
+            // Intermediates are consumed by a fed line, never ordered by customers.
+            var intermediates = model.Lines.SelectMany(l => l.Batch?.Feeds?.Consumption ?? []).Select(c => c.Intermediate).ToHashSet(StringComparer.Ordinal);
+            orderable = intermediates.Count == 0 ? model.Skus : model.Skus.Where(s => !intermediates.Contains(s.Code)).ToList();
         }
 
         private Simulation(PlantModel model, DateTimeOffset end, DateTimeOffset at, PlantRunBase runBase) : this(model, end)
@@ -252,7 +301,9 @@ public static class PlantEngine
             catch (JsonException) { throw new PlantSnapshotException("The snapshot state is not valid snapshot JSON."); }
             if (state.ChangeSequence != snapshot.ChangeSequence || state.Lines.Count != model.Lines.Count ||
                 state.PreventiveNextDue.Length != model.Maintenance.Preventive.Count || state.Technicians.Count != model.Technicians.Count ||
-                (state.Certificates is null) != (model.Maintenance.Certification is null))
+                (state.Certificates is null) != (model.Maintenance.Certification is null) ||
+                (state.IntermediateStock is null) != model.Lines.All(l => l.Batch?.Feeds is null) ||
+                state.Lines.Any(l => l.CurrentBatch is not null && model.Lines.FirstOrDefault(m => m.Id == l.Id)?.Batch is null))
                 throw new PlantSnapshotException("The snapshot does not match this plant model.");
 
             var runBase = new PlantRunBase(state.Lines.ToDictionary(l => l.Id, l => l.GoodTotal, StringComparer.Ordinal),
@@ -298,6 +349,8 @@ public static class PlantEngine
                 line.ChangeoverDowntime = dto.ChangeoverDowntime;
                 line.GoodTotal = dto.GoodTotal;
                 line.RejectTotal = dto.RejectTotal;
+                line.CurrentBatch = dto.CurrentBatch;
+                line.SegmentBatch = dto.SegmentBatch;
             }
             foreach (var (technician, dto) in technicians.Zip(state.Technicians))
             {
@@ -306,6 +359,11 @@ public static class PlantEngine
                 technician.Completed = dto.Completed;
             }
             if (state.Certificates is not null) certificates = new Dictionary<string, CertificateDto>(state.Certificates, StringComparer.Ordinal);
+            if (state.IntermediateStock is not null)
+            {
+                intermediateStock = new Dictionary<string, List<StockBatch>>(state.IntermediateStock, StringComparer.Ordinal);
+                intermediateIncoming = new Dictionary<string, double>(state.IntermediateIncoming!, StringComparer.Ordinal);
+            }
             foreach (var failure in state.Failures) failures.Add((failure.Number, failure.Failure));
             foreach (var pending in state.Events) events.Enqueue(pending.Event, (pending.Ticks, pending.Priority, pending.Order));
         }
@@ -318,7 +376,7 @@ public static class PlantEngine
                 new Dictionary<string, int>(counters, StringComparer.Ordinal),
                 lines.Values.Select(l => new LineDto(l.Line.Id, l.State, l.StateStart, l.Sku, l.Reason, l.Unit, l.Current, l.Queue,
                     l.Version, l.RunningSince, l.Rate, l.Reject, l.HoursToFailure, l.HoursToMinorStop, l.PlantedFailures.ToList(),
-                    l.PendingPreventive?.Id, l.ChangeoverDowntime, l.GoodTotal, l.RejectTotal)).ToList(),
+                    l.PendingPreventive?.Id, l.ChangeoverDowntime, l.GoodTotal, l.RejectTotal, l.CurrentBatch, l.SegmentBatch)).ToList(),
                 technicians.Select(t => new TechnicianDto(t.Person.Id, t.Busy, t.Completed)).ToList(),
                 openTickets,
                 // Failures repaired before the snapshot no longer affect any signal
@@ -327,7 +385,9 @@ public static class PlantEngine
                     .Select(f => new FailureDto(f.Number, f.Failure)).ToList(),
                 events.UnorderedItems.Select(e => new EventDto(e.Priority.Ticks, e.Priority.Priority, e.Priority.Order, e.Element))
                     .OrderBy(e => e.Ticks).ThenBy(e => e.Priority).ThenBy(e => e.Order).ToList(),
-                certification is null ? null : new Dictionary<string, CertificateDto>(certificates, StringComparer.Ordinal));
+                certification is null ? null : new Dictionary<string, CertificateDto>(certificates, StringComparer.Ordinal),
+                feeds ? intermediateStock.ToDictionary(p => p.Key, p => p.Value.Select(b => new StockBatch { Id = b.Id, Remaining = b.Remaining }).ToList(), StringComparer.Ordinal) : null,
+                feeds ? new Dictionary<string, double>(intermediateIncoming, StringComparer.Ordinal) : null);
             return new PlantSnapshot(EngineVersion, at, changeSequence, JsonSerializer.Serialize(state, SnapshotJson));
         }
 
@@ -342,7 +402,8 @@ public static class PlantEngine
                     // Draw each failure mode's first time-to-failure in declaration order.
                     foreach (var mode in model.Maintenance.FailureModes.Where(m => m.Line == runtime.Line.Id))
                         runtime.HoursToFailure[mode.Code] = failureDraws.Exponential(mode.MtbfRunHours);
-                    runtime.HoursToMinorStop = NextMinorStopHours();
+                    // Minor stops are a packaging-line behaviour; a batch unit draws none.
+                    runtime.HoursToMinorStop = runtime.Line.Batch is null ? NextMinorStopHours() : double.PositiveInfinity;
                 }
                 for (int i = 0; i < model.Incidents.Count; i++)
                     Calendar(model.Incidents[i].AtUtc, FailurePriority, CalendarOrder(IncidentGroup, 0, i), new Event(Kind.Incident, Index: i));
@@ -500,6 +561,23 @@ public static class PlantEngine
                 Record("failurecodes", mode.Code, "insert", new() { ["failure_code"] = mode.Code, ["equipment_id"] = mode.Line + "." + mode.Equipment, ["description"] = mode.Description, ["skill"] = mode.Skill, ["priority"] = mode.Priority });
             foreach (var instruction in certification?.Operators?.WorkInstructions ?? [])
                 Record("workinstructions", instruction.Id, "insert", new() { ["instruction_id"] = instruction.Id, ["line_id"] = instruction.Line, ["skus"] = string.Join(",", instruction.Skus), ["valid_days"] = instruction.ValidDays });
+            foreach (var recipe in model.Lines.SelectMany(l => l.Batch?.Recipes ?? []))
+            {
+                Record("recipes", recipe.Id, "insert", new() { ["recipe_id"] = recipe.Id, ["sku"] = recipe.Sku, ["phase_count"] = recipe.Phases.Count });
+                for (int i = 0; i < recipe.Phases.Count; i++)
+                {
+                    var phase = recipe.Phases[i];
+                    string key = FormattableString.Invariant($"{recipe.Id}-{i + 1:00}");
+                    string setpoints = JsonSerializer.Serialize(new
+                    {
+                        temperatureC = new { start = phase.TemperatureC.Start, end = phase.TemperatureC.End },
+                        pressureBar = new { start = phase.PressureBar.Start, end = phase.PressureBar.End },
+                        agitatorRpm = new { start = phase.AgitatorRpm.Start, end = phase.AgitatorRpm.End },
+                        levelPercent = new { start = phase.LevelPercent.Start, end = phase.LevelPercent.End }
+                    });
+                    Record("recipephases", key, "insert", new() { ["recipe_phase_id"] = key, ["recipe_id"] = recipe.Id, ["sequence"] = i + 1, ["phase"] = phase.Name, ["minutes_min"] = phase.Minutes.Minimum, ["minutes_max"] = phase.Minutes.Maximum, ["setpoints_json"] = setpoints });
+                }
+            }
         }
 
         // ---------------- certificates ----------------
@@ -608,7 +686,7 @@ public static class PlantEngine
             for (int i = 0; i < count; i++)
             {
                 var created = new DateTimeOffset(day.AddMinutes(Math.Floor(random.Uniform(0, 1440))), TimeSpan.Zero);
-                var sku = model.Skus[random.Integer(0, model.Skus.Count - 1)];
+                var sku = orderable[random.Integer(0, orderable.Count - 1)];
                 var customer = model.Customers[random.Integer(0, model.Customers.Count - 1)];
                 double cases = Math.Round(random.Uniform(model.Demand.CasesPerOrder) / 10) * 10;
                 var due = created.AddHours(Math.Round(random.Uniform(model.Demand.DueDays) * 24));
@@ -631,8 +709,68 @@ public static class PlantEngine
             string salesOrder = NextId("SO"), productionOrder = NextId("PO");
             Record("salesorders", salesOrder, "insert", new() { ["sales_order"] = salesOrder, ["customer_id"] = customer.Id, ["sku"] = sku.Code, ["quantity_cases"] = cases, ["created_utc"] = created, ["due_utc"] = due, ["status"] = "Open", ["completed_utc"] = null, ["on_time"] = null });
             Record("productionorders", productionOrder, "insert", new() { ["production_order"] = productionOrder, ["sales_order"] = salesOrder, ["sku"] = sku.Code, ["line_id"] = line.Line.Id, ["quantity_cases"] = cases, ["released_utc"] = now, ["due_utc"] = due, ["status"] = "Released", ["started_utc"] = null, ["completed_utc"] = null, ["good_cases"] = null, ["reject_cases"] = null });
-            line.Queue.Add(new ProductionOrder { Id = productionOrder, SalesOrder = salesOrder, Sku = sku.Code, Line = line.Line.Id, GoodTarget = cases, Created = created, Due = due });
+            var order = new ProductionOrder { Id = productionOrder, SalesOrder = salesOrder, Sku = sku.Code, Line = line.Line.Id, GoodTarget = cases, Created = created, Due = due };
+            if (feeds) Replenish(line, order);
+            line.Queue.Add(order);
             if (line.State == "Idle") Dispatch(line);
+        }
+
+        // ---------------- batch units feeding a packaging line ----------------
+
+        /// <summary>The batch unit feeding this line's SKU and what one case uses, or null when the SKU is not fed.</summary>
+        private (LineRuntime Feeder, PlantConsumption Use)? FedBy(string lineId, string sku)
+        {
+            foreach (var runtime in lines.Values)
+                if (runtime.Line.Batch?.Feeds is { } f && f.Line == lineId && f.Consumption.FirstOrDefault(c => c.Sku == sku) is { } use)
+                    return (runtime, use);
+            return null;
+        }
+
+        private static double Need(ProductionOrder order, PlantConsumption use) => Math.Round(order.GoodTarget * use.PerCase, 3);
+
+        private double OnHand(string intermediate) => intermediateStock[intermediate].Sum(b => b.Remaining);
+
+        /// <summary>
+        /// A new packaging order for a fed SKU: when released stock and the batches
+        /// already on order cannot cover it and the orders waiting before it, the
+        /// batch unit gets a batch order (no sales order) for whole batches.
+        /// </summary>
+        private void Replenish(LineRuntime line, ProductionOrder order)
+        {
+            if (FedBy(line.Line.Id, order.Sku) is not { } fed) return;
+            var (feeder, use) = fed;
+            double waiting = line.Queue.Sum(o => FedBy(line.Line.Id, o.Sku) is { } other && other.Use.Intermediate == use.Intermediate ? Need(o, other.Use) : 0);
+            double shortfall = waiting + Need(order, use) - OnHand(use.Intermediate) - intermediateIncoming[use.Intermediate];
+            if (shortfall <= 1e-6) return;
+            var unit = feeder.Line.Batch!;
+            int batches = (int)Math.Ceiling(shortfall / unit.Capacity - 1e-9);
+            double quantity = batches * unit.Capacity;
+            string id = NextId("PO");
+            Record("productionorders", id, "insert", new() { ["production_order"] = id, ["sales_order"] = null, ["sku"] = use.Intermediate, ["line_id"] = feeder.Line.Id, ["quantity_cases"] = quantity, ["released_utc"] = now, ["due_utc"] = order.Due, ["status"] = "Released", ["started_utc"] = null, ["completed_utc"] = null, ["good_cases"] = null, ["reject_cases"] = null });
+            feeder.Queue.Add(new ProductionOrder { Id = id, SalesOrder = null, Sku = use.Intermediate, Line = feeder.Line.Id, GoodTarget = quantity, Created = now, Due = order.Due });
+            intermediateIncoming[use.Intermediate] += quantity;
+            if (feeder.State == "Idle") Dispatch(feeder);
+        }
+
+        /// <summary>Takes a fed order's intermediate from released batches, oldest first, and records the genealogy.</summary>
+        private void Consume(ProductionOrder order, PlantConsumption use)
+        {
+            double need = Need(order, use);
+            var stock = intermediateStock[use.Intermediate];
+            while (need > 1e-6 && stock.Count > 0)
+            {
+                var batch = stock[0];
+                double quantity = Math.Round(Math.Min(batch.Remaining, need), 3);
+                string id = NextId("BC");
+                Record("batchconsumption", id, "insert", new() { ["consumption_id"] = id, ["batch_id"] = batch.Id, ["production_order"] = order.Id, ["quantity"] = quantity, ["consumed_utc"] = now });
+                batch.Remaining = Math.Round(batch.Remaining - quantity, 3);
+                need = Math.Round(need - quantity, 3);
+                if (batch.Remaining <= 1e-6)
+                {
+                    stock.RemoveAt(0);
+                    Record("batches", batch.Id, "update", new() { ["status"] = "Consumed" });
+                }
+            }
         }
 
         // ---------------- line states ----------------
@@ -645,6 +783,13 @@ public static class PlantEngine
             line.Reason = reason;
             line.Unit = unit;
             line.Version++;
+            if (line.CurrentBatch is { } batch)
+            {
+                var phase = line.Line.Batch!.Recipes.First(r => r.Id == batch.Recipe).Phases[batch.Phase];
+                double progress = 1 - (double)batch.Remaining / batch.Planned[batch.Phase];
+                line.SegmentBatch = new PlantBatchSegment(batch.Id, batch.Recipe, batch.Phase + 1, phase.Name, batch.Planned[batch.Phase], progress, progress);
+            }
+            else line.SegmentBatch = null;
         }
 
         private void CloseSegment(LineRuntime line)
@@ -652,7 +797,13 @@ public static class PlantEngine
             if (now <= line.StateStart) return;
             bool running = line.State == "Running";
             var segment = new PlantLineSegment(line.Line.Id, line.StateStart, now, line.State, line.Current?.Sku ?? line.Sku, line.Current?.Id,
-                line.Reason, line.Unit, running ? line.Rate : 0, running ? line.Reject : 0);
+                line.Reason, line.Unit, running ? line.Rate : 0, running ? line.Reject : 0)
+            {
+                // A batch phase advances only while running; a Down interval holds it where it stopped.
+                Batch = line.SegmentBatch is { } phase
+                    ? phase with { To = running ? Math.Min(1, phase.From + (now - line.StateStart).TotalSeconds / phase.PlannedSeconds) : phase.From }
+                    : null
+            };
             segments.Add(segment);
             // The same arithmetic, in the same order, as PlantSignals' cumulative
             // counts, so a resumed run's base totals are bit-identical.
@@ -677,17 +828,43 @@ public static class PlantEngine
                 return;
             }
             var next = line.Queue.OrderBy(o => o.Due).ThenBy(o => o.Created).ThenBy(o => o.Id, StringComparer.Ordinal).First();
+            if (feeds && !DispatchFed(line, ref next)) return;
             line.Queue.Remove(next);
             line.Current = next;
             if (line.Sku is not null && line.Sku != next.Sku && line.Line.ChangeoverMinutes > 0)
             {
-                SetState(line, "Changeover", $"Changeover {line.Sku} to {next.Sku}");
+                // A batch unit cleans in place between different products.
+                SetState(line, "Changeover", line.Line.Batch is null ? $"Changeover {line.Sku} to {next.Sku}" : $"CIP {line.Sku} to {next.Sku}");
                 line.ChangeoverDowntime = NextId("DT");
                 Record("downtimeevents", line.ChangeoverDowntime, "insert", Downtime(line.ChangeoverDowntime, line.Line.Id, null, "Planned", "Changeover", null, now, now, null));
                 At(now.AddMinutes(line.Line.ChangeoverMinutes), FinishPriority, new Event(Kind.ChangeoverEnd, Line: line.Line.Id, Version: line.Version));
                 return;
             }
             StartRunning(line);
+        }
+
+        /// <summary>
+        /// On a fed line, the earliest-due order whose intermediate is in released
+        /// stock goes next and consumes it. With none ready the line waits, Idle.
+        /// </summary>
+        private bool DispatchFed(LineRuntime line, ref ProductionOrder next)
+        {
+            ProductionOrder? ready = null;
+            string? waitingFor = null;
+            foreach (var order in line.Queue.OrderBy(o => o.Due).ThenBy(o => o.Created).ThenBy(o => o.Id, StringComparer.Ordinal))
+            {
+                if (FedBy(line.Line.Id, order.Sku) is not { } fed) { ready = order; break; }
+                if (OnHand(fed.Use.Intermediate) + 1e-6 >= Need(order, fed.Use)) { ready = order; break; }
+                waitingFor ??= fed.Use.Intermediate;
+            }
+            if (ready is null)
+            {
+                SetState(line, "Idle", $"Waiting for {skus[waitingFor!].Description}");
+                return false;
+            }
+            next = ready;
+            if (FedBy(line.Line.Id, ready.Sku) is { } use) Consume(ready, use.Use);
+            return true;
         }
 
         private void StartRunning(LineRuntime line)
@@ -726,8 +903,13 @@ public static class PlantEngine
                 string? operatorId = order.Operator ?? model.Operators.FirstOrDefault(o => o.Line == line.Line.Id && o.Shift == ShiftAt(now).Name)?.Id;
                 Record("productionruns", order.Run, "insert", new() { ["run_id"] = order.Run, ["production_order"] = order.Id, ["line_id"] = line.Line.Id, ["sku"] = order.Sku, ["operator_id"] = operatorId, ["start_utc"] = now, ["end_utc"] = null, ["good_cases"] = null, ["reject_cases"] = null });
                 Record("productionorders", order.Id, "update", new() { ["status"] = "Running", ["started_utc"] = now });
-                Record("salesorders", order.SalesOrder, "update", new() { ["status"] = "In Production" });
+                if (order.SalesOrder is not null) Record("salesorders", order.SalesOrder, "update", new() { ["status"] = "In Production" });
                 if (compliance is { } check) OperatorCompliance(order, check.Instruction, check.Certified, check.Reason, null);
+            }
+            if (line.Line.Batch is { } unit)
+            {
+                RunBatch(line, unit);
+                return;
             }
             line.Rate = sku.CasesPerMinute;
             line.Reject = order.Uncertified && certification!.Operators!.RejectPercentWhenUncertified is { } uplift ? uplift : sku.RejectPercent;
@@ -750,6 +932,91 @@ public static class PlantEngine
             if (line.PlantedFailures.Count > 0 && 1 < minutes) { minutes = 1; stop = "planted"; }
             At(now.AddMinutes(minutes), stop == "complete" ? FinishPriority : FailurePriority,
                 new Event(Kind.RunStop, Line: line.Line.Id, Version: line.Version, Id: stop, Ref: failing?.Code));
+        }
+
+        // ---------------- batch units ----------------
+
+        /// <summary>Runs the current batch phase, starting a new batch first when none is in progress.</summary>
+        private void RunBatch(LineRuntime line, PlantBatchUnit unit)
+        {
+            if (line.CurrentBatch is null) BeginBatch(line, unit);
+            var batch = line.CurrentBatch!;
+            line.Rate = 0;
+            line.Reject = 0;
+            SetState(line, "Running", unit.Recipes.First(r => r.Id == batch.Recipe).Phases[batch.Phase].Name, null);
+            line.RunningSince = now;
+            // The next stop is the earliest of: the phase ends, a breakdown, or a planted incident.
+            string stop = "phase";
+            var when = now.AddSeconds(batch.Remaining);
+            PlantFailureMode? failing = null;
+            foreach (var mode in model.Maintenance.FailureModes.Where(m => m.Line == line.Line.Id))
+            {
+                var candidate = now.AddMinutes(line.HoursToFailure[mode.Code] * 60);
+                if (candidate < when) { when = candidate; stop = "failure"; failing = mode; }
+            }
+            if (line.PlantedFailures.Count > 0 && now.AddMinutes(1) < when) { when = now.AddMinutes(1); stop = "planted"; }
+            At(when, stop == "phase" ? FinishPriority : FailurePriority, new Event(Kind.RunStop, Line: line.Line.Id, Version: line.Version, Id: stop, Ref: failing?.Code));
+        }
+
+        /// <summary>
+        /// Starts the order's next batch: at most one capacity, phase durations drawn
+        /// from the batch's own stream, so a batch's timing never depends on others.
+        /// </summary>
+        private void BeginBatch(LineRuntime line, PlantBatchUnit unit)
+        {
+            var order = line.Current!;
+            var recipe = unit.RecipeFor(order.Sku);
+            string id = NextId("BATCH");
+            var random = new PlantRandom(model.Seed, "batch:" + id);
+            var planned = recipe.Phases.Select(p => Math.Max(60, (int)Math.Round(random.Uniform(p.Minutes) * 60))).ToArray();
+            double size = Math.Round(Math.Min(unit.Capacity, order.GoodTarget - order.Good), 3);
+            line.CurrentBatch = new BatchState { Id = id, Recipe = recipe.Id, Size = size, Planned = planned, Phase = 0, PhaseStart = now, Remaining = planned[0] };
+            Record("batches", id, "insert", new() { ["batch_id"] = id, ["production_order"] = order.Id, ["recipe_id"] = recipe.Id, ["line_id"] = line.Line.Id, ["start_utc"] = now, ["end_utc"] = null, ["size"] = size, ["status"] = "Running" });
+            BeginPhaseRecord(line.CurrentBatch, recipe);
+        }
+
+        private void BeginPhaseRecord(BatchState batch, PlantRecipe recipe)
+        {
+            string key = FormattableString.Invariant($"{batch.Id}-{batch.Phase + 1:00}");
+            Record("batchphases", key, "insert", new() { ["batch_phase_id"] = key, ["batch_id"] = batch.Id, ["sequence"] = batch.Phase + 1, ["phase"] = recipe.Phases[batch.Phase].Name, ["start_utc"] = now, ["end_utc"] = null, ["planned_minutes"] = Math.Round(batch.Planned[batch.Phase] / 60.0, 2), ["actual_minutes"] = null, ["interrupted"] = false });
+        }
+
+        /// <summary>
+        /// A phase has run its planned time. The next phase starts at once; after
+        /// the last one the batch discharges: an intermediate goes into stock for
+        /// the fed line, and the order completes with its last batch.
+        /// </summary>
+        private void EndPhase(LineRuntime line)
+        {
+            var unit = line.Line.Batch!;
+            var batch = line.CurrentBatch!;
+            var recipe = unit.Recipes.First(r => r.Id == batch.Recipe);
+            string key = FormattableString.Invariant($"{batch.Id}-{batch.Phase + 1:00}");
+            Record("batchphases", key, "update", new() { ["end_utc"] = now, ["actual_minutes"] = Math.Round((now - batch.PhaseStart).TotalMinutes, 2), ["interrupted"] = batch.Interrupted });
+            if (batch.Phase + 1 < recipe.Phases.Count)
+            {
+                batch.Phase++;
+                batch.PhaseStart = now;
+                batch.Remaining = batch.Planned[batch.Phase];
+                batch.Interrupted = false;
+                BeginPhaseRecord(batch, recipe);
+                RunBatch(line, unit);
+                return;
+            }
+            var order = line.Current!;
+            Record("batches", batch.Id, "update", new() { ["end_utc"] = now, ["status"] = "Released" });
+            order.Good = Math.Round(order.Good + batch.Size, 3);
+            line.CurrentBatch = null;
+            LineRuntime? fed = null;
+            if (unit.Feeds is { } f && f.Consumption.Any(c => c.Intermediate == order.Sku))
+            {
+                intermediateStock[order.Sku].Add(new StockBatch { Id = batch.Id, Remaining = batch.Size });
+                intermediateIncoming[order.Sku] = Math.Round(intermediateIncoming[order.Sku] - batch.Size, 3);
+                fed = lines[f.Line];
+            }
+            if (order.Good >= order.GoodTarget - 1e-6) CompleteOrder(line);
+            else RunBatch(line, unit);
+            if (fed is { State: "Idle" }) Dispatch(fed);
         }
 
         private void OperatorCompliance(ProductionOrder order, string instruction, bool certified, string reason, DateTimeOffset? signedOff)
@@ -775,6 +1042,7 @@ public static class PlantEngine
                     Fail(line, failing, planted: false);
                     break;
                 case "minor": MinorStop(line); break;
+                case "phase": EndPhase(line); break;
                 default: Fail(line, Mode(line.PlantedFailures.Dequeue()), planted: true); break;
             }
         }
@@ -783,10 +1051,14 @@ public static class PlantEngine
         private void LeaveRunning(LineRuntime line)
         {
             double minutes = (now - line.RunningSince).TotalMinutes;
-            double gross = line.Rate * minutes;
-            var order = line.Current!;
-            order.Good += gross * (1 - line.Reject / 100);
-            order.Rejected += gross * line.Reject / 100;
+            if (line.CurrentBatch is { } batch) batch.Remaining -= (long)Math.Round((now - line.RunningSince).TotalSeconds);
+            else
+            {
+                double gross = line.Rate * minutes;
+                var order = line.Current!;
+                order.Good += gross * (1 - line.Reject / 100);
+                order.Rejected += gross * line.Reject / 100;
+            }
             foreach (var key in line.HoursToFailure.Keys.ToList()) line.HoursToFailure[key] -= minutes / 60;
             line.HoursToMinorStop -= minutes / 60;
         }
@@ -798,12 +1070,16 @@ public static class PlantEngine
             long good = (long)Math.Round(order.Good), rejects = (long)Math.Round(order.Rejected);
             Record("productionruns", order.Run!, "update", new() { ["end_utc"] = now, ["good_cases"] = good, ["reject_cases"] = rejects });
             Record("productionorders", order.Id, "update", new() { ["status"] = "Completed", ["completed_utc"] = now, ["good_cases"] = good, ["reject_cases"] = rejects });
-            // Without a Shipping area an order is done when produced; with one, when shipped.
-            if (model.Shipping is null)
-                Record("salesorders", order.SalesOrder, "update", new() { ["status"] = "Completed", ["completed_utc"] = now, ["on_time"] = now <= order.Due });
-            else
-                Record("salesorders", order.SalesOrder, "update", new() { ["status"] = "Produced" });
-            if (model.Quality is not null || model.Shipping is not null) CreateLot(line, order, good);
+            // A batch order replenishing a fed line has no sales order: its batches are the stock.
+            if (order.SalesOrder is not null)
+            {
+                // Without a Shipping area an order is done when produced; with one, when shipped.
+                if (model.Shipping is null)
+                    Record("salesorders", order.SalesOrder, "update", new() { ["status"] = "Completed", ["completed_utc"] = now, ["on_time"] = now <= order.Due });
+                else
+                    Record("salesorders", order.SalesOrder, "update", new() { ["status"] = "Produced" });
+                if (model.Quality is not null || model.Shipping is not null) CreateLot(line, order, good);
+            }
             line.Current = null;
             SetState(line, "Idle");
             Dispatch(line);
@@ -833,7 +1109,7 @@ public static class PlantEngine
             string lot = NextId("LOT");
             Record("lots", lot, "insert", new()
             {
-                ["lot_id"] = lot, ["production_order"] = order.Id, ["sales_order"] = order.SalesOrder, ["sku"] = order.Sku,
+                ["lot_id"] = lot, ["production_order"] = order.Id, ["sales_order"] = order.SalesOrder!, ["sku"] = order.Sku,
                 ["line_id"] = line.Line.Id, ["cases"] = cases, ["produced_utc"] = now,
                 ["status"] = model.Quality is null ? "Released" : "Quarantine", ["released_utc"] = model.Quality is null ? now : null, ["shipped_utc"] = null
             });
@@ -919,6 +1195,7 @@ public static class PlantEngine
         {
             long number = failureCount++;
             failures.Add((number, new(line.Line.Id, mode.Equipment, mode.Code, now, null, mode.WarningHours, planted)));
+            if (line.CurrentBatch is { } batch) batch.Interrupted = true; // the phase resumes with its remaining time after the repair
             SetState(line, "Down", mode.Description, mode.Equipment);
             // Output is now zero. The detector rule is "line speed zero for
             // DetectionMinutes while work is scheduled"; the line stays Down until

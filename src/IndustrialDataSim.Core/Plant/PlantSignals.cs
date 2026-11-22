@@ -67,9 +67,22 @@ public sealed class PlantSignals
             tags.Add(new($"{prefix}.State", "string", "LineState", line.Id, null));
             tags.Add(new($"{prefix}.SKU", "string", "Sku", line.Id, null));
             tags.Add(new($"{prefix}.OrderNumber", "string", "Order", line.Id, null));
-            tags.Add(new($"{prefix}.Speed", "number", "Speed", line.Id, null));
-            tags.Add(new($"{prefix}.GoodCount", "number", "GoodCount", line.Id, null));
-            tags.Add(new($"{prefix}.RejectCount", "number", "RejectCount", line.Id, null));
+            if (line.Batch is null)
+            {
+                tags.Add(new($"{prefix}.Speed", "number", "Speed", line.Id, null));
+                tags.Add(new($"{prefix}.GoodCount", "number", "GoodCount", line.Id, null));
+                tags.Add(new($"{prefix}.RejectCount", "number", "RejectCount", line.Id, null));
+            }
+            else
+            {
+                // A batch unit reports its batch, phase and process values instead of a line speed and counts.
+                tags.Add(new($"{prefix}.BatchId", "string", "BatchId", line.Id, null));
+                tags.Add(new($"{prefix}.Phase", "string", "Phase", line.Id, null));
+                tags.Add(new($"{prefix}.Temperature", "number", "Temperature", line.Id, null));
+                tags.Add(new($"{prefix}.Pressure", "number", "Pressure", line.Id, null));
+                tags.Add(new($"{prefix}.AgitatorSpeed", "number", "AgitatorSpeed", line.Id, null));
+                tags.Add(new($"{prefix}.Level", "number", "Level", line.Id, null));
+            }
             foreach (var unit in line.Equipment)
             {
                 tags.Add(new($"{prefix}.{unit.Id}.Status", "string", "UnitStatus", line.Id, unit.Id));
@@ -118,6 +131,9 @@ public sealed class PlantSignals
             case "GoodCount": return Math.Floor(Count(goodBefore[tag.Line], list, index, utc, good: true));
             case "RejectCount": return Math.Floor(Count(rejectBefore[tag.Line], list, index, utc, good: false));
             case "UnitStatus": return UnitStatus(segment, tag.Equipment!);
+            case "BatchId": return segment.Batch?.BatchId ?? "";
+            case "Phase": return segment.Batch?.Phase ?? (segment.State == "Changeover" ? "CIP" : "");
+            case "Temperature" or "Pressure" or "AgitatorSpeed" or "Level": return BatchValue(tag, segment, utc, noise);
             case "Vibration":
             {
                 double warning = WarningProgress(tag.Line, tag.Equipment!, utc);
@@ -140,6 +156,44 @@ public sealed class PlantSignals
             }
             default: throw new InvalidOperationException("Unknown plant measure.");
         }
+    }
+
+    // Ambient conditions of an idle batch unit, and how fast a stopped unit returns to them.
+    internal const double AmbientTemperatureC = 20, AmbientPressureBar = 1.0, CoolingMinutes = 45;
+
+    /// <summary>
+    /// A batch unit's process value. Running: the phase's setpoint ramp at the
+    /// phase progress, plus noise. Down mid-phase: temperature and pressure decay
+    /// exponentially toward ambient from where the phase stopped, the agitator is
+    /// stopped and the level holds. Between batches: ambient, empty, agitator off.
+    /// </summary>
+    private object BatchValue(PlantTag tag, PlantLineSegment segment, DateTimeOffset utc, double noise)
+    {
+        if (segment.Batch is not { } batch)
+            return tag.Measure switch
+            {
+                "Temperature" => Math.Round(AmbientTemperatureC + 0.15 * noise, 2),
+                "Pressure" => Math.Round(AmbientPressureBar + 0.004 * noise, 3),
+                _ => 0.0
+            };
+        var phase = run.Model.Lines.First(l => l.Id == tag.Line).Batch!.Recipes.First(r => r.Id == batch.Recipe).Phases[batch.Sequence - 1];
+        double progress = batch.ProgressAt(segment, utc);
+        if (segment.State == "Running")
+            return tag.Measure switch
+            {
+                "Temperature" => Math.Round(phase.TemperatureC.At(progress) + 0.15 * noise, 2),
+                "Pressure" => Math.Round(Math.Max(0, phase.PressureBar.At(progress) + 0.004 * noise), 3),
+                "AgitatorSpeed" => phase.AgitatorRpm.At(progress) <= 0 ? 0.0 : Math.Round(Math.Max(0, phase.AgitatorRpm.At(progress) + 0.8 * noise), 1),
+                _ => Math.Round(Math.Clamp(phase.LevelPercent.At(progress) + 0.1 * noise, 0, 100), 2)
+            };
+        double decay = Math.Exp(-(utc - segment.Start).TotalMinutes / CoolingMinutes);
+        return tag.Measure switch
+        {
+            "Temperature" => Math.Round(AmbientTemperatureC + (phase.TemperatureC.At(progress) - AmbientTemperatureC) * decay + 0.15 * noise, 2),
+            "Pressure" => Math.Round(Math.Max(0, AmbientPressureBar + (phase.PressureBar.At(progress) - AmbientPressureBar) * decay + 0.004 * noise), 3),
+            "AgitatorSpeed" => 0.0,
+            _ => Math.Round(Math.Clamp(phase.LevelPercent.At(progress) + 0.1 * noise, 0, 100), 2)
+        };
     }
 
     private static string UnitStatus(PlantLineSegment segment, string unit) => segment.State switch
