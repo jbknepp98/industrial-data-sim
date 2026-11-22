@@ -1,5 +1,10 @@
 # Runtime logging and troubleshooting
 
+This page covers the 1.x session simulator's durable runtime. The plant simulator's
+events and error codes (`web.*`, `interview.*`, `plant.*`, `gage.*`, `storyline.*`) are
+described in [plant-simulation.md](plant-simulation.md) and in the messages themselves;
+each message names the setting or step to fix.
+
 The durable runtime accepts an optional `ILogger<DurableRuntime>`. It emits
 plain-language messages and a separate `action` explaining what to check next.
 Stable event codes and structured fields let an agent or operator find related

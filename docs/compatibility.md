@@ -1,5 +1,49 @@
 # Compatibility record
 
+## Release 2.0.0-rc.1 (November 22, 2026)
+
+Candidate, not a release. It adds the plant simulator and the web container
+`flow-data-simulator-web`; the 1.x session simulator is unchanged, and its records
+below still apply. Gates are in [release-2.0.0-acceptance.md](release-2.0.0-acceptance.md).
+
+**Web image** (`deployment/web/Dockerfile`; Docker only, so it has no macOS or Windows
+build). Debian 13 (trixie-slim) base, .NET 10.0.15 self-contained, user `datasim`
+(uid 10001), stop signal SIGINT.
+
+| Architecture | Evidence |
+| --- | --- |
+| linux-arm64 | Built natively on the CI `ubuntu-24.04-arm` runner (run 44999977188) and smoke-tested there against a throwaway Postgres. That exact image (`sha256:928099b62656…`, artifact SHA-256 `293bb971…`) passed the fresh-install drill on Docker Desktop on Apple Silicon against the stack below. Phase 8 live acceptance ran on a local build of the same source. **Primary target.** |
+| linux-x64 | Built natively on the CI `ubuntu-24.04` runner and smoke-tested there (artifact SHA-256 `0019b5ab…`). No live run against a Timebase stack. |
+
+**CLI packages** `industrial-data-sim-2.0.0-rc.1-<rid>.zip` for linux-arm64, linux-x64,
+osx-arm64 and win-x64: CI package checks and dependency audits passed (run 44999977188).
+The `plant` commands were exercised live only inside the Docker images.
+
+**Stack used for the 2.0 live checks** (Docker Desktop, Apple Silicon, all arm64; the
+web container on the stack network `timebase-2-0-beta_default`):
+
+| Component | Image | Image ID |
+| --- | --- | --- |
+| Pulse | `timebase/pulse:2.0.0` | `sha256:e96725f3af8a…` |
+| Historian | `timebase/historian:2.0.0` | `sha256:a16b8e33604312…` |
+| Explorer | `timebase/explorer:2.0.0` | `sha256:90430dd242c5…` |
+| Connect | `timebase/connect:2.0.0` | `sha256:6aa6ab2c6fd3…` |
+| Atlas | `timebase/atlas:2.0.0` | `sha256:29528066a9b3…` |
+| Postgres (`flow-data-sim-pg`) | `postgres:16` (server 16.15) | `sha256:1beaa3084eee…` |
+
+The Collector and Bridge (`2.0.0`) ran in the same stack but the simulator does not use
+them.
+
+**Pulse Gage:** model handle `anthropic/claude`, answered by Claude Sonnet 4.6. The Pulse
+client needs the `Historian` and `Pulse` audiences and a Soft client policy (see
+`deployment/web/README.md`). Other providers and models behind Gage are untested; the
+interview uses only portable features (strict tool schemas, no forced tool choice, no
+prefill).
+
+**Not qualified:** Pulse or Historian versions other than 2.0.0, Podman, Kubernetes,
+rootless Docker, a remote Docker host, Postgres versions other than 16, and publishing
+the page beyond the host's loopback.
+
 ## Release 1.0.1 (November 21, 2026)
 
 The supported deployment is Docker; the owner never runs it natively on macOS.

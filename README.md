@@ -1,9 +1,33 @@
 # Industrial Data Simulator
 
-An agent-operated industrial data simulation tool that writes Timestamp Value Quality
-(TVQ) points to Timebase Historian Datasets.
+Simulated industrial data for Timebase demos and proofs of concept. The repository holds
+two products:
 
-## Status
+| Product | Version | What it does |
+| --- | --- | --- |
+| **Plant simulator** (`flow-data-simulator-web`) | 2.0.0-rc.1, candidate | Builds a small simulated plant from an interview on a web page in your Timebase stack, then runs it on one clock: records (orders, downtime, maintenance tickets, quality, shipments, batches) to Postgres for Connect, and tags to a Historian Dataset |
+| **Session simulator** (`IndustrialDataSim.Cli`) | 1.0.1, released | Writes Timestamp Value Quality (TVQ) points from declarative pattern models to Historian Datasets, with durable sessions in SQLite |
+
+## Plant simulator (2.0)
+
+- **Install:** [deployment/web/README.md](deployment/web/README.md). Build the image from
+  source, or load the one CI saves, then open `http://localhost:8480`.
+- **What it does and how:** [docs/plant-simulation.md](docs/plant-simulation.md); owner
+  decisions in [docs/design-plant-simulation.md](docs/design-plant-simulation.md).
+- **Release scope and gates:** [specification](docs/release-2.0.0-specification.md),
+  [acceptance matrix](docs/release-2.0.0-acceptance.md),
+  [release notes](docs/release-notes.md), [compatibility](docs/compatibility.md).
+- **Working on the code:** [CLAUDE.md](CLAUDE.md), [AGENTS.md](AGENTS.md) and
+  [docs/claude-code-handoff.md](docs/claude-code-handoff.md).
+
+The page has no login: publish it only on the host's loopback, as the compose file does.
+
+## Session simulator (1.x)
+
+Released as 1.0.1 (November 21, 2026); see [release notes](docs/release-notes.md),
+[installation](docs/installation.md) and the
+[1.0.0 specification](docs/release-1.0.0-specification.md). The rest of this README
+describes the session simulator and how it was developed.
 
 Initial API exploration is complete. Authentication, certificate verification,
 automatic tag creation, and batched writes were exercised against a development
@@ -190,5 +214,5 @@ The two-cell [packaging demonstration](docs/packaging-demo-2026-09-20.md) combin
 
 See [installation and startup](docs/installation.md), [platform/stack compatibility](docs/compatibility.md)
 and [Phase 4 qualification](docs/phase-4-qualification.md). Candidate builds are
-self-contained; the optional startup supervisor uses Python. These candidates
-are not the approved v1.0.0 release.
+self-contained; the optional startup supervisor uses Python. The released 1.x
+artifacts and their checksums are in the [release notes](docs/release-notes.md).

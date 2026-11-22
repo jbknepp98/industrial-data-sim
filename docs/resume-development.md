@@ -1,6 +1,12 @@
 # Current development handoff
 
-This page describes current status and the next work. Historical shutdown notes,
+> **Superseded, November 22, 2026.** Current status and next work are in
+> [claude-code-handoff.md](claude-code-handoff.md) (its first part covers the 2.0 plant
+> simulator) and in the [2.0.0 acceptance matrix](release-2.0.0-acceptance.md). This page
+> is the 1.x development chronology up to October 19, 2026, kept as history: 1.0.0 and
+> 1.0.1 were released on November 21, 2026 ([release notes](release-notes.md)).
+
+This page described current status and the next work for 1.x. Historical shutdown notes,
 repair milestones and test counts belong in the [implementation log](implementation-log.md)
 and dated [audit](audit-2026-09-19.md), rather than serving as competing instructions.
 

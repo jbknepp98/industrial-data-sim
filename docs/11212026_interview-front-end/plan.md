@@ -243,7 +243,7 @@ to running plants verified against the engine.</summary>
 <overall-success-criteria>
 When all phases are complete:
 - [x] `dotnet build IndustrialDataSim.slnx -c Release` and `dotnet test IndustrialDataSim.slnx -c Release` pass, including the live Postgres tests (`FLOWSIM_TEST_PG` set)
-- [ ] CI passes on all jobs, including the dependency audit for ASP.NET Core and the `Anthropic` packages
+- [x] CI passes on all jobs, including the dependency audit for ASP.NET Core and the `Anthropic` packages (run 44999587785 on the merge, run 44999977188 on `v2.0.0-rc.1`)
 - [x] Golden engine hashes are unchanged for models without the new sections
 - [x] With Pulse's Gage provider configured, a new user goes from an empty page to a running, verified plant without the CLI or Claude Code
 - [x] With no Gage model reachable, the page names the missing Pulse setting and stops; nothing is written (WebTests.AGageStopExplainsTheFixAndAdmitsNothing; the image smoke test shows `gage.missing_setting` with the database untouched)

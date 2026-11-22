@@ -1,5 +1,8 @@
 # Installation and operation
 
+This page installs the 1.x session simulator. To install the 2.0 plant simulator (the
+web container), see [deployment/web/README.md](../deployment/web/README.md).
+
 Release **1.0.1** (source `192aaab`): the 1.0.0 program plus a native
 `linux-arm64` package. 1.0.0 (`cdf0681`) was a version-only rebuild of the
 accepted `1.0.0-rc.2`. The supported deployment is Docker, using `linux-arm64` on

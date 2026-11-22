@@ -2,41 +2,46 @@
 
 Read `AGENTS.md` first. Its human-readable code, actionable errors, bounded safe
 logging, test and documentation rules apply to this project. Then read
-`docs/claude-code-handoff.md`, followed by the release specification and acceptance
-matrix linked there.
+`docs/claude-code-handoff.md`: its first part covers the current 2.0 work (status,
+reading order, architecture, rules for live checks, next work), and its second part
+is the original 1.0 handoff.
 
-v1.0.1 is released (tag `v1.0.1`, November 21, 2026; native linux-arm64 Docker; see
-`docs/release-notes.md`). It is deployed in Docker for internal use. Any
-change needs a new version number and the affected acceptance repeated.
-Never open historical demo databases with the current runtime merely to inspect
-them: opening can migrate state. Never automatically replay Uncertain work or
-resume older backup Pending work on original tags. Do not print or commit secrets.
+The repository holds two products:
 
-A transferred archive is a development handoff, not authorization to start hosts,
-install services, change the Timebase stack, or publish historical values. Confirm
-the current deployment and intended run with the user before new live acceptance.
-Use the latest original database for normal restart. Disaster restore permanently
-quarantines prior sessions and requires fresh tag names.
+- **Plant simulator, 2.0.0-rc.1** (tag `v2.0.0-rc.1`, November 22, 2026; a candidate,
+  not a release). Scope and gates: `docs/release-2.0.0-specification.md` and
+  `docs/release-2.0.0-acceptance.md`. How it works: `docs/plant-simulation.md`; owner
+  decisions: `docs/design-plant-simulation.md`. Projects: `src/IndustrialDataSim.Core`
+  (engine), `Runtime` (Postgres, Historian, Pulse Gage client), `Interview` (the
+  need-first interview tool loop; Core has no LLM dependency), `Web`
+  (`flow-data-simulator-web`: the interview page with in-container plant hosting) and
+  `Cli`. The web image is built from `deployment/web/Dockerfile`; setup is
+  `deployment/web/README.md`. The interview skill is `skills/flow-data-simulator`
+  (installed copy: `~/.claude/skills`; keep it in sync).
+- **Session simulator, 1.0.1** (tag `v1.0.1`, November 21, 2026; released, deployed in
+  Docker for internal use). Unchanged by 2.0. Never open historical demo databases
+  with the current runtime merely to inspect them: opening can migrate state. Never
+  automatically replay Uncertain work or resume older backup Pending work on original
+  tags. Use the latest original database for normal restart. Disaster restore
+  permanently quarantines prior sessions and requires fresh tag names.
 
-The handoff includes a suggested first-session prompt, architecture map, verified
-commits, reproduction commands, known limits and a concrete next-work checklist.
+Any change needs a new version number and the affected acceptance repeated. Do not
+print or commit secrets. A transferred archive or a handoff note is not authorization
+to start hosts, install services, change the Timebase stack or publish historical
+values: confirm the deployment and the intended run with the user before new live
+acceptance.
 
-Plant simulation (working name 2.0, November 21–22, 2026): see
-`docs/plant-simulation.md` and `docs/design-plant-simulation.md`. The interview
-skill is `skills/flow-data-simulator` (installed copy: `~/.claude/skills`).
-Projects: `src/IndustrialDataSim.Core` (engine), `Runtime` (Postgres,
-Historian, Pulse Gage client), `Interview` (the need-first interview tool
-loop, no LLM dependency in Core), `Web` (`flow-data-simulator-web`: the
-interview page with in-container plant hosting) and `Cli`. The web image is
-built from `deployment/web/Dockerfile`; setup is `deployment/web/README.md`.
+Documentation is part of every change. Engineering documents live in `docs/`.
+Customer-facing articles for the Timebase docs (docs.timebase.com) are kept on the
+owner's machine in `docs/kb/`, which git ignores: never commit or push them. Follow the
+rules in `docs/kb/README.md` there, and update an article when the behavior it describes
+changes.
 
-Running deployment: Postgres container `flow-data-sim-pg` (database
-`flow_data_sim`) and plant container `bluebirdbev-plant` (image
-`flow-data-simulator:2.0.0-dev`, built locally from source, not a release),
-writing tags to the `Test` Dataset. The web container
-`flow-data-simulator-web` (image `flow-data-simulator-web:2.0.0-dev`, local
-build) can run beside it from the compose snippet; it shows BluebirdBev as
-"running elsewhere" and never touches it. Live checks use simulation names
-starting with `PlanTest`. A simulation only touches tables with its own
-prefix; never touch another simulation's tables.
-
+Running deployment: Postgres container `flow-data-sim-pg` (database `flow_data_sim`);
+plant container `bluebirdbev-plant` (image `flow-data-simulator:2.0.0-dev`, a local
+build, not a release) writing tags to the `Test` Dataset; and the web container
+`flow-data-simulator-web` (image `flow-data-simulator-web:2.0.0-rc.1`, the CI-built
+candidate) from the compose snippet. The web container shows BluebirdBev as "running
+elsewhere" and never touches it. Live checks use simulation names starting with
+`PlanTest`. A simulation only touches tables with its own prefix; never touch another
+simulation's tables. Do not change Pulse settings without asking.

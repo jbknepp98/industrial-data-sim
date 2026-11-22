@@ -47,3 +47,6 @@ runtime.log.owner
 
 # Web container env files (deployment/web/*.env.example are the templates)
 deployment/web/*.env
+
+# Customer-facing KB drafts for the Timebase docs: kept locally, never committed
+docs/kb/

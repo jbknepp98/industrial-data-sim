@@ -1,15 +1,152 @@
 # Claude Code project handoff
 
-Prepared October 21, 2026 (America/New_York). Owner: Jeff Knepper. Collaborators
-mentioned in prior demonstrations: Vaughan and Lenny. Project name:
-**timebase-historian-data-sim**. GitHub repository:
+Updated November 22, 2026, for the 2.0 work. Owner: Jeff Knepper. Repository:
 https://github.com/jbknepp98/industrial-data-sim.git
 
-This document transfers engineering context, not credentials. Do not copy secrets
-from earlier chat transcripts into code, prompts, logs or public documentation.
-The transfer's top-level inventory describes the exact files included/excluded.
+The repository holds two products. The **plant simulator** (2.0, a release
+candidate) is where current work happens; this first part is about it. The
+**1.x session simulator** (released as 1.0.1) is unchanged, and the original
+1.0 handoff below still governs it.
 
-## Suggested first message to Claude Code
+This document transfers engineering context, not credentials. Never copy secrets
+from chat transcripts, env files or logs into code, prompts, logs or documents.
+
+## Status now (November 22, 2026)
+
+- **Released:** 1.0.1 (tag `v1.0.1` on `192aaab`), the session simulator.
+- **Candidate:** 2.0.0-rc.1, tag `v2.0.0-rc.1` on `a7bceef`, built by
+  [CI run 44999977188](https://github.com/jbknepp98/industrial-data-sim/actions/runs/44999977188)
+  (all nine jobs). After it, `b5dd016` made the CI web image carry its version
+  tag (CI and README only). Release gates and their state:
+  [release-2.0.0-acceptance.md](release-2.0.0-acceptance.md).
+- **What 2.0 is:** a small simulated plant on one clock, with records in
+  Postgres and tags in Historian, built from an interview on a web page in the
+  customer's Timebase stack. Claude is reached through Pulse Gage, and only the
+  user's **Approve and run** click starts a plant. See
+  [release-2.0.0-specification.md](release-2.0.0-specification.md).
+- **Tests:** 1,129 .NET tests, all passing, in Release with `FLOWSIM_TEST_PG`
+  set. Without it, the Postgres integration tests are skipped.
+- **Running on the owner's Mac** (Docker Desktop, Timebase 2.0.0 stack on the
+  network `timebase-2-0-beta_default`):
+  - `flow-data-sim-pg` (Postgres 16, database `flow_data_sim`, published on
+    `127.0.0.1:5435`);
+  - `bluebirdbev-plant`, image `flow-data-simulator:2.0.0-dev` (a local build,
+    not a release), running the BluebirdBev plant into the `Test` Dataset
+    (7-day purge age);
+  - `flow-data-simulator-web`, image `flow-data-simulator-web:2.0.0-rc.1`
+    (the CI-built image), on `127.0.0.1:8480`, hosting no plants. It shows
+    BluebirdBev as "running elsewhere".
+
+## Suggested first message to Claude Code (2.0)
+
+> Read CLAUDE.md, AGENTS.md and docs/claude-code-handoff.md, then the 2.0
+> release specification and acceptance matrix. Check the repository status, the
+> running containers (read-only) and the latest CI run before changing anything.
+> Summarize the open acceptance gates and propose the next one. Do not touch
+> `bluebirdbev-plant` or another simulation's tables, do not change Pulse
+> settings, and use simulation names starting with `PlanTest` for live checks.
+> Work incrementally, test your changes, keep errors useful, and update the
+> documentation as you go.
+
+## Read in this order (2.0)
+
+1. AGENTS.md and this handoff.
+2. [release-2.0.0-specification.md](release-2.0.0-specification.md) and
+   [release-2.0.0-acceptance.md](release-2.0.0-acceptance.md): scope,
+   invariants and gates.
+3. [plant-simulation.md](plant-simulation.md): how every part works, with the
+   live checks recorded where they were made.
+   [design-plant-simulation.md](design-plant-simulation.md): the owner's
+   decisions (four rounds) and their reasons.
+4. [deployment/web/README.md](../deployment/web/README.md) (install),
+   [compatibility.md](compatibility.md) and [release-notes.md](release-notes.md).
+5. `docs/kb/README.md`, on the owner's machine only (git ignores `docs/kb`):
+   the customer-facing articles for the Timebase docs and the rules they follow.
+   Never commit or push them.
+6. [11212026_interview-front-end/plan.md](11212026_interview-front-end/plan.md):
+   the eight-phase plan that built the web interview, all phases done. History
+   of how 2.0 was built, not current instructions.
+7. The 1.x documents in the reading list further down, only when working on the
+   session simulator.
+
+## Architecture (2.0)
+
+| Area | Starting points | Responsibility |
+| --- | --- | --- |
+| Plant engine | `src/IndustrialDataSim.Core/Plant` (`PlantEngine`, `PlantModelLoader`, `PlantStorylines`) | Deterministic plant, validation, storyline composition. No I/O, no LLM |
+| Plant runtime | `src/IndustrialDataSim.Runtime` (`PlantStore`, `PlantHost`, `HistorianClient`, `GageClient`) | Postgres registry, rows and snapshots; delivery cycles; Historian writes; Pulse Gage proxy |
+| Interview | `src/IndustrialDataSim.Interview` (`InterviewSession`, `InterviewTools`, `PostgresInterviewStore`) | Tool loop over Gage, stored in Postgres |
+| Web | `src/IndustrialDataSim.Web` (`WebApp`, `PlantHostingService`, `DemoGuide`, `wwwroot`) | Page, API, approval, in-container hosting, downloads |
+| CLI | `src/IndustrialDataSim.Cli/PlantCommands.cs` | `plant …` commands |
+| Library | `examples/storylines` (`storylines.json`, `bases/`, `interview.md`, `demo-guide.md`) | Storylines, base plants, interview script, demo guide template |
+| Preview | `tools/plant-preview` | Shared preview renderer (page and CLI) |
+| Deployment | `deployment/web`, `deployment/postgres/01_bootstrap.sql` | Image, compose, env examples, bootstrap |
+| Skill | `skills/flow-data-simulator` (installed copy in `~/.claude/skills`) | Claude Code route to the engine; keep the installed copy in sync |
+| Tests | `tests/IndustrialDataSim.Tests` (`Plant*`, `Interview*`, `Gage*`, `Web*`) | Engine, store, interview, Gage client and web tests |
+
+## Contracts that must not break (2.0)
+
+The release specification lists them in full. In short: rows exactly once;
+stored history never changes (bump `EngineVersion` for any output change; the
+golden hashes in `PlantSnapshotTests` will tell you); tags equal the engine; a
+simulation touches only its own tables; one host per simulation; approval is
+the user's click; no model key in the simulator; no secrets in any output; TLS
+verification stays on.
+
+## Build and test (2.0)
+
+```sh
+dotnet build IndustrialDataSim.slnx --configuration Release
+FLOWSIM_TEST_PG='<writer connection string>' dotnet test IndustrialDataSim.slnx --configuration Release
+docker build -f deployment/web/Dockerfile -t flow-data-simulator-web:2.0.0-dev .
+```
+
+On the owner's Mac use `.tools/dotnet/dotnet` (SDK 10.0.401); zsh does not
+split words in variables, so pass arguments directly. Keep the writer
+connection string in a private env file and never print it. CI
+(`.github/workflows/verify.yml`) builds and saves the web image for both
+architectures; `docker load` the `web-image-<rid>` artifact to use it.
+
+## Rules for live checks
+
+- Confirm the run with the owner first. Use simulation names starting with
+  `PlanTest`, and remove them afterwards from the page or with `plant remove`.
+- Never touch `bluebirdbev-plant`, its tables or its image tag. Never retag
+  `flow-data-simulator:2.0.0-dev`.
+- Do not change Pulse settings (clients, policies, Gage providers) without
+  asking.
+- Verify by comparing Historian and Postgres with `plant preview` at the stored
+  anchor; the method is in the acceptance matrix under "Evidence records".
+  Historian keeps a removed plant's tags until the purge age, so a rebuilt plant
+  needs a new name.
+
+## Next work: to 2.0.0
+
+1. The open and partial gates in the acceptance matrix: a multi-day soak of the
+   two audience plants on the rc.1 image (P17); live kill, crash and sleep drills
+   (P03, P05, P06); the Gage and Atlas demo-guide steps (P12).
+2. The remaining documentation: further KB articles (local only; list in `docs/kb/README.md`),
+   and reorganizing `plant-simulation.md` as a user guide rather than a build log.
+3. Owner approval of a bare `2.0.0` in `scripts/package_release.py`, then the
+   version-only commit, CI, and the tag.
+
+Known limits carried into 2.0: the page has no login; the beverage prompt
+without a syrup mention ranks storyline 6 over 5b; late orders in storyline 1
+are not causally tied to jams; the chemicals base has no Quality area, so
+quality holds are not modeled there; no prompt caching.
+
+## 1.0 transfer (October 21, 2026)
+
+The rest of this document is the original 1.0 handoff, kept as written. It
+still governs the 1.x session simulator. Its "Status at transfer" and "Next
+work" are history; 1.0.1 has since been released.
+
+Prepared October 21, 2026 (America/New_York). Owner: Jeff Knepper. Collaborators
+mentioned in prior demonstrations: Vaughan and Lenny. Project name:
+**timebase-historian-data-sim**. The transfer's top-level inventory describes the
+exact files included and excluded.
+
+### Suggested first message to Claude Code
 
 > Read CLAUDE.md, AGENTS.md and docs/claude-code-handoff.md. Inspect the repository
 > status and release acceptance matrix before changing anything. We have finished
@@ -20,7 +157,7 @@ The transfer's top-level inventory describes the exact files included/excluded.
 > until we agree on the current deployment and test run. Work incrementally;
 > test your changes, keep errors useful, and update documentation as you go.
 
-## Status at transfer
+### Status at transfer
 
 Baseline source HEAD before handoff documents: `60e9409` on `main`, pushed to
 origin. It records Phase 4 qualification. The archive includes the current working
@@ -51,7 +188,7 @@ generator identity, database schema, or archive format.
 - No service was installed and no Historian samples were written during Phase 4.
   Transfer preparation likewise does not start or change the deployment.
 
-## Product requirements and the owner's working style
+### Product requirements and the owner's working style
 
 This is an agent-authored industrial data simulator, not a UI/model-editor product.
 Models are declarative JSON; no human-written executable simulation scripts are
@@ -83,7 +220,7 @@ until a production target is reached. A simulated production batch is different
 from an HTTP transport batch. Do not reintroduce the earlier incorrect blanket
 rule that all accumulation must depend only on elapsed time.
 
-## Nonnegotiable delivery and recovery contracts
+### Nonnegotiable delivery and recovery contracts
 
 1. Emit strictly increasing timestamps per tag, including across batches/restarts.
    Even if a server accepts older values in some circumstances, this simulator
@@ -111,7 +248,7 @@ rule that all accumulation must depend only on elapsed time.
 8. TLS hostname/chain validation stays enabled. Keep credentials out of model
    JSON, SQLite, CLI arguments, operational logs and public Git history.
 
-## Architecture and where to look
+### Architecture and where to look
 
 | Area | Starting points | Responsibility |
 | --- | --- | --- |
@@ -135,7 +272,7 @@ production mutation. A host owns its state; controls use same-user local IPC.
 Use the same account and exact canonical database path. A stop reply accepts the
 request; wait for process exit before reopening the database directly.
 
-## Read documentation in this order
+### Read documentation in this order
 
 1. AGENTS.md and this handoff.
 2. docs/release-1.0.0-specification.md and release-1.0.0-acceptance.md: current scope
@@ -152,7 +289,7 @@ request; wait for process exit before reopening the database directly.
 7. docs/timebase-api-findings.md, production-delivery-v1.md, production-host.md,
    continuous-host.md, runtime-logging.md, and the pattern-specific contracts.
 
-## Build and test from a fresh checkout
+### Build and test from a fresh checkout
 
 Requires .NET 10 SDK (global.json permits latest stable feature band), Python 3.12
 for the documented tooling, and network/package access on initial restore.
@@ -199,7 +336,7 @@ runtime versions; a dirty developer package is not release evidence. ZIPs are no
 code-signed/notarized. GitHub artifacts have 14-day retention; preserve exact
 candidate ZIP/checksum/audit evidence locally before that expires.
 
-## Current stack and private configuration
+### Current stack and private configuration
 
 The user supplied a Docker Desktop screenshot October 19. Read-only Docker
 inspection confirmed Historian and Pulse `2.0-gc1`, both Linux ARM64; exact image
@@ -222,7 +359,7 @@ separately. Read-only probing: `scripts/probe_compatibility.py --environment-fil
 Do not change retention just to make a test pass. Record backfill evidence promptly
 because seven-day retention can remove early history during the planned live soak.
 
-## Local-only evidence and old demos
+### Local-only evidence and old demos
 
 The transfer inventory distinguishes source, downloaded candidate artifacts,
 local build/tool caches, runtime files and excluded sensitive material. Local
@@ -250,7 +387,7 @@ read-only process inspection. That is a point-in-time check, not a database
 consistency guarantee or server delivery receipt. Preserve WAL/SHM companions
 with databases. Do not merge transferred state with another copy that has advanced.
 
-## Next work: Phase 5, then Phase 6
+### Next work: Phase 5, then Phase 6
 
 Status, November 21, 2026: all steps are done. **v1.0.1 is released** (tag on
 `192aaab`; v1.0.0 on `cdf0681`; see release-notes.md). It is deployed in Docker for the owner's
@@ -284,7 +421,7 @@ team; see the Docker section of installation.md.
    release notes/limitations, owner approval, then immutable v1.0.0 tag/artifacts.
    A behavior-changing repair invalidates affected soak evidence; rerun it.
 
-## Limits and decisions still open
+### Limits and decisions still open
 
 - v1.0.0 released November 21, 2026 with owner approval. The three-hour live soak
   (reduced from seven days, October 26) passed with rc.2. Future changes need a

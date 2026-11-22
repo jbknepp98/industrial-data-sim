@@ -59,7 +59,7 @@ works, and the page, approval and hosting all work.
 
 <success-criteria>
 <automated-verification>
-- [ ] CI is green on all jobs (offline builds, packages, dependency audit) — pending: runs when the parent session merges and pushes (web-image job and web audit added; full suite 1,129/1,129 locally with FLOWSIM_TEST_PG)
+- [x] CI is green on all jobs (offline builds, packages, dependency audit): run 44999587785 on the merge `67abcb2`, and run 44999977188 on `a7bceef` (`v2.0.0-rc.1`), all nine jobs including web-image on both architectures
 - [x] `docker build` of the web image succeeds for linux-arm64 locally; the image runs as non-root (`docker inspect`) — `flow-data-simulator-web:2.0.0-dev`, User datasim (uid 10001), StopSignal SIGINT, health check
 </automated-verification>
 <end-to-end-verification>

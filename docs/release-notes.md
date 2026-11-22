@@ -11,8 +11,14 @@ whose CI run passes every job, including the new `web-image` job.
 - Deployment: [deployment/web/README.md](../deployment/web/README.md).
 - What it does and the live acceptance of November 22, 2026:
   [plant-simulation.md](plant-simulation.md#packaging-and-live-acceptance-phase-8).
-- Before 2.0.0: a fresh install from the CI-built images and a multi-day
-  soak of the two audience plants. The 1.x session host is unchanged.
+- Scope and gates: [release-2.0.0-specification.md](release-2.0.0-specification.md)
+  and [release-2.0.0-acceptance.md](release-2.0.0-acceptance.md). The fresh install
+  from the CI-built arm64 image passed on November 22; the multi-day soak of the two
+  audience plants is still open. The 1.x session host is unchanged.
+- Platforms and the Timebase stack used: [compatibility.md](compatibility.md#release-200-rc1-november-22-2026).
+- After the tag, `b5dd016` made CI tag the web image with its version as well as its
+  commit, so a loaded artifact starts with the compose file unchanged (CI and README
+  only).
 
 # industrial-data-sim 1.0.1: release notes
 
