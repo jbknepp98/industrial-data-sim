@@ -224,13 +224,21 @@ Settings: `TIMEBASE_PULSE_URL`, `TIMEBASE_CLIENT_ID`, `TIMEBASE_CLIENT_SECRET`
 and `TIMEBASE_CA_BUNDLE` (the same Pulse client the Historian writer uses), plus
 `FLOWSIM_GAGE_MODEL` (default `anthropic/claude`).
 
+**One-time Pulse setup:** the Pulse client needs `Pulse` among its allowed
+audiences (Pulse → Clients → the client → Allowed Audiences). A client that only
+has `Historian` gets tokens that Gage rejects with "The audience '(null)' is
+invalid". Give the client a Soft policy in Pulse → Policy → Client so the
+interview is metered but never refused. The usage page (Pulse → Gage → Usage,
+`GET /api/gage/usage`) is for administrators; the client itself gets HTTP 403
+there.
+
 When no model is reachable, it explains what to fix and stops. There is no
 direct-key fallback, and nothing is retried.
 
 | Code | Meaning and fix |
 | --- | --- |
 | `gage.pulse_unreachable` | DNS, TCP or TLS failure: check `TIMEBASE_PULSE_URL`, the network and the CA bundle |
-| `gage.client_rejected` | Pulse refused the client credentials (fix the client or secret in Pulse → Clients), or Gage refused the token (add an audience Gage accepts to the client) |
+| `gage.client_rejected` | Pulse refused the client credentials (fix the client or secret in Pulse → Clients), or Gage refused the token (add `Pulse` to the client's allowed audiences in Pulse → Clients) |
 | `gage.no_models` | Empty catalog: add a provider in Pulse → Gage → Providers |
 | `gage.model_missing` | The handle is not in the catalog: the message lists the available handles; set `FLOWSIM_GAGE_MODEL` |
 | `gage.no_key` | The provider refused Pulse's credentials or reported a missing key: set the key in Pulse → Gage → Providers |
