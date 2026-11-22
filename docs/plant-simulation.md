@@ -363,7 +363,8 @@ Example: `examples/plants/bluebird-bev-connect/`.
 The Claude skill `skills/flow-data-simulator/SKILL.md` interviews the user about
 the story, the plant, the people, demand, maintenance and areas, writes the
 model, validates it, and renders a preview page with
-`scripts/render_plant_preview.py` (template `tools/plant-preview/index.html`).
+`scripts/render_plant_preview.py` (template `tools/plant-preview/index.html` with the
+shared renderer `plant-preview.js`, which the web interview page also uses).
 It asks for approval before any build or run.
 
 ## Reaching Claude through Pulse Gage (web interview)
