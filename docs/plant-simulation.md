@@ -624,7 +624,9 @@ In Docker it listens on `0.0.0.0:8480` inside the container
 interface. Requests are refused unless their Host header is in
 `FLOWSIM_WEB_ALLOWED_HOSTS` (default `localhost;127.0.0.1;[::1]`). A
 state-changing request (POST, DELETE) whose `Origin` header names another
-site is also refused. Bodies must be JSON and at most 64 KiB.
+site is also refused. Bodies must be JSON and at most 64 KiB. The page's own files are served with
+`Cache-Control: no-cache`, so after an upgrade the browser revalidates them
+instead of running a cached script from the previous version.
 
 Environment: the simulator container's settings (`TIMEBASE_PULSE_URL`,
 `TIMEBASE_CLIENT_ID`, `TIMEBASE_CLIENT_SECRET`, `TIMEBASE_CA_BUNDLE`,

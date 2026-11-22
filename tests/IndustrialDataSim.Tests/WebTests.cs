@@ -316,6 +316,9 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Contains("PlantPreviewRenderer", await web.Http.GetStringAsync("/shared/plant-preview.js"));
         Assert.Contains(".pp", await web.Http.GetStringAsync("/shared/plant-preview.css"));
         Assert.Contains("/api/interviews", await web.Http.GetStringAsync("/app.js"));
+        // After an upgrade the browser must ask again instead of running a cached script.
+        foreach (string path in new[] { "/", "/app.js", "/shared/plant-preview.js" })
+            Assert.Equal("no-cache", (await web.Http.GetAsync(path)).Headers.CacheControl?.ToString());
     }
 
     [Theory]

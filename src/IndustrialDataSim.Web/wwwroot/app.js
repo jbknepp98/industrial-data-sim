@@ -403,7 +403,7 @@ function plantRow(p) {
       `<button type="button" class="danger" data-act="remove" data-name="${name}">Remove…</button>`
     : '<span class="muted">read-only</span>';
   const datasetChoice = p.datasetCreated
-    ? `<label class="remove-dataset"><input type="checkbox" data-remove-dataset="${name}"${pendingRemoveDataset ? ' checked' : ''}> Also delete its Dataset <code>${esc(p.dataset)}</code> and every tag in it. This cannot be undone.</label>`
+    ? `<label class="remove-dataset"><input type="checkbox" data-remove-dataset="${name}"${pendingRemoveDataset ? ' checked' : ''}><span>Also delete its Dataset <code>${esc(p.dataset)}</code> and every tag in it. This cannot be undone.</span></label>`
     : '';
   const keeps = p.datasetCreated ? 'Its Dataset and tags stay unless you tick the box below.' : 'Tags already in Historian stay.';
   const confirm = pendingRemove === p.simulation

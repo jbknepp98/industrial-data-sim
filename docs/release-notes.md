@@ -7,7 +7,10 @@
   Dataset it did not create. The Remove dialog has **Also delete its Dataset**, off by
   default; it deletes only a Dataset the page created. `TIMEBASE_DATASET` is now
   optional: only plants approved with rc.1 still use it. The CLI is unchanged.
-- Needs a new candidate version and the affected acceptance (P22) before release.
+- The page's files are served with `Cache-Control: no-cache`, so a browser uses a new
+  image's page and script at once instead of a cached copy from the previous version.
+- Checked live on a dev build (acceptance P22): own Dataset with a 365-day purge age,
+  0 mismatches, nothing written to `Test`, and the Dataset deleted on Remove when asked.
 
 # industrial-data-sim 2.0.0-rc.1: release candidate
 

@@ -65,7 +65,14 @@ public static class WebApp
             await next(context);
         });
         app.UseDefaultFiles();
-        app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(app.Environment.WebRootPath) });
+        // no-cache: the browser keeps the files but asks again (ETag) on every
+        // load, so a new image's page and script are used at once instead of a
+        // cached copy from the previous version.
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = new PhysicalFileProvider(app.Environment.WebRootPath),
+            OnPrepareResponse = file => file.Context.Response.Headers.CacheControl = "no-cache"
+        });
 
         if (options.CheckGageAtStartup)
             app.Lifetime.ApplicationStarted.Register(() => _ = services.Gage.Check(force: false, app.Lifetime.ApplicationStopping));
