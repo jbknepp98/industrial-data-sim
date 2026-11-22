@@ -156,7 +156,7 @@ drops the new tables.
 <end-to-end-verification>
 - [x] Build and run a `PlanTestCert…` plant (CLI, Docker dev image) with storylines 3a and 3b. `operatorcompliance` shows the uncertified Berry runs, and their RejectCount slope in Historian is steeper (verify script, 0 mismatches). Also, after `plant.live`, `SELECT * FROM <prefix>workcompliance WHERE NOT certified` returns the planted row with the expected ticket and technician
 - [x] Restart that container: it logs `plant.snapshot_ignored` once (old layout) or `snapshot_resumed`, and the rows stay identical
-- [ ] BluebirdBev (no certification section) restarted on the new image: it logs `plant.snapshot_ignored` (version 1 → 2), then resumes snapshots, with no `history_mismatch`, and the Historian check shows 0 mismatches
+- [x] BluebirdBev (no certification section) restarted on the new image: it logs `plant.snapshot_ignored` (version 1 → 2), then resumes snapshots, with no `history_mismatch`, and the Historian check shows 0 mismatches
 - [x] Remove the `PlanTestCert…` simulation
 
 Results (November 22, 2026, image `flow-data-simulator:2.0.0-dev-cert`, built
@@ -168,6 +168,11 @@ runs about 1.2%); its RejectCount slope was 12.3/h against 3.2/h. Historian
 matched the engine on 141,687 points (0 mismatches, 0 missing). After
 `docker stop` (exit 130) and start, it logged `plant.snapshot_resumed` from a
 version 2 snapshot, and all 27 tables were identical. Removed: 27 tables dropped.
+BluebirdBev, swapped by the user at 05:37Z onto `2.0.0-dev` (now this build;
+the previous image is kept as `2.0.0-dev-prev2`): `plant.snapshot_ignored`
+(version 1 → 2), then `plant.live` with 0 rows rewritten, no
+`history_mismatch`. A version 2 snapshot was saved at once (05:00Z), and
+Historian matched the engine on 142,304 points (0 mismatches, 0 missing).
 </end-to-end-verification>
 </success-criteria>
 
