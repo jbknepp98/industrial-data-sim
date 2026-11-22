@@ -76,7 +76,7 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
         _ => Reply("tool_use", Call(InterviewTools.FindStorylines, new
         {
             keywords = new[] { "late orders" },
-            askedFor = new[] { new { storyline = "golden-batch-syrup-holds", words = "golden batch for syrup" } }
+            askedFor = new[] { new { storyline = "mcc-trip-impact", words = "MCC trip impact" } }
         })),
         _ => Reply("tool_use", Call(InterviewTools.ComposeModel, new
         {
@@ -173,7 +173,7 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
     {
         await using var web = await Start(() => new ScriptedModel(InterviewToPreview("PlanTestWebPreview")));
         var id = await NewInterview(web.Http);
-        var events = await Send(web.Http, id, "A bottler; late orders after labeler jams. They also asked about golden batch for syrup.");
+        var events = await Send(web.Http, id, "A bottler; late orders after labeler jams. They also asked about MCC trip impact.");
         foreach (var (name, data) in events) output.WriteLine($"{name}: {data.ToJsonString()}");
         foreach (var m in web.Services.Interviews.Load(id)!.Messages.Where(m => m.ContentJson.Contains("tool_result"))) output.WriteLine(m.ContentJson[..Math.Min(600, m.ContentJson.Length)]);
 
@@ -192,7 +192,7 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Contains("plantestwebpreview_maintenancetickets", approval["tables"]!.AsArray().Select(t => t!.GetValue<string>()));
         var cards = view["storylines"]!.AsArray();
         Assert.Equal(["chosen", "chosen", "requested"], cards.Select(c => c!["kind"]!.GetValue<string>()));
-        Assert.Equal("planned", cards[2]!["engine"]!.GetValue<string>());
+        Assert.Equal("later", cards[2]!["engine"]!.GetValue<string>());
         var messages = view["messages"]!.AsArray();
         Assert.Equal("user", messages[0]!["role"]!.GetValue<string>()); // session facts are not shown
         Assert.DoesNotContain(messages, m => m!["text"]!.GetValue<string>().StartsWith("[Session facts"));
@@ -350,7 +350,7 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
             output.WriteLine(guide);
             Assert.DoesNotMatch(@"\{[A-Za-z]+\}", guide);
             Assert.Contains($"`{name}.L1.LB-202.Vibration`", guide);
-            Assert.Contains("golden batch for syrup", guide); // the unmet ask from the interview
+            Assert.Contains("MCC trip impact", guide); // the unmet ask from the interview
             Assert.Contains("<h1>", await web.Http.GetStringAsync($"/api/plants/{name}/demo-guide?format=html"));
             Assert.Contains(name.ToLowerInvariant() + "_maintenancetickets", await web.Http.GetStringAsync($"/api/plants/{name}/connect-spec"));
             Assert.NotNull(JsonNode.Parse(await web.Http.GetStringAsync($"/api/plants/{name}/atlas-starter")));
@@ -534,7 +534,7 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
         {
             ["audience"] = JsonSerializer.SerializeToNode(Audience),
             ["chosenStorylines"] = new JsonArray("labeler-jams-late-orders", "repeat-bearing-failure"),
-            ["requests"] = new JsonArray(new JsonObject { ["words"] = "golden batch for syrup", ["storyline"] = "golden-batch-syrup-holds", ["title"] = "Golden batch", ["engine"] = "planned", ["offeredInstead"] = new JsonObject { ["id"] = "quality-hold-traced", ["title"] = "Quality hold traced" } })
+            ["requests"] = new JsonArray(new JsonObject { ["words"] = "MCC trip impact", ["storyline"] = "mcc-trip-impact", ["title"] = "A motor control center trips", ["engine"] = "later", ["offeredInstead"] = new JsonObject { ["id"] = "labeler-jams-late-orders", ["title"] = "Labeler jams make orders late" } })
         };
         var guide = DemoGuide.Build(File.ReadAllText(Path.Combine(StorylineFolder, "demo-guide.md")), library, needs.ToJsonString(), model, "Test", anchor.AddHours(1));
         output.WriteLine(guide.Markdown);
@@ -548,7 +548,7 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
         // The moment has real times: the walk-through jam 30 hours before the anchor (Nov 20, 12:00 UTC).
         Assert.Matches(@"LB-202 on L1 \(LB202-JAM\): vibration starts rising on \w{3} Nov \d+ at \d\d:\d\d UTC, the line stops on Fri Nov 20 at 12:\d\d UTC, and ticket MT-\d+ opens", guide.Markdown);
         Assert.Contains("MX-101", guide.Markdown);
-        Assert.Contains("- golden batch for syrup (\"Golden batch\"): planned for the simulator; offered \"Quality hold traced\" instead.", guide.Markdown);
+        Assert.Contains("- MCC trip impact (\"A motor control center trips\"): not scheduled yet; offered \"Labeler jams make orders late\" instead.", guide.Markdown);
         Assert.Contains("maintenance, plant manager, food and beverage", guide.Markdown);
         Assert.Contains("<h3>1. Labeler jams make orders late</h3>", guide.Html);
         Assert.Contains("<ol>", guide.Html);

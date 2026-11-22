@@ -512,23 +512,23 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
                 keywords = new[] { "golden batch" },
                 askedFor = new object[]
                 {
-                    new { storyline = "golden-batch-syrup-holds", words = "golden batch for the syrup room" },
+                    new { storyline = "mcc-trip-impact", words = "MCC trip impact for the bottling hall" },
                     new { storyline = "labeler-jams-late-orders", words = "late orders" },         // available: not an unmet ask
                     new { storyline = InterviewTools.NoStoryline, words = "forklift telematics" },
-                    new { storyline = "golden-batch-syrup-holds", words = "golden batch again" }   // same storyline: recorded once
+                    new { storyline = "mcc-trip-impact", words = "MCC trip again" }   // same storyline: recorded once
                 }
             })),
             // The model updates the profile and forgets requestedStories: nothing recorded is lost.
             _ => Reply("tool_use", Call(InterviewTools.RecordAudience, emptiedProfile)),
             _ => Reply("end_turn", Text("Noted.")));
         var session = Start(model);
-        await session.Send("Bottler; they'd love a golden batch view of the syrup room, late orders, and forklift telematics.");
+        await session.Send("Bottler; they'd love an MCC trip impact view of the bottling hall, late orders, and forklift telematics.");
 
         var requests = InterviewTools.Requests(session.State).Select(r => r!.AsObject()).ToList();
-        Assert.Equal(["downtime reasons operators type in", "golden batch for the syrup room", "forklift telematics"], requests.Select(r => r["words"]!.GetValue<string>()));
+        Assert.Equal(["downtime reasons operators type in", "MCC trip impact for the bottling hall", "forklift telematics"], requests.Select(r => r["words"]!.GetValue<string>()));
         Assert.Equal("unmapped", requests[0]["engine"]!.GetValue<string>());
-        Assert.Equal("planned", requests[1]["engine"]!.GetValue<string>());
-        Assert.Equal("quality-hold-traced", requests[1]["offeredInstead"]!["id"]!.GetValue<string>());
+        Assert.Equal("later", requests[1]["engine"]!.GetValue<string>());
+        Assert.Equal("labeler-jams-late-orders", requests[1]["offeredInstead"]!["id"]!.GetValue<string>());
         Assert.Null(requests[2]["storyline"]);
     }
 
