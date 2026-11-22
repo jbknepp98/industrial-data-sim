@@ -205,6 +205,47 @@ model, validates it, and renders a preview page with
 `scripts/render_plant_preview.py` (template `tools/plant-preview/index.html`).
 It asks for approval before any build or run.
 
+## Reaching Claude through Pulse Gage (web interview)
+
+The web interview reaches Claude through Timebase Pulse's Gage proxy
+(`POST /api/gage/proxy/v1/messages`), with the official Anthropic C# SDK. The
+user enters no model key: the LLM provider the customer already approved for
+Gage is reused, and its key never leaves Pulse. `GageClient`
+(`src/IndustrialDataSim.Runtime/GageClient.cs`) holds the proven SDK settings.
+
+```
+plant gage-check
+```
+
+It runs the full chain (Pulse token, `GET /api/gage/models`, then a
+one-sentence test message) and prints the model handle, the reply and the
+token usage. Pulse meters the call under the client's policy, as usual.
+Settings: `TIMEBASE_PULSE_URL`, `TIMEBASE_CLIENT_ID`, `TIMEBASE_CLIENT_SECRET`
+and `TIMEBASE_CA_BUNDLE` (the same Pulse client the Historian writer uses), plus
+`FLOWSIM_GAGE_MODEL` (default `anthropic/claude`).
+
+When no model is reachable, it explains what to fix and stops. There is no
+direct-key fallback, and nothing is retried.
+
+| Code | Meaning and fix |
+| --- | --- |
+| `gage.pulse_unreachable` | DNS, TCP or TLS failure: check `TIMEBASE_PULSE_URL`, the network and the CA bundle |
+| `gage.client_rejected` | Pulse refused the client credentials (fix the client or secret in Pulse → Clients), or Gage refused the token (add an audience Gage accepts to the client) |
+| `gage.no_models` | Empty catalog: add a provider in Pulse → Gage → Providers |
+| `gage.model_missing` | The handle is not in the catalog: the message lists the available handles; set `FLOWSIM_GAGE_MODEL` |
+| `gage.no_key` | The provider refused Pulse's credentials or reported a missing key: set the key in Pulse → Gage → Providers |
+| `gage.blocked` | HTTP 403 (a Block policy or a model allow-list): ask the Pulse admin to allow the client |
+| `gage.throttled` | HTTP 429 from a Throttle policy: the message includes Pulse's wait time and reason |
+| `gage.not_licensed` | Pulse's licence does not include Gage |
+| `gage.timeout`, `gage.stream_error`, `gage.http_status`, `gage.invalid_response` | Other failures, each with the operation and Pulse's sanitized reason |
+
+The client protects the Pulse token. It sends requests only to
+`TIMEBASE_PULSE_URL`, strips headers outside a small allowlist (the SDK would
+add `ANTHROPIC_CUSTOM_HEADERS`), and refuses any credential other than the Pulse
+token, so an ambient `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is never
+sent. Error text from Pulse is bounded, stripped of control characters, and
+token-shaped strings are redacted.
+
 ## Storyline library and composing a model
 
 `examples/storylines/storylines.json` holds the demo storylines, taken from

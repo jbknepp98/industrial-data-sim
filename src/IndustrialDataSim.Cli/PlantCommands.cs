@@ -10,8 +10,9 @@ public static partial class CliApplication
 {
     private const string PlantUsage =
         "Usage: plant compose <storylines-folder> <output-model.json> <SimulationName> <storylineId>...; plant validate <model> [anchorUtc]; plant preview <model> <output.json> [hoursAfterAnchor 1-720, default 24] [anchorUtc]; " +
-        "plant connect-spec <model> <output-folder> [anchorUtc]; plant build <model> [anchorUtc]; plant sync <simulation> [throughUtc]; plant status [simulation]; plant remove <simulation> --confirm; plant run <simulation>. " +
+        "plant connect-spec <model> <output-folder> [anchorUtc]; plant build <model> [anchorUtc]; plant sync <simulation> [throughUtc]; plant status [simulation]; plant remove <simulation> --confirm; plant run <simulation>; plant gage-check. " +
         "build, sync, status, remove and run use FLOWSIM_PG_CONNECTION; run also uses the TIMEBASE_* settings. " +
+        "gage-check uses TIMEBASE_PULSE_URL, TIMEBASE_CLIENT_ID, TIMEBASE_CLIENT_SECRET, TIMEBASE_CA_BUNDLE and FLOWSIM_GAGE_MODEL (default anthropic/claude). " +
         "The anchor is \"now\" unless given (UTC ending in Z): backfill and incident times are relative to it. Preview runs offline and writes nothing else.";
 
     /// <summary>
@@ -25,6 +26,7 @@ public static partial class CliApplication
         if (action is "build" or "sync" or "status" or "remove" or "run") return RunPlantDatabaseCommand(args, output, stop);
         if (action == "connect-spec") return RunConnectSpec(args, output);
         if (action == "compose") return RunCompose(args, output);
+        if (action == "gage-check") return RunGageCheck(args, output, stop);
         bool validate = action == "validate" && args.Length is 3 or 4;
         bool preview = action == "preview" && args.Length is >= 4 and <= 6;
         if (!validate && !preview)
@@ -293,6 +295,37 @@ public static partial class CliApplication
     }
 
     /// <summary>Writes connect-spec.md and connect-spec.json (with the Atlas starter) for a plant model. Offline.</summary>
+    /// <summary>
+    /// plant gage-check: proves the interview can reach a model through Pulse's
+    /// Gage proxy (token, model catalog, then a one-sentence test message), or
+    /// explains which Pulse setting is missing and stops. Sends one short
+    /// message, which Pulse meters under the client's policy.
+    /// </summary>
+    private static int RunGageCheck(string[] args, TextWriter output, CancellationToken stop)
+    {
+        if (args.Length != 2) { WriteResult(output, [new("cli.usage", "$", "plant gage-check takes no arguments. " + PlantUsage)]); return 2; }
+        GageCheckResult check;
+        try
+        {
+            using var gage = new GageClient(GageSettings.FromEnvironment());
+            check = gage.Check(stop).GetAwaiter().GetResult();
+        }
+        catch (RuntimeFailure failure)
+        {
+            WriteResult(output, [new(failure.Error.Code, "$", failure.Error.Message)]);
+            return 1;
+        }
+        var result = new
+        {
+            model = check.Model, answeredBy = check.AnsweredBy, reply = check.Reply,
+            usage = new { inputTokens = check.InputTokens, outputTokens = check.OutputTokens },
+            availableModels = check.AvailableModels,
+            message = "The interview can reach a model through Pulse's Gage proxy. Pulse → Gage → Usage shows this call under the client."
+        };
+        return WriteResponse(output, new { schemaVersion = 1, valid = true, errors = Array.Empty<ValidationError>(), result },
+            new("cli.output_limit", "$", "Response too large.")) ? 0 : 1;
+    }
+
     private static int RunConnectSpec(string[] args, TextWriter output)
     {
         if (args.Length is not (4 or 5)) { WriteResult(output, [new("cli.usage", "$", PlantUsage)]); return 2; }

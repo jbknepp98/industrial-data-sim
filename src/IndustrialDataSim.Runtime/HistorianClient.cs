@@ -26,38 +26,33 @@ public sealed class HistorianClient : IDisposable
 {
     internal HistorianConnection Connection { get; }
     private readonly HttpClient http;
-    private string? token;
-    private DateTimeOffset renewAt;
-    internal Func<DateTimeOffset> UtcNow { get; set; } = () => DateTimeOffset.UtcNow;
+    private readonly PulseTokenSource tokens;
+    /// <summary>The clock used for token renewal and retention checks; tests replace it.</summary>
+    internal Func<DateTimeOffset> UtcNow { get => tokens.UtcNow; set => tokens.UtcNow = value; }
     internal HistorianClient(HistorianConnection connection, HttpClient http)
-    { connection.Validate(); Connection = connection; this.http = http; }
+    {
+        connection.Validate();
+        Connection = connection;
+        this.http = http;
+        tokens = new PulseTokenSource(http, connection.Pulse, connection.ClientId, connection.ClientSecret, connection.Audience);
+    }
     public HistorianClient(HistorianConnection connection) : this(connection, connection.CreateClient()) { }
 
     internal async Task Authenticate(CancellationToken stop)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(20));
-        stop = deadline.Token;
-        if (token is not null && UtcNow() < renewAt) return;
-        // Count token lifetime from request start, not response completion. A
-        // slow token endpoint must not extend our estimate of server validity.
-        var requestedAt = UtcNow();
-        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(Connection.Pulse, "auth/token"))
+        try { await tokens.GetToken(deadline.Token); }
+        catch (PulseTokenException failure)
         {
-            Content = new FormUrlEncodedContent(new Dictionary<string, string> {
-                ["grant_type"] = "client_credentials", ["client_id"] = Connection.ClientId,
-                ["client_secret"] = Connection.ClientSecret, ["audience"] = Connection.Audience })
-        };
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stop);
-        RequireOk(response, "authentication");
-        using var json = await ReadJson(response, 64 * 1024, stop);
-        var root = json.RootElement;
-        if (!root.TryGetProperty("access_token", out var value) || value.ValueKind != JsonValueKind.String ||
-            string.IsNullOrWhiteSpace(value.GetString()) || !root.TryGetProperty("expires_in", out var expiry) ||
-            !expiry.TryGetInt32(out int seconds) || seconds < 1 || seconds > 604800)
-            throw ProtocolFailure();
-        token = value.GetString();
-        renewAt = requestedAt.AddSeconds(seconds - Math.Min(60, seconds / 2.0));
+            // Same codes and messages the Historian adapter has always returned.
+            throw failure.Problem switch
+            {
+                PulseTokenProblem.HttpStatus => StatusFailure("authentication", failure.Status!.Value),
+                PulseTokenProblem.ResponseTooLarge => ResponseLimitFailure(),
+                _ => ProtocolFailure()
+            };
+        }
     }
 
     internal async Task<ProductionPreflight> Preflight(SimulationDefinition model, CancellationToken stop = default)
@@ -264,7 +259,7 @@ public sealed class HistorianClient : IDisposable
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stop);
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
-                token = null;
+                tokens.Invalidate();
                 if (attempt == 1)
                     throw new RuntimeFailure("historian.http_status",
                         "Historian read returned HTTP 401 after one token refresh. Check that the Pulse client is enabled, its audience and Dataset permissions are correct, and the services trust the same issuer. No write was retried; inspect durable status before continuing.");
@@ -282,15 +277,16 @@ public sealed class HistorianClient : IDisposable
     private HttpRequestMessage Request(HttpMethod method, string path)
     {
         var request = new HttpRequestMessage(method, new Uri(Connection.Historian, path));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.Current);
         return request;
     }
     private static string DatasetPath(string dataset) => "api/datasets/" + Uri.EscapeDataString(dataset);
     private static void RequireOk(HttpResponseMessage response, string operation)
     {
-        if (response.StatusCode != HttpStatusCode.OK)
-            throw new RuntimeFailure("historian.http_status", $"Historian {operation} returned HTTP {(int)response.StatusCode}. Check service availability, authentication and permissions. Inspect durable state before further writes; no write is automatically retried.");
+        if (response.StatusCode != HttpStatusCode.OK) throw StatusFailure(operation, response.StatusCode);
     }
+    private static RuntimeFailure StatusFailure(string operation, HttpStatusCode status) =>
+        new("historian.http_status", $"Historian {operation} returned HTTP {(int)status}. Check service availability, authentication and permissions. Inspect durable state before further writes; no write is automatically retried.");
     private static async Task<JsonDocument> ReadJson(HttpResponseMessage response, int limit, CancellationToken stop) =>
         JsonDocument.Parse(await ReadBytes(response, limit, stop), new JsonDocumentOptions { MaxDepth = 32 });
     private static async Task<byte[]> ReadBytes(HttpResponseMessage response, int limit, CancellationToken stop)
@@ -302,10 +298,12 @@ public sealed class HistorianClient : IDisposable
         {
             int count = await stream.ReadAsync(buffer, stop);
             if (count == 0) return output.ToArray();
-            if (output.Length + count > limit) throw new RuntimeFailure("historian.response_limit", "Historian response exceeded the bounded read limit. Reduce the session tag count or observation window; inspect publish state and do not replay.");
+            if (output.Length + count > limit) throw ResponseLimitFailure();
             output.Write(buffer, 0, count);
         }
     }
+    private static RuntimeFailure ResponseLimitFailure() =>
+        new("historian.response_limit", "Historian response exceeded the bounded read limit. Reduce the session tag count or observation window; inspect publish state and do not replay.");
     internal static RuntimeFailure ProtocolFailure() => new("historian.invalid_response", "Historian or Pulse response does not match the expected API shape. Check service/API compatibility; preserve state and do not retry an ambiguous publish.");
-    public void Dispose() { token = null; http.Dispose(); }
+    public void Dispose() { tokens.Invalidate(); http.Dispose(); }
 }
