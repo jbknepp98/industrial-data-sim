@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The interview service (phase 6): the need-first tool loop over the Pulse
+    Gage proxy. It lives outside Core so Core stays free of LLM dependencies;
+    the Anthropic SDK comes in through Runtime's GageClient.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../IndustrialDataSim.Core/IndustrialDataSim.Core.csproj" />
+    <ProjectReference Include="../IndustrialDataSim.Runtime/IndustrialDataSim.Runtime.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="IndustrialDataSim.Tests" />
+  </ItemGroup>
+</Project>

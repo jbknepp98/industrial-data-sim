@@ -332,6 +332,64 @@ token, so an ambient `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is never
 sent. Error text from Pulse is bounded, stripped of control characters, and
 token-shaped strings are redacted.
 
+## The interview service (web interview, headless)
+
+`src/IndustrialDataSim.Interview` is the need-first interview as a tool loop
+the app owns. The web page (phase 7) puts a chat around it. It is kept out of
+Core, so Core has no LLM dependency.
+
+- **Prompt:** `InterviewPrompt` combines `examples/storylines/interview.md`, a
+  summary of the library (ids, titles, pitches, industries, roles, KPIs,
+  evidence, engine status, closest) and the plant limits. The text is the same
+  for every session. The date and interview id go in the first user turn.
+- **Tools (strict schemas):**
+  - `record_audience` saves the needs profile.
+  - `find_storylines` ranks the library deterministically in code
+    (`StorylineRanking`): industry 4 points, each matching role 2, each
+    matching KPI 2, each keyword 2. An unavailable storyline carries
+    `offerInstead`: its `closest` entry, or the best available match when
+    `closest` is null.
+  - `compose_model` runs `PlantStorylines.Compose` with the overrides, applies
+    renames, then `PlantModelLoader`. Errors come back with field paths.
+  - `preview_plant` runs the engine and stores the full preview (tags sampled
+    every 5 minutes, about 2 MB for a week). It returns the headline numbers
+    and each storyline's moments: warning start, failure, tickets, holds and
+    uncertified assignments.
+  - **There is no build or run tool, and a test asserts it.** Approval is the
+    user's click in the page.
+- **Loop:** `InterviewSession` calls `GageClient.CreateMessage` with
+  `max_tokens` 16000, no `tool_choice` and no prefill. It handles each case
+  as follows:
+  - Malformed tool input returns an `is_error` result.
+  - A turn may use at most 12 tool rounds.
+  - `max_tokens` continues once.
+  - A `refusal` is shown plainly and not replayed.
+  - A `gage.*` failure ends the turn with an "explain and stop" event.
+- **Persistence:** simulator-owned tables in `flow_data_sim`, created on first
+  use like `flowsim_snapshots`:
+  - `flowsim_interviews`: status, needs, draft model and preview;
+  - `flowsim_interview_messages`: append-only history with token usage per
+    reply.
+
+  Messages are stored as text and replayed byte for byte. When a process is
+  killed mid-turn, the interview is left `in_turn`. Resuming it re-runs any
+  unanswered tool calls (they are idempotent), or asks the model again.
+
+Probe for live runs (`tools/IndustrialDataSim.InterviewProbe`). It uses the
+same environment as the simulator container, plus `FLOWSIM_PG_CONNECTION`:
+
+```
+InterviewProbe --library examples/storylines --script tools/IndustrialDataSim.InterviewProbe/scripts/bottler-late-orders.txt
+InterviewProbe --script <same file> --resume <interview id>   # skips lines already sent
+```
+
+Measured cost through Gage (`anthropic/claude`, Claude Sonnet 4.6), November
+22, 2026: a 3-turn bottler interview to a valid preview used about 64,000 to
+88,000 input tokens and 2,700 to 3,400 output tokens. Most of the input is the
+system prompt and tools, about 6,000 tokens, resent on every call. Pulse
+reported no cache reads. The SDK request carries no `cache_control`, so caching
+would need a change to `GageMessageRequest`.
+
 ## Storyline library and composing a model
 
 `examples/storylines/storylines.json` holds the demo storylines, taken from

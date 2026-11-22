@@ -1,0 +1,2 @@
+# Unsupported story (phase 6 live check): the interviewer must say it is not available yet and offer an available one.
+I'm demoing to the plant manager of a snack-food plant (CPG). What they really want to see is energy spikes: energy per unit jumping during CIP. Can the simulator show that?

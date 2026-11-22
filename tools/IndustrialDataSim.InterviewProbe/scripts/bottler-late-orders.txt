@@ -1,0 +1,4 @@
+# Maintenance manager at a bottler, late orders (phase 6 live check). One user message per line.
+I'm preparing a demo for the maintenance manager and the plant manager at a soft-drink bottler with two bottling lines. Their most expensive problem is late orders: when the labeler jams, orders ship late. They run SAP PM and Ignition. Six days of history is fine, and nobody is worried about AI.
+The labeler jam storyline sounds right. Call the simulation PlanTestBottler and keep the default line, product and people names.
+Yes, compose the model and show me the preview.

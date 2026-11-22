@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Console harness for the live interview through Pulse's Gage proxy (phase 6 end-to-end checks). -->
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/IndustrialDataSim.Interview/IndustrialDataSim.Interview.csproj" />
+  </ItemGroup>
+</Project>

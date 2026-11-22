@@ -1,0 +1,453 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Anthropic.Models.Messages;
+using IndustrialDataSim.Core.Plant;
+using IndustrialDataSim.Core.Validation;
+
+namespace IndustrialDataSim.Interview;
+
+/// <summary>
+/// What the interview has produced so far. Persisted on the interview row
+/// after every tool call that changes it.
+/// </summary>
+public sealed class InterviewState
+{
+    /// <summary>
+    /// The needs profile: {"audience": record_audience input (its requestedStories
+    /// lists what the user asked for that the simulator cannot show yet),
+    /// "chosenStorylines": [...]}. It feeds the demo guide (phase 7).
+    /// </summary>
+    public JsonObject Needs { get; set; } = new();
+    public string? DraftModelJson { get; set; }
+    public string? PreviewJson { get; set; }
+}
+
+/// <summary>The result of one tool call, returned to the model as a tool_result block.</summary>
+public sealed record ToolOutcome(string Content, bool IsError)
+{
+    public bool NeedsChanged { get; init; }
+    public bool DraftChanged { get; init; }
+    public bool PreviewChanged { get; init; }
+}
+
+/// <summary>
+/// The interview's four tools. Each has a strict JSON schema; its input is
+/// validated again in code and its problems come back as an is_error tool
+/// result with field paths, never as an exception.
+///
+/// There is deliberately no build or run tool: building and running start
+/// only from the user's Approve click in the page (phase 7). A test asserts
+/// that no tool name or description offers either.
+/// </summary>
+public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset> clock)
+{
+    public const string RecordAudience = "record_audience";
+    public const string FindStorylines = "find_storylines";
+    public const string ComposeModel = "compose_model";
+    public const string PreviewPlant = "preview_plant";
+
+    public const int MaxStorylinesPerPlant = 3;
+    public const int DefaultPreviewHours = 24, MaxPreviewHours = 72;
+    /// <summary>Tag samples in the stored preview are thinned to this grid to bound its size (about 2,000 points per tag for a week).</summary>
+    public const int PreviewSampleSeconds = 300;
+    private const int MaxRanked = 8, MaxListedEvents = 8, MaxReportedErrors = 20;
+
+    private static readonly JsonSerializerOptions Compact = new() { WriteIndented = false };
+
+    /// <summary>Activity labels for the page while a tool runs.</summary>
+    public static string Activity(string toolName) => toolName switch
+    {
+        RecordAudience => "Saving the audience profile…",
+        FindStorylines => "Matching storylines to the audience…",
+        ComposeModel => "Checking the plant model…",
+        PreviewPlant => "Running the plant preview…",
+        _ => "Working…"
+    };
+
+    // ---------------- definitions ----------------
+
+    /// <summary>
+    /// The tool definitions sent with every request. Schemas use only the
+    /// features strict mode supports everywhere: objects with every field
+    /// required and additionalProperties false, strings, integers, enums and
+    /// arrays. Ranges and counts are enforced in code instead.
+    /// </summary>
+    public IReadOnlyList<ToolUnion> Definitions { get; } = BuildDefinitions();
+
+    public static IReadOnlyList<string> Names { get; } = [RecordAudience, FindStorylines, ComposeModel, PreviewPlant];
+
+    private static IReadOnlyList<ToolUnion> BuildDefinitions()
+    {
+        JsonObject StringList(string description) => new() { ["type"] = "array", ["description"] = description, ["items"] = new JsonObject { ["type"] = "string" } };
+        JsonObject Enum(IEnumerable<string> values) => new() { ["type"] = "string", ["enum"] = new JsonArray(values.Select(v => (JsonNode)v).ToArray()) };
+        JsonObject Rename(string key, string value, string description) => new()
+        {
+            ["type"] = "array", ["description"] = description,
+            ["items"] = Schema(new() { [key] = new JsonObject { ["type"] = "string" }, [value] = new JsonObject { ["type"] = "string" } })
+        };
+
+        var tools = new[]
+        {
+            Tool(RecordAudience,
+                "Save the audience's needs profile: who will watch the demo and what costs them the most. Call it as soon as you know the industry, roles and main problems, and again whenever they change (it replaces the previous profile). Map the user's words to the library vocabulary in the system prompt. Every field is required; use an empty list or string when unknown.",
+                new()
+                {
+                    ["industry"] = Enum(PlantStorylines.Industries),
+                    ["product"] = new JsonObject { ["type"] = "string", ["description"] = "What they make and how, for example \"soft drinks on two bottling lines\"." },
+                    ["roles"] = new JsonObject { ["type"] = "array", ["description"] = "Roles in the room (at least one).", ["items"] = Enum(PlantStorylines.Roles) },
+                    ["kpis"] = StringList("Their KPIs, in the library's KPI words where one fits (for example \"on-time delivery\" for late orders)."),
+                    ["pains"] = StringList("The one or two problems that cost them the most, each with a recent example if given."),
+                    ["systems"] = StringList("ERP, CMMS, MES, LIMS, historian and SCADA they run, for example \"SAP PM\", \"Ignition\"."),
+                    ["constraints"] = StringList("AI, cloud, network or timing constraints."),
+                    ["historyDays"] = new JsonObject { ["type"] = "integer", ["description"] = "Days of history the demo needs, 1 to 30 (6 is a safe default for a 7-day purge)." },
+                    ["requestedStories"] = StringList("Stories the user asked for that the simulator cannot show yet, in their words.")
+                }),
+            Tool(FindStorylines,
+                "Rank the storyline library for the recorded audience (call record_audience first). The ranking is deterministic: industry, then roles, then KPIs, then your keywords. Each result has its engine status, the reasons, its evidence count and, for storylines that are not available yet, what to offer instead.",
+                new() { ["keywords"] = StringList("The user's own words for what they want to see, for example \"late orders\" or \"energy spikes\". Empty to rank by the profile alone.") }),
+            Tool(ComposeModel,
+                "Compose and validate the draft plant model from 1 to 3 available storylines that share a base plant, plus the user's names. Returns \"valid\" with a short model summary, or the validation errors with their field paths; fix every error and call again. A valid model is saved as the draft and replaces any earlier draft and preview.",
+                new()
+                {
+                    ["storylines"] = StringList("Ids of the chosen available storylines, in the order to show them."),
+                    ["simulation"] = new JsonObject { ["type"] = "string", ["description"] = "PascalCase simulation name, 2–32 letters or digits, for example AcmeNuggs." },
+                    ["backfill"] = new JsonObject { ["type"] = "string", ["description"] = "Days of history, for example \"6d\". Empty string keeps the base plant's default." },
+                    ["lineNames"] = Rename("id", "name", "Renamed lines by line id (L1, L2). Empty list keeps the base names."),
+                    ["productNames"] = Rename("code", "description", "Renamed products by SKU code. Empty list keeps the base names."),
+                    ["peopleNames"] = Rename("id", "name", "Renamed operators and technicians by employee id. Empty list keeps the base names.")
+                }),
+            Tool(PreviewPlant,
+                "Run the simulation engine offline over the draft model's backfill plus the given hours after now. Returns the headline numbers and where each storyline appears (times, tickets, holds, uncertified assignments) so you can explain it. Nothing is written to Postgres or Historian. The full preview is saved for the page.",
+                new() { ["hours"] = new JsonObject { ["type"] = "integer", ["description"] = $"Hours after now to include, 1 to {MaxPreviewHours} ({DefaultPreviewHours} is the default)." } })
+        };
+        return tools.Select(t => JsonSerializer.Deserialize<ToolUnion>(t.ToJsonString())!).ToList();
+    }
+
+    private static JsonObject Schema(JsonObject properties) => new()
+    {
+        ["type"] = "object",
+        ["properties"] = properties,
+        ["required"] = new JsonArray(properties.Select(p => (JsonNode)p.Key).ToArray()),
+        ["additionalProperties"] = false
+    };
+
+    private static JsonObject Tool(string name, string description, JsonObject properties) => new()
+    {
+        ["name"] = name, ["description"] = description, ["strict"] = true, ["input_schema"] = Schema(properties)
+    };
+
+    // ---------------- execution ----------------
+
+    /// <summary>
+    /// Runs one tool call against the state. Never throws for bad input or
+    /// an engine problem: the model gets an is_error result it can act on.
+    /// </summary>
+    public ToolOutcome Execute(string name, JsonElement input, InterviewState state)
+    {
+        try
+        {
+            return name switch
+            {
+                RecordAudience => Record(input, state),
+                FindStorylines => Find(input, state),
+                ComposeModel => Compose(input, state),
+                PreviewPlant => Preview(input, state),
+                _ => Failure([new("tool.unknown", "$", $"There is no tool named that. The tools are {string.Join(", ", Names)}. Building and running are not tools: the user starts them with the Approve button.")])
+            };
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            // Raw exception text can carry model content or paths; it is not returned.
+            return Failure([new("tool.internal_error", "$", "The tool failed unexpectedly. Tell the user the preview service hit an internal problem and suggest retrying; do not retry more than once.")]);
+        }
+    }
+
+    private ToolOutcome Record(JsonElement input, InterviewState state)
+    {
+        var read = new ToolInput(input, ["industry", "product", "roles", "kpis", "pains", "systems", "constraints", "historyDays", "requestedStories"]);
+        string industry = read.Text("industry", allowEmpty: false);
+        if (industry.Length > 0 && !PlantStorylines.Industries.Contains(industry))
+            read.Errors.Add(new("tool.value_not_allowed", "$.industry", $"Use one of: {string.Join(", ", PlantStorylines.Industries)}."));
+        string product = read.Text("product", allowEmpty: true);
+        var roles = read.Strings("roles", minimum: 1, allowed: PlantStorylines.Roles);
+        var kpis = read.Strings("kpis", 0);
+        var pains = read.Strings("pains", 0);
+        var systems = read.Strings("systems", 0);
+        var constraints = read.Strings("constraints", 0);
+        int historyDays = read.Integer("historyDays", 1, 30);
+        var requested = read.Strings("requestedStories", 0);
+        if (!read.IsValid) return Failure(read.Errors);
+
+        JsonArray Array(IEnumerable<string> items) => new(items.Select(i => (JsonNode)i).ToArray());
+        state.Needs["audience"] = new JsonObject
+        {
+            ["industry"] = industry, ["product"] = product, ["roles"] = Array(roles), ["kpis"] = Array(kpis), ["pains"] = Array(pains),
+            ["systems"] = Array(systems), ["constraints"] = Array(constraints), ["historyDays"] = historyDays, ["requestedStories"] = Array(requested)
+        };
+        return new ToolOutcome(Json(new JsonObject { ["saved"] = true, ["next"] = "Call find_storylines to rank the library for this audience." }), false) { NeedsChanged = true };
+    }
+
+    private ToolOutcome Find(JsonElement input, InterviewState state)
+    {
+        var read = new ToolInput(input, ["keywords"]);
+        var keywords = read.Strings("keywords", 0);
+        if (!read.IsValid) return Failure(read.Errors);
+        if (Profile(state) is not { } profile)
+            return Failure([new("tool.audience_missing", "$", "Record the audience first: call record_audience with the industry and roles, then call find_storylines again.")]);
+
+        var ranked = StorylineRanking.Rank(library.Storylines, profile, keywords).Take(MaxRanked).ToList();
+        var results = new JsonArray();
+        foreach (var r in ranked)
+        {
+            var item = new JsonObject
+            {
+                ["id"] = r.Storyline.Id, ["title"] = r.Storyline.Title, ["engine"] = r.Storyline.Engine, ["available"] = r.Storyline.Available,
+                ["score"] = r.Score, ["reasons"] = new JsonArray(r.Reasons.Select(x => (JsonNode)x).ToArray()),
+                ["evidence"] = $"raised in {r.Storyline.Evidence} recorded customer meetings", ["pitch"] = r.Storyline.Pitch,
+                ["base"] = r.Storyline.Base, ["requires"] = new JsonArray(r.Storyline.Requires.Select(x => (JsonNode)x).ToArray())
+            };
+            if (r.OfferInstead is { } offer)
+                item["offerInstead"] = new JsonObject { ["id"] = offer.Id, ["title"] = offer.Title, ["reason"] = offer.Reason };
+            results.Add(item);
+        }
+        var output = new JsonObject
+        {
+            ["storylines"] = results,
+            ["note"] = ranked.Count == 0
+                ? "Nothing in the library matches this profile. Ask more about the audience's problems, or offer the most evidenced available storyline."
+                : "Propose one to three available storylines. If the user asked for a storyline that is not available, say it is not in the simulator yet, offer its offerInstead, and call record_audience again with the request added to requestedStories."
+        };
+        return new ToolOutcome(Json(output), false);
+    }
+
+    private ToolOutcome Compose(JsonElement input, InterviewState state)
+    {
+        var read = new ToolInput(input, ["storylines", "simulation", "backfill", "lineNames", "productNames", "peopleNames"]);
+        var ids = read.Strings("storylines", 1, MaxStorylinesPerPlant);
+        string simulation = read.Text("simulation", allowEmpty: false, 64);
+        string backfill = read.Text("backfill", allowEmpty: true, 16);
+        var lineNames = read.Pairs("lineNames", "id", "name", 2);
+        var productNames = read.Pairs("productNames", "code", "description", 6);
+        var peopleNames = read.Pairs("peopleNames", "id", "name", 12);
+        if (!read.IsValid) return Failure(read.Errors);
+
+        // Storylines: known, available, one base.
+        var errors = new List<ValidationError>();
+        var chosen = new List<PlantStoryline>();
+        for (int i = 0; i < ids.Count; i++)
+        {
+            string path = $"$.storylines[{i}]";
+            if (library.Storylines.Find(ids[i]) is not { } storyline)
+                errors.Add(new("tool.unknown_storyline", path, $"No storyline has this id. Available ids: {string.Join(", ", library.Storylines.Storylines.Where(s => s.Available).Select(s => s.Id))}."));
+            else if (!storyline.Available)
+                errors.Add(new("tool.storyline_not_available", path, $"\"{storyline.Title}\" is {storyline.Engine}, not in the simulator yet." +
+                    (storyline.Closest is { } closest ? $" Offer \"{closest}\" instead." : " Nothing close is available; tell the user plainly.")));
+            else if (chosen.Count > 0 && storyline.Base != chosen[0].Base)
+                errors.Add(new("tool.storyline_base", path, $"This storyline uses the base plant \"{storyline.Base}\", but \"{chosen[0].Id}\" uses \"{chosen[0].Base}\". Choose storylines with the same base."));
+            else chosen.Add(storyline);
+        }
+        if (errors.Count > 0) return Failure(errors);
+        string baseId = chosen[0].Base!;
+        if (!library.Bases.TryGetValue(baseId, out var baseJson))
+            return Failure([new("tool.base_missing", "$.storylines", $"The base plant \"{baseId}\" is missing from the storyline folder. Tell the user the library is incomplete.")]);
+
+        var overrides = new JsonObject { ["simulation"] = simulation };
+        if (backfill.Length > 0) overrides["timeline"] = new JsonObject { ["backfill"] = backfill };
+        var composed = PlantStorylines.Compose(baseId, baseJson, chosen, overrides);
+        if (!composed.IsValid)
+            return Failure(composed.Errors.Select(e => e.Code == "storyline.wrong_base" || e.Code == "storyline.not_available"
+                ? e with { Path = $"$.storylines[{ids.IndexOf(e.Path)}]" } : e).ToList());
+
+        var model = JsonNode.Parse(composed.ModelJson!)!.AsObject();
+        ApplyRenames(model, lineNames, productNames, peopleNames, errors);
+        if (errors.Count > 0) return Failure(errors);
+
+        string modelJson = model.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        var loaded = PlantModelLoader.Load(modelJson, Anchor());
+        if (!loaded.IsValid)
+        {
+            // Loader paths are model paths ($.simulation, $.timeline.backfill …); say how they map to this tool's fields.
+            var fieldErrors = loaded.Errors.Select(e => e with { Path = "model " + e.Path }).ToList();
+            return Failure(fieldErrors, "The composed model is invalid. Paths starting with \"model $.\" are plant model fields: $.simulation is the simulation field, $.timeline.backfill is backfill, $.lines[i].name comes from lineNames, $.skus[i].description from productNames, $.people.* from peopleNames.");
+        }
+
+        var plant = loaded.Model!;
+        state.DraftModelJson = modelJson;
+        state.PreviewJson = null; // a preview of an older draft must never be approved
+        state.Needs["chosenStorylines"] = new JsonArray(chosen.Select(c => (JsonNode)c.Id).ToArray());
+        var summary = new JsonObject
+        {
+            ["valid"] = true,
+            ["simulation"] = plant.Simulation,
+            ["tablePrefix"] = plant.TablePrefix,
+            ["tagRoot"] = plant.TagRoot,
+            ["base"] = baseId,
+            ["storylines"] = new JsonArray(chosen.Select(c => (JsonNode)c.Id).ToArray()),
+            ["historyStartsUtc"] = plant.StartUtc,
+            ["lines"] = new JsonArray(plant.Lines.Select(l => (JsonNode)new JsonObject { ["id"] = l.Id, ["name"] = l.Name, ["equipment"] = l.Equipment.Count }).ToArray()),
+            ["products"] = new JsonArray(plant.Skus.Select(s => (JsonNode)new JsonObject { ["code"] = s.Code, ["description"] = s.Description }).ToArray()),
+            ["operators"] = new JsonArray(plant.Operators.Select(p => (JsonNode)new JsonObject { ["id"] = p.Id, ["name"] = p.Name, ["shift"] = p.Shift, ["line"] = p.Line }).ToArray()),
+            ["technicians"] = new JsonArray(plant.Technicians.Select(p => (JsonNode)new JsonObject { ["id"] = p.Id, ["name"] = p.Name, ["shift"] = p.Shift }).ToArray()),
+            ["areas"] = new JsonArray(new[] { "production", "maintenance" }.Concat(plant.Quality is null ? [] : ["quality"]).Concat(plant.Shipping is null ? [] : ["shipping"])
+                .Concat(plant.Maintenance.Certification is null ? [] : ["certification"]).Select(a => (JsonNode)a).ToArray()),
+            ["next"] = "Call preview_plant to run the engine over this draft."
+        };
+        return new ToolOutcome(Json(summary), false) { NeedsChanged = true, DraftChanged = true, PreviewChanged = true };
+    }
+
+    /// <summary>Applies the interview's renames by id; an unknown id is an error naming the valid ones.</summary>
+    private static void ApplyRenames(JsonObject model, List<(string Key, string Value, string Path)> lineNames,
+        List<(string Key, string Value, string Path)> productNames, List<(string Key, string Value, string Path)> peopleNames, List<ValidationError> errors)
+    {
+        void Rename(IEnumerable<JsonObject> items, string idField, string nameField, List<(string Key, string Value, string Path)> renames, string field, string what)
+        {
+            var list = items.ToList();
+            foreach (var (key, value, path) in renames)
+            {
+                var target = list.FirstOrDefault(i => i[idField]?.GetValue<string>() == key);
+                if (target is null)
+                    errors.Add(new("tool.unknown_id", path + "." + field, $"No {what} has this {field}. Valid values: {string.Join(", ", list.Select(i => i[idField]?.GetValue<string>()))}."));
+                else target[nameField] = value;
+            }
+        }
+        Rename(Objects(model["lines"]), "id", "name", lineNames, "id", "line");
+        Rename(Objects(model["skus"]), "code", "description", productNames, "code", "product");
+        var people = model["people"] as JsonObject;
+        Rename(Objects(people?["operators"]).Concat(Objects(people?["technicians"])), "id", "name", peopleNames, "id", "person");
+    }
+
+    private static IEnumerable<JsonObject> Objects(JsonNode? node) => node is JsonArray array ? array.OfType<JsonObject>() : [];
+
+    private ToolOutcome Preview(JsonElement input, InterviewState state)
+    {
+        var read = new ToolInput(input, ["hours"]);
+        int hours = read.Integer("hours", 1, MaxPreviewHours);
+        if (!read.IsValid) return Failure(read.Errors);
+        if (state.DraftModelJson is null)
+            return Failure([new("tool.draft_missing", "$", "There is no valid draft yet. Call compose_model until it returns valid, then call preview_plant.")]);
+
+        var anchor = Anchor();
+        var loaded = PlantModelLoader.Load(state.DraftModelJson, anchor);
+        if (!loaded.IsValid)
+            // A draft valid when composed can expire, for example a certificate date relative to an older "now".
+            return Failure(loaded.Errors.Select(e => e with { Path = "model " + e.Path }).ToList(), "The draft no longer validates at the current time. Call compose_model again.");
+        var model = loaded.Model!;
+        var end = model.AnchorUtc.AddHours(hours);
+        if (model.EndUtc is { } modelEnd && modelEnd < end) end = modelEnd;
+        var run = PlantEngine.Run(model, end);
+        var document = JsonSerializer.SerializeToNode(PlantPreview.Build(run, PreviewSampleSeconds))!.AsObject();
+        state.PreviewJson = document.ToJsonString(Compact);
+
+        var tables = PlantPreview.FinalTables(run);
+        var chosen = (state.Needs["chosenStorylines"] as JsonArray ?? []).Select(n => n?.GetValue<string>()).OfType<string>()
+            .Select(library.Storylines.Find).OfType<PlantStoryline>().ToList();
+        var output = new JsonObject
+        {
+            ["simulation"] = model.Simulation,
+            ["anchorUtc"] = model.AnchorUtc,
+            ["startUtc"] = run.StartUtc,
+            ["endUtc"] = run.EndUtc,
+            ["summary"] = document["summary"]?.DeepClone(),
+            ["rows"] = new JsonObject(tables.Select(t => KeyValuePair.Create(model.TablePrefix + t.Key, (JsonNode?)t.Value.Count))),
+            ["storylines"] = new JsonArray(chosen.Select(s => (JsonNode)Appearances(s, model, run, tables, document)).ToArray()),
+            ["next"] = "Explain the numbers and each storyline's moments, then ask the user to review the preview and click \"Approve and run\", or say what to change. You cannot build or run the plant yourself."
+        };
+        return new ToolOutcome(Json(output), false) { PreviewChanged = true };
+    }
+
+    /// <summary>Where one storyline shows up in the preview, from what its fragment plants.</summary>
+    private static JsonObject Appearances(PlantStoryline storyline, PlantModel model, PlantRun run,
+        Dictionary<string, List<Dictionary<string, object?>>> tables, JsonObject document)
+    {
+        List<Dictionary<string, object?>> Rows(string name) => tables.TryGetValue(name, out var rows) ? rows : [];
+        var moments = new JsonArray();
+        var fragment = storyline.Fragment ?? new JsonObject();
+
+        // Planted breakdowns: the warning build-up, the failure, and the tickets it opened.
+        var modes = Objects(fragment["incidents"]).Select(i => i["failureMode"]?.GetValue<string>()).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        foreach (var failure in run.Failures.Where(f => f.Planted && modes.Contains(f.Mode)).OrderBy(f => f.FailedUtc).Take(MaxListedEvents))
+        {
+            var tickets = Rows("maintenancetickets").Where(t => (string?)t["failure_code"] == failure.Mode && t["created_utc"] is DateTimeOffset created &&
+                created >= failure.FailedUtc && created <= failure.FailedUtc.AddHours(2)).Take(3)
+                .Select(t => (JsonNode)new JsonObject
+                {
+                    ["ticket"] = (string?)t["ticket_id"], ["createdUtc"] = Time(t["created_utc"]), ["technician"] = (string?)t["technician_id"],
+                    ["assignedUtc"] = Time(t["assigned_utc"]), ["completedUtc"] = Time(t["completed_utc"]), ["status"] = (string?)t["status"]
+                }).ToArray();
+            moments.Add(new JsonObject
+            {
+                ["kind"] = "breakdown", ["failureMode"] = failure.Mode, ["line"] = failure.Line, ["equipment"] = failure.Equipment,
+                ["warningStartsUtc"] = failure.WarningHours > 0 ? failure.FailedUtc.AddHours(-failure.WarningHours) : null,
+                ["failedUtc"] = failure.FailedUtc, ["repairedUtc"] = failure.RepairedUtc, ["tickets"] = new JsonArray(tickets)
+            });
+        }
+
+        // Planted quality excursions: the window and the holds it caused.
+        if (fragment["quality"] is JsonObject quality && quality["excursions"] is JsonArray && model.Quality is { } plantQuality)
+            foreach (var excursion in plantQuality.Excursions.Take(MaxListedEvents))
+            {
+                var holds = Rows("qualityholds").Where(h => h["created_utc"] is DateTimeOffset c && c >= excursion.FromUtc && c <= excursion.UntilUtc.AddDays(1)).ToList();
+                moments.Add(new JsonObject
+                {
+                    ["kind"] = "quality excursion", ["parameter"] = excursion.Parameter, ["fromUtc"] = excursion.FromUtc, ["untilUtc"] = excursion.UntilUtc,
+                    ["holds"] = holds.Count,
+                    ["firstHolds"] = new JsonArray(holds.Take(MaxListedEvents).Select(h => (JsonNode)new JsonObject
+                    {
+                        ["hold"] = (string?)h["hold_id"], ["lot"] = (string?)h["lot_id"], ["reason"] = (string?)h["reason"],
+                        ["createdUtc"] = Time(h["created_utc"]), ["releasedUtc"] = Time(h["released_utc"]), ["disposition"] = (string?)h["disposition"]
+                    }).ToArray())
+                });
+            }
+
+        // Certification: the uncertified assignments and runs the preview summary already lists.
+        var certification = (fragment["maintenance"] as JsonObject)?["certification"] as JsonObject;
+        var summary = document["summary"] as JsonObject;
+        if (certification?["issued"] is JsonArray && summary?["uncertifiedAssignments"] is JsonArray assignments)
+            moments.Add(new JsonObject { ["kind"] = "uncertified assignments", ["count"] = assignments.Count, ["first"] = new JsonArray(assignments.Take(MaxListedEvents).Select(a => a?.DeepClone()).ToArray()) });
+        if (certification?["operators"] is JsonObject && summary?["uncertifiedRuns"] is JsonArray runs)
+            moments.Add(new JsonObject { ["kind"] = "uncertified runs", ["count"] = runs.Count, ["first"] = new JsonArray(runs.Take(MaxListedEvents).Select(r => r?.DeepClone()).ToArray()) });
+
+        // Demand changes (for example tighter due dates) show in the on-time numbers.
+        if (fragment["demand"] is JsonObject)
+            moments.Add(new JsonObject { ["kind"] = "demand", ["onTimePercent"] = summary?["onTimePercent"]?.DeepClone(), ["completedOrders"] = summary?["completedOrders"]?.DeepClone() });
+
+        return new JsonObject
+        {
+            ["id"] = storyline.Id, ["title"] = storyline.Title, ["moments"] = moments,
+            ["talkTrack"] = new JsonArray(storyline.TalkTrack.Select(t => (JsonNode)$"{t.Tool}: {t.Ask}").ToArray())
+        };
+    }
+
+    // ---------------- helpers ----------------
+
+    /// <summary>"Now" for validation and previews, in whole seconds like the CLI, so record times stay tidy and reproducible.</summary>
+    private DateTimeOffset Anchor()
+    {
+        var now = clock();
+        return new DateTimeOffset(now.UtcTicks - now.UtcTicks % TimeSpan.TicksPerSecond, TimeSpan.Zero);
+    }
+
+    internal static AudienceProfile? Profile(InterviewState state)
+    {
+        if (state.Needs["audience"] is not JsonObject audience) return null;
+        List<string> List(string name) => (audience[name] as JsonArray ?? []).Select(n => n?.GetValue<string>()).OfType<string>().ToList();
+        return new AudienceProfile(audience["industry"]?.GetValue<string>() ?? "", List("roles"), List("kpis"));
+    }
+
+    private static string? Time(object? value) => value is DateTimeOffset t ? t.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ") : null;
+
+    private static string Json(JsonNode node) => node.ToJsonString(Compact);
+
+    private static ToolOutcome Failure(IReadOnlyList<ValidationError> errors, string? hint = null)
+    {
+        var output = new JsonObject
+        {
+            ["valid"] = false,
+            ["errors"] = new JsonArray(errors.Take(MaxReportedErrors).Select(e => (JsonNode)new JsonObject { ["code"] = e.Code, ["path"] = e.Path, ["message"] = e.Message }).ToArray())
+        };
+        if (errors.Count > MaxReportedErrors)
+            output["omitted"] = $"{errors.Count - MaxReportedErrors} more errors were not listed. Fix these, then call the tool again to see the rest.";
+        if (hint is not null) output["hint"] = hint;
+        return new ToolOutcome(Json(output), true);
+    }
+}
