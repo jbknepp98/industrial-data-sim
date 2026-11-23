@@ -42,9 +42,8 @@ Running deployment: Postgres container `flow-data-sim-pg` (database `flow_data_s
 plant container `bluebirdbev-plant` (image `flow-data-simulator:2.0.0-dev`, a local
 build, not a release) writing tags to the `Test` Dataset; and the web container
 `flow-data-simulator-web` on 127.0.0.1:8480 from the compose snippet (image
-`flow-data-simulator-web:2.0.0-rc.2` until the owner switches it to the CI-built
-`2.0.0-rc.3`, which is loaded locally), hosting the page-built plant Gallo. From rc.3 the
-page lists only plants it built, so BluebirdBev is not shown and never touched. A test
-web container `flow-data-simulator-web-look` on 127.0.0.1:8481 runs rc.3 for previews. Live checks use simulation names starting with
+`flow-data-simulator-web:2.0.0-rc.3`, the CI-built candidate), hosting the page-built
+plant Gallo, which is real: never remove or rebuild it. The page lists only plants it
+built, so BluebirdBev is not shown and never touched. Live checks use simulation names starting with
 `PlanTest`. A simulation only touches tables with its own prefix; never touch another
 simulation's tables. Do not change Pulse settings without asking.

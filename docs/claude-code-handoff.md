@@ -38,10 +38,9 @@ from chat transcripts, env files or logs into code, prompts, logs or documents.
     not a release), running the BluebirdBev plant into the `Test` Dataset
     (7-day purge age);
   - `flow-data-simulator-web` on `127.0.0.1:8480`, image
-    `flow-data-simulator-web:2.0.0-rc.2` until the owner switches it to the
-    loaded CI image `2.0.0-rc.3`; it hosts the page-built plant Gallo;
-  - `flow-data-simulator-web-look` on `127.0.0.1:8481`, image
-    `flow-data-simulator-web:2.0.0-rc.3`, a test container for previews.
+    `flow-data-simulator-web:2.0.0-rc.3` (the CI-built image), hosting the
+    page-built plant Gallo (real: never remove or rebuild it). BluebirdBev is
+    not listed on the page and is never touched.
 
 ## Suggested first message to Claude Code (2.0)
 
