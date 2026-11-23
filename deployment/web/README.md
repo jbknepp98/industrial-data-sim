@@ -161,9 +161,9 @@ name to `FLOWSIM_WEB_ALLOWED_HOSTS` in `web.env`.
 - When a preview is ready, the band at the bottom offers **Review plan**: the
   storylines, needs, plant preview and the Gage kit. **Approve plan…** builds
   and starts the plant; **Back to Interview** returns to the chat.
-- **Plants** lists the plants this page built (plants started with the CLI, such
-  as BluebirdBev, show read-only). Open a row for Stop, Start, Remove and the
-  downloads.
+- **Plants** lists only the plants this page built; plants started with the CLI
+  or other tools, such as BluebirdBev, are not shown. Open a row for Stop,
+  Start, Remove and the downloads.
 - **Change a plant** by asking the interviewer. It moves the request into the
   interview that built that plant. Approving the changed plan **rebuilds the
   plant in place under the same name**: its tables and the tag history in its

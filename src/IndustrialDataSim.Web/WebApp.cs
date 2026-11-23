@@ -87,6 +87,7 @@ public static class WebApp
 
         MapInterviews(app, services, hosting, new WebPlantDirectory(services, hosting));
         MapPlants(app, services, hosting);
+        MapBrowse(app, services, hosting);
         app.MapGet("/api/health", async (bool? refresh, CancellationToken stop) =>
         {
             var gage = refresh == true ? await services.Gage.Check(force: true, stop) : services.Gage.Current;
@@ -522,29 +523,21 @@ public static class WebApp
         {
             try
             {
-                var owned = services.Interviews.ApprovedSimulations();
+                // Only plants this page built; BluebirdBev and other tools' plants are never listed.
                 var entries = services.Registry.List().ToDictionary(e => e.Simulation, StringComparer.Ordinal);
-                var registered = services.Plants.List();
-                var plants = registered.Select(r =>
+                var plants = PagePlants.List(services).Select(r =>
                 {
-                    bool managed = owned.Contains(r.Simulation);
-                    var status = hosting.Status(r.Simulation);
-                    if (status is null)
-                        status = services.Plants.IsHostRunning(r.Simulation)
-                            ? new PlantHostingStatus(HostingState.RunningElsewhere, DateTimeOffset.UtcNow, Message: "Another process is delivering this plant. This container does not touch it.")
-                            : new PlantHostingStatus(managed ? HostingState.Stopped : HostingState.NotHosted, DateTimeOffset.UtcNow,
-                                Message: managed ? "Not running. Start it to continue where it left off." : "Not hosted by this container.");
+                    entries.TryGetValue(r.Simulation, out var entry);
                     return new
                     {
                         r.Simulation, r.TablePrefix, r.AnchorUtc, r.StartUtc, r.AppliedSequence, r.TagCursorUtc,
                         snapshotUtc = services.Plants.SnapshotUtc(r.Simulation),
                         resentBatches = r.UncertainBatches,
                         sendingInProgress = r.SendingUntilUtc is not null,
-                        managed,
-                        // Known for plants approved here; another host's plant writes wherever that host was told to.
-                        dataset = entries.TryGetValue(r.Simulation, out var entry) ? entry.Dataset ?? services.Dataset : null,
+                        managed = true,
+                        dataset = entry?.Dataset ?? services.Dataset,
                         datasetCreated = entry?.DatasetCreated == true,
-                        hosting = status
+                        hosting = PagePlants.Status(services, hosting, r.Simulation)
                     };
                 }).ToList();
                 return Results.Json(new { datasetPurgeAgeDays = services.Datasets is null ? (int?)null : PlantDatasets.PurgeAgeDays, plants }, Json);
@@ -727,6 +720,26 @@ public static class WebApp
         }
     }
 
+    /// <summary>
+    /// The plant browser: read-only views of the plants this page built. A plant
+    /// the page did not build answers 404 browse.not_found, the same as a name
+    /// that does not exist. Reads are not logged.
+    /// </summary>
+    private static void MapBrowse(WebApplication app, WebServices services, PlantHostingService hosting)
+    {
+        var browser = new PlantBrowser(services, hosting);
+        IResult Run(Func<object> read)
+        {
+            try { return Results.Json(read(), Json); }
+            catch (BrowseRefusal refusal) { return Error(refusal.Status, refusal.Code, refusal.Message); }
+            catch (RuntimeFailure failure) { return Failure(failure, StatusCodes.Status503ServiceUnavailable); }
+        }
+        app.MapGet("/api/browse/{name}", (string name) => Run(() => browser.Summary(name)));
+        app.MapGet("/api/browse/{name}/tables", (string name) => Run(() => browser.Tables(name)));
+        app.MapGet("/api/browse/{name}/tables/{table}/rows", (string name, string table, string? sort, string? dir, string? q, bool? deleted, int? page) =>
+            Run(() => browser.Rows(name, table, sort, dir, q, deleted == true, page ?? 1)));
+    }
+
     private static IResult? Ownership(WebServices services, string name)
     {
         try
@@ -752,7 +765,7 @@ public static class WebApp
     }
 
     /// <summary>The interview that approved a plant, for its needs profile. Looked up through the web registry.</summary>
-    private static InterviewRecord? FindInterview(WebServices services, string simulation)
+    internal static InterviewRecord? FindInterview(WebServices services, string simulation)
     {
         var entry = services.Registry.List().FirstOrDefault(e => e.Simulation == simulation);
         return entry is null || entry.InterviewId == Guid.Empty ? null : services.Interviews.Load(entry.InterviewId);

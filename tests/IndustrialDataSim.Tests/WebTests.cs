@@ -20,7 +20,7 @@ namespace IndustrialDataSim.Tests;
 /// demo guide. Tests that admit plants need FLOWSIM_TEST_PG and use
 /// simulation names starting with PlanTest, removed afterwards.
 /// </summary>
-public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
+public partial class WebTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     private static readonly string StorylineFolder = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "examples", "storylines");
     private static string? Connection => Environment.GetEnvironmentVariable("FLOWSIM_TEST_PG");
@@ -792,28 +792,6 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
             // Once the other process lets go, this container picks the plant up.
             await WaitFor(() => Task.FromResult(hosting.Status(name)?.State == HostingState.Live), TimeSpan.FromMinutes(2), "the plant to go live here");
             await hosting.StopAsync(CancellationToken.None);
-        }
-        finally { Cleanup(name); }
-    }
-
-    [Fact]
-    public async Task ThePlantsListShowsAPlantAnotherProcessDeliversAsRunningElsewhere()
-    {
-        if (Connection is null) return;
-        string name = "PlanTestOther" + Guid.NewGuid().ToString("N")[..8];
-        using var store = new PlantStore(Connection);
-        try
-        {
-            NewPlant(store, name);
-            await using var web = await Start(() => new ScriptedModel(), Connection);
-            JsonObject Plant(JsonObject list) => list["plants"]!.AsArray().OfType<JsonObject>().Single(p => p["simulation"]!.GetValue<string>() == name);
-            Assert.Equal("not_hosted", Plant(await Get(web.Http, "/api/plants"))["hosting"]!["state"]!.GetValue<string>());
-            using (store.LockSimulation(name))
-            {
-                var plant = Plant(await Get(web.Http, "/api/plants"));
-                Assert.Equal("running_elsewhere", plant["hosting"]!["state"]!.GetValue<string>());
-                Assert.False(plant["managed"]!.GetValue<bool>());
-            }
         }
         finally { Cleanup(name); }
     }

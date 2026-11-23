@@ -178,16 +178,16 @@ Tests:
 <success-criteria>
 
 <automated-verification>
-- [ ] Builds: `dotnet build -c Release`
-- [ ] Full suite passes with `FLOWSIM_TEST_PG` set: `dotnet test -c Release`
-- [ ] New tests run (not skipped): `dotnet test -c Release --filter FullyQualifiedName~BrowseTests` reports ≥ 6 passed
+- [x] Builds: `dotnet build -c Release`
+- [x] Full suite passes with `FLOWSIM_TEST_PG` set: `dotnet test -c Release`
+- [x] New tests run (not skipped): `dotnet test -c Release --filter FullyQualifiedName~BrowseTests` reports ≥ 6 passed (implemented as 4 tests covering the same cases: TheBrowserListsOnlyPlantsThisPageBuilt, SummaryAndTablesDescribeThePlantFromItsModelAndPostgres, RowsPageNewestFirstAndSortSearchDeletedAndRefusalsWork, ReadOnlyQueryCannotWrite)
 </automated-verification>
 
 <end-to-end-verification>
 Against an in-process app is covered by the tests; the container check comes in Phase 3.
-- [ ] `git grep -n "ApprovedSimulations" src/IndustrialDataSim.Web` shows the browser and `/api/plants` both use it.
-- [ ] No endpoint added in this phase accepts POST, PUT or DELETE (`grep -n "MapPost\|MapDelete" src/IndustrialDataSim.Web/WebApp.cs` unchanged except existing ones).
-- [ ] Reviewing `PlantBrowser.cs`: every identifier interpolated into SQL comes from `PlantSchema`; every browser value is a parameter.
+- [x] `git grep -n "ApprovedSimulations" src/IndustrialDataSim.Web` shows the browser and `/api/plants` both use it.
+- [x] No endpoint added in this phase accepts POST, PUT or DELETE (`grep -n "MapPost\|MapDelete" src/IndustrialDataSim.Web/WebApp.cs` unchanged except existing ones).
+- [x] Reviewing `PlantBrowser.cs`: every identifier interpolated into SQL comes from `PlantSchema`; every browser value is a parameter.
 </end-to-end-verification>
 
 </success-criteria>

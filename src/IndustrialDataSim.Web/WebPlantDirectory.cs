@@ -14,16 +14,14 @@ public sealed class WebPlantDirectory(WebServices services, PlantHostingService 
 {
     public JsonArray List()
     {
-        var owned = services.Interviews.ApprovedSimulations();
         var entries = services.Registry.List().ToDictionary(e => e.Simulation, StringComparer.Ordinal);
-        return new JsonArray(services.Plants.List().Where(r => owned.Contains(r.Simulation))
+        return new JsonArray(PagePlants.List(services)
             .Select(r => (JsonNode)Summary(r, entries.GetValueOrDefault(r.Simulation))).ToArray());
     }
 
     public JsonObject? Describe(string simulation)
     {
-        if (!services.Interviews.ApprovedSimulations().Contains(simulation)) return null;
-        var registration = services.Plants.List().FirstOrDefault(r => r.Simulation == simulation);
+        var registration = PagePlants.Find(services, simulation);
         if (registration is null) return null;
         var summary = Summary(registration, services.Registry.Find(simulation));
         var loaded = PlantModelLoader.Load(registration.ModelJson, registration.AnchorUtc);

@@ -404,6 +404,54 @@ public sealed class PlantStore : IDisposable
         return dropped;
     }
 
+    /// <summary>
+    /// Runs one SELECT in a READ ONLY transaction with a 5-second statement
+    /// timeout and returns at most maxRows rows, for the page's plant browser.
+    /// The caller builds the SQL from schema identifiers only and passes every
+    /// value as a parameter. Timestamps come back as UTC DateTimeOffset and
+    /// SQL NULL as null. The transaction is always rolled back.
+    /// </summary>
+    public (IReadOnlyList<string> Columns, IReadOnlyList<object?[]> Rows) ReadOnlyQuery(
+        string sql, IReadOnlyList<NpgsqlParameter> parameters, int maxRows)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        try
+        {
+            Execute(connection, transaction, "SET TRANSACTION READ ONLY");
+            Execute(connection, transaction, "SET LOCAL statement_timeout = '5s'");
+            using var command = new NpgsqlCommand(sql, connection, transaction);
+            foreach (var parameter in parameters) command.Parameters.Add(parameter);
+            using var reader = command.ExecuteReader();
+            var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+            var rows = new List<object?[]>();
+            while (rows.Count < maxRows && reader.Read())
+            {
+                var row = new object?[reader.FieldCount];
+                for (int i = 0; i < row.Length; i++)
+                {
+                    object value = reader.GetValue(i);
+                    row[i] = value switch
+                    {
+                        DBNull => null,
+                        DateTime time => new DateTimeOffset(DateTime.SpecifyKind(time, DateTimeKind.Utc)),
+                        _ => value
+                    };
+                }
+                rows.Add(row);
+            }
+            return (columns, rows);
+        }
+        catch (PostgresException error) when (error.SqlState == PostgresErrorCodes.QueryCanceled)
+        {
+            throw new RuntimeFailure("browse.query_timeout", "The table query took longer than 5 seconds. Narrow the search or try again.");
+        }
+        finally
+        {
+            try { transaction.Rollback(); } catch (Exception error) when (error is NpgsqlException or InvalidOperationException) { /* connection already broken */ }
+        }
+    }
+
     // ---------------- helpers ----------------
 
     private const string SelectRegistration = "SELECT simulation, table_prefix, model_json, model_sha256, anchor_utc, start_utc, applied_sequence, tag_cursor_utc, sending_until_utc, uncertain_batches FROM flowsim_simulations";
