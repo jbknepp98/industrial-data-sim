@@ -40,10 +40,12 @@ curl -s http://localhost:8480/api/health
 ```
 
 - **It answers:** point the user to <http://localhost:8480>. The page
-  interviews them (Claude through Pulse Gage), previews the plant, builds it
-  only on their **Approve and run** click, hosts it inside the container
-  (surviving restarts), and offers the demo guide, Connect spec and Atlas
-  starter per plant. Each plant approved there gets its own Historian
+  interviews them (Claude through Pulse Gage; they can attach files), shows
+  the plan on **Review plan**, builds it only on their **Approve plan** click,
+  hosts it inside the container (surviving restarts), and offers the demo
+  guide, Connect spec, Atlas starter and Gage kit per plant. To change a page
+  plant, they ask the interviewer there; approving the change rebuilds it in
+  place after a double confirmation. Each plant approved there gets its own Historian
   Dataset, named after it, with a 365-day purge age. Plants approved there are managed there: stop, start and
   remove them on its Plants tab, never with `plant run` or `plant remove` here.
 - **It does not answer:** offer the setup (`deployment/web/README.md` in the

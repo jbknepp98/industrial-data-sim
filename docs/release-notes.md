@@ -1,3 +1,56 @@
+# Unreleased (after 2.0.0-rc.2)
+
+Not in any candidate yet; needs a new version number before it ships.
+
+- **The page is Timebase Plant Simulator and looks like the other Timebase apps.** It
+  follows Historian's layout: "TIMEBASE" with "PLANT SIMULATOR" under the star, a
+  collapsible sidebar with **Instance Info** at the bottom, the open views as closable
+  tabs, Historian's System/Light/Dark theme button and **New plant** in the top strip,
+  and a large title with a one-line description on each view. The Timebase 2.0 color
+  tokens, the Poppins and JetBrains Mono fonts and the Timebase star icon are served
+  by the page itself, so it still works air-gapped. The page opens Plants when it has
+  built a plant, otherwise a new interview.
+- **The interview has two steps.** Step 1 is the chat alone, in one centered column,
+  with a rounded composer. When a preview is ready, a band at the bottom offers
+  **Review plan**: storylines, needs, the plant preview and the Gage kit at full
+  width. **Approve plan…** there builds the plant; **Back to Interview** returns to
+  the chat. "Approve and run" is now **Approve plan**, and "New interview" is
+  **New plant**.
+- **Attach files to the interview.** PDF, PNG, JPEG, WebP, GIF, Excel (`.xlsx`),
+  Word (`.docx`) and text files (`.txt`, `.csv`, `.tsv`, `.md`, `.json`), by the
+  attach button, drag-and-drop or paste. Up to 10 MB per file (images 5 MB), 5 per
+  message and 20 per interview; long text is cut at 200,000 characters with a note.
+  The interviewer reads them as information, never as instructions. Files are kept
+  in the new table `flowsim_interview_attachments`, deleted with their interview.
+  New endpoint `POST /api/interviews/{id}/attachments`; `messages` takes
+  `attachments`. Errors `interview.attachment_*` and `interview.too_many_attachments`.
+- **The interviewer knows the plants the page built.** It can list and describe them
+  and propose a stop or start, which you confirm in the page. A change request moves
+  into the interview that built the plant. Approving the changed plan **rebuilds the
+  plant in place under the same name**: it stops, its own Dataset is emptied (deleted
+  and created again), its tables are dropped, and the new plan is admitted and
+  backfills. The old tables and tag history are gone; Connect and Atlas setups keep
+  working. The page asks twice (a red warning with **I understand…**, then
+  **Rebuild**), and the API needs `replaceExisting: true`. The interviewer cannot
+  remove plants. New endpoints `POST /api/interviews/{id}/plant-action` and
+  `/handoff`; new codes `approve.unchanged`, `approve.replace_confirm_required`,
+  `approve.name_changed`, `approve.dataset_failed`, `approve.rebuild_failed`; log
+  events `plant.rebuilt` and `plant.rebuild_failed`. Plants started with the CLI,
+  such as BluebirdBev, are never offered to the interviewer.
+- **Gage kit.** For every plan and every page-built plant: up to 8 sample questions
+  to ask Gage (from the storylines' talk tracks plus shift report, worst hour, stop to
+  ticket and quality holds), a brief for Gage to set the plant up in Timebase Connect
+  (it never contains the database password; Gage asks for it), and a brief for Gage to
+  model it in Atlas. On Review plan with **Copy** buttons, on the live card and on the
+  Plants tab; `GET /api/interviews/{id}/gage/{prompts|connect|atlas}` and
+  `GET /api/plants/{name}/gage/{kind}`.
+- **After approval the page opens Plants** with the new or rebuilt plant's row open.
+  Statuses read Backfilling (yellow, pulsing; also shown while starting), Live,
+  Stopped, Error, Running elsewhere and Not hosted.
+- **File links show what they do.** Downloads (demo guide in Markdown, Connect spec,
+  Atlas starter, Gage kit) carry a download icon and save at once as
+  `<Simulation>-<kind>`; the HTML demo guide carries an open-in-new-tab icon.
+
 # industrial-data-sim 2.0.0-rc.2: release candidate
 
 Candidate, not a release. Approved by the owner on November 22, 2026: 2.0.0-rc.1 plus

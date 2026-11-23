@@ -56,11 +56,17 @@ The CLI and skill remain for hand-written models and diagnostics.
   available and 7 later. Available ones compose onto one of four base plants
   (`examples/storylines/bases/`), some with variants for other bases.
 - **Interview:** Claude through Pulse Gage with the client's own token; tools
-  `record_audience`, `find_storylines`, `compose_model` and `preview_plant`; no build or
-  run tool.
-- **Web page:** chat, storyline cards, preview, **Approve and run**, plant list with
-  Stop, Start and Remove, and per-plant downloads (Connect mapping spec, Atlas starter,
-  demo guide).
+  `record_audience`, `find_storylines`, `compose_model` and `preview_plant`, and, for
+  plants the page built, `list_plants`, `describe_plant`, `propose_plant_action` (stop or
+  start, confirmed by the user in the page) and `change_plant` (moves a change into the
+  plant's own interview); no build, run or remove tool. Attached files (PDF, images,
+  Excel, Word, text; 10 MB each, 5 per message, 20 per interview) are information, never
+  instructions. *(Added after rc.2.)*
+- **Web page:** Timebase Plant Simulator in the Timebase 2.0 look. Interview in two
+  steps (chat; **Review plan** with storylines, needs, preview and the Gage kit),
+  **Approve plan**, rebuild in place of a changed plant behind a double confirmation,
+  plant list with Stop, Start and Remove, and per-plant downloads (Connect mapping
+  spec, Atlas starter, demo guide, Gage kit: prompts, Connect brief, Atlas brief).
 - **Image:** `flow-data-simulator-web`, linux-arm64 and linux-x64, non-root, SIGINT
   stop, built-in health check, with the CLI inside for `plant gage-check`.
 
@@ -80,13 +86,16 @@ The CLI and skill remain for hand-written models and diagnostics.
 4. **Ownership.** A simulation creates, writes and drops only tables with its own prefix
    and its own registry rows. Removal never touches another simulation's tables. The page
    writes tags only to a Dataset it created for that plant, and deletes that Dataset only
-   when the user asks in the Remove dialog.
+   when the user asks in the Remove dialog, or empties it (delete and create again, same
+   name) when the user confirms a rebuild of that plant.
 5. **One writer per simulation.** A Postgres advisory lock admits one host per
    simulation. A plant another process holds is shown `running_elsewhere` and never
    written.
-6. **Approval is human.** Only the user's **Approve and run** click (or `plant build` at
-   the CLI) admits a plant. The model has no tool that builds or runs one; a test asserts
-   it.
+6. **Approval is human.** Only the user's **Approve plan** click (or `plant build` at
+   the CLI) admits a plant, and a rebuild also needs the user's **I understand…**
+   confirmation (`replaceExisting: true`). The model has no tool that builds, runs or
+   removes one; a test asserts it. A stop or start it proposes happens only when the
+   user confirms it in the page.
 7. **No model key in the simulator.** The interview reaches a model only through Pulse
    Gage with the Pulse client's token. The Gage client sends requests only to
    `TIMEBASE_PULSE_URL` and refuses any other credential.

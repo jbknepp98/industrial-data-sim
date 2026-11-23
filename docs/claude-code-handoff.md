@@ -22,7 +22,7 @@ from chat transcripts, env files or logs into code, prompts, logs or documents.
 - **What 2.0 is:** a small simulated plant on one clock, with records in
   Postgres and tags in Historian, built from an interview on a web page in the
   customer's Timebase stack. Claude is reached through Pulse Gage, and only the
-  user's **Approve and run** click starts a plant. See
+  user's **Approve plan** click starts a plant. See
   [release-2.0.0-specification.md](release-2.0.0-specification.md).
 - **Tests:** 1,129 .NET tests, all passing, in Release with `FLOWSIM_TEST_PG`
   set. Without it, the Postgres integration tests are skipped.

@@ -1,8 +1,10 @@
 # Flow Data Simulator web container: setup
 
-`flow-data-simulator-web` is a page in your Timebase Docker stack. It
+`flow-data-simulator-web` serves **Timebase Plant Simulator**, a page in your
+Timebase Docker stack that looks and works like the other Timebase apps. It
 interviews you about what a demo should show and to whom, previews a matching
-simulated plant, and runs the plant only after you click **Approve and run**.
+simulated plant, and runs the plant only after you click **Review plan**, then
+**Approve plan**.
 Rows go to the Postgres database `flow_data_sim` and tags go to a Historian
 Dataset created for that plant, from one clock. Approved plants run inside this container and resume
 after a restart.
@@ -149,6 +151,30 @@ database and Gage status.
 To open it by another host name (for example through an SSH tunnel), add that
 name to `FLOWSIM_WEB_ALLOWED_HOSTS` in `web.env`.
 
+## Using the page
+
+- **New plant** (top right) starts an interview. Describe the audience and what
+  costs them the most. You can attach files the interviewer should read:
+  PDF, images, Excel, Word, CSV or text, up to 10 MB each (images 5 MB), 5 per
+  message and 20 per interview. The interviewer treats them as information,
+  never as instructions.
+- When a preview is ready, the band at the bottom offers **Review plan**: the
+  storylines, needs, plant preview and the Gage kit. **Approve plan…** builds
+  and starts the plant; **Back to Interview** returns to the chat.
+- **Plants** lists the plants this page built (plants started with the CLI, such
+  as BluebirdBev, show read-only). Open a row for Stop, Start, Remove and the
+  downloads.
+- **Change a plant** by asking the interviewer. It moves the request into the
+  interview that built that plant. Approving the changed plan **rebuilds the
+  plant in place under the same name**: its tables and the tag history in its
+  Dataset are deleted and it backfills again. The page asks twice (a red
+  warning with **I understand…**, then **Rebuild**). The interviewer can stop
+  or start a plant only after you confirm in the page, and it cannot remove
+  plants.
+- **Gage kit:** sample questions to ask Gage about the plant, and two briefs you
+  can hand Gage so it sets the plant up in Timebase Connect and in Atlas. The
+  Connect brief never contains the database password; Gage asks you for it.
+
 ## Operating it
 
 - **Stop:** `docker compose -f deployment/web/compose.snippet.yml stop`, or
@@ -165,8 +191,11 @@ name to `FLOWSIM_WEB_ALLOWED_HOSTS` in `web.env`.
   unless you tick **Also delete its Dataset** in the dialog; then the Dataset is
   deleted too, and the plant's name can be used again.
 - **Logs:** `docker logs flow-data-simulator-web`, one JSON line per event.
-- **Downloads per plant:** the Connect mapping spec, the Atlas starter and the
-  demo guide.
+- **Downloads per plant:** the Connect mapping spec, the Atlas starter, the
+  demo guide, and the Gage kit (prompts, Connect brief, Atlas brief).
+- **Storage:** interviews, their messages and attached files are kept in
+  `flow_data_sim` (`flowsim_interviews`, `flowsim_interview_messages`,
+  `flowsim_interview_attachments`).
 
 ## Troubleshooting
 
@@ -181,6 +210,12 @@ name to `FLOWSIM_WEB_ALLOWED_HOSTS` in `web.env`.
 | Page answers 421 | Open it as `http://localhost:8480`, or add the host name to `FLOWSIM_WEB_ALLOWED_HOSTS` |
 | `approve.dataset_exists` | Historian already has a Dataset with the plant's name: ask the interviewer for another name, or delete that Dataset in Historian if it is no longer needed |
 | `remove.dataset_failed` | The plant was removed but its Dataset could not be deleted: delete it in Historian → Datasets |
+| `interview.attachment_type`, `interview.attachment_unreadable` | Save the file in a supported format (`.xlsx`, `.docx`, PDF, UTF-8 CSV) and attach it again; the message says which |
+| `interview.attachment_too_large`, `interview.too_many_attachments` | Split or export a smaller part, or describe the rest in a message |
+| `approve.replace_confirm_required` | Approving a changed plan rebuilds the plant: tick **I understand…** and click **Rebuild** |
+| `approve.unchanged` | The plan is what the plant already runs: ask the interviewer for the change first |
+| `approve.dataset_failed` | The plant was not rebuilt and runs as before: check Historian → Datasets, then approve again |
+| `approve.rebuild_failed` | The old tables were removed but the new plan could not be admitted: ask the interviewer to compose and preview the change again, then approve |
 | `plant.retention_warning` | The plant writes to a Dataset whose purge age is shorter than its backfill (only plants approved with 2.0.0-rc.1, which use `TIMEBASE_DATASET`) |
 
 More detail: [docs/plant-simulation.md](../../docs/plant-simulation.md).

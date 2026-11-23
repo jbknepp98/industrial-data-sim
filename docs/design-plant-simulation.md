@@ -290,7 +290,8 @@ their stack.
   setting to fix and stops. There is no AI-free form fallback and no
   direct-key fallback.
 - **Approval stays human:** the model has no build or run tool. Only the
-  user's **Approve and run** click admits and starts a plant.
+  user's **Approve plan** click (originally "Approve and run") admits and
+  starts a plant.
 - **In-container hosting:** approved plants run inside the web container as
   background services (no Docker socket) and resume from snapshots after a
   restart. A plant another process delivers (BluebirdBev's own container) is
@@ -312,6 +313,27 @@ their stack.
   refused, never reused. On Remove the user chooses whether to delete the
   Dataset too (a checkbox, off by default); only Datasets the page created can
   be deleted.
+
+- **The page as a Timebase app (November 22, 2026):** it is called Timebase
+  Plant Simulator and follows the other Timebase apps' layout (Historian is
+  the reference): the "TIMEBASE" wordmark with the product name under it,
+  view tabs, page titles with a one-line description, the Datasets-style list
+  for plants, and Historian's three-mode theme button. The interview has two
+  steps, the chat and **Review plan**; **New plant** is the only way to start
+  one.
+- **Files in the interview (November 22, 2026):** the user can attach PDF,
+  images, Excel, Word and text files; they are information for the
+  interviewer, never instructions.
+- **Existing plants (November 22, 2026):** there is one interviewer. It knows
+  the plants the page built and can describe them; a stop or start it
+  proposes waits for the user's confirmation. A change moves into the
+  interview that built the plant. Approving a changed plan rebuilds the plant
+  in place under the same name (tables and tag history deleted, Dataset
+  emptied), only after a double confirmation. The interviewer cannot remove
+  plants.
+- **Gage kit (November 22, 2026):** every plan and plant offers sample Gage
+  prompts and briefs that let Gage set it up in Connect and Atlas; the
+  Connect brief never carries the password.
 
 ## Open questions for the owner (answered above)
 
