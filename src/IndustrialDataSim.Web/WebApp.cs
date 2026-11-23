@@ -7,6 +7,7 @@ using IndustrialDataSim.Runtime;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -29,6 +30,8 @@ namespace IndustrialDataSim.Web;
 public static class WebApp
 {
     public const long MaxRequestBytes = 64 * 1024;
+    /// <summary>One attachment upload: a 10 MB file as base64 (4/3 larger) plus its JSON wrapper.</summary>
+    public const long MaxAttachmentRequestBytes = AttachmentReader.MaxFileBytes / 3 * 4 + 64 * 1024;
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public static WebApplication Build(WebOptions options, WebServices services)
@@ -82,7 +85,7 @@ public static class WebApp
             message = "The interview page is up. It has no login: publish it only on this host (127.0.0.1) or a trusted network."
         }));
 
-        MapInterviews(app, services);
+        MapInterviews(app, services, hosting, new WebPlantDirectory(services, hosting));
         MapPlants(app, services, hosting);
         app.MapGet("/api/health", async (bool? refresh, CancellationToken stop) =>
         {
@@ -146,13 +149,13 @@ public static class WebApp
 
     // ---------------- interviews ----------------
 
-    private static void MapInterviews(WebApplication app, WebServices services)
+    private static void MapInterviews(WebApplication app, WebServices services, PlantHostingService hosting, IPlantDirectory directory)
     {
         app.MapPost("/api/interviews", () =>
         {
             try
             {
-                var session = InterviewSession.Start(services.Library, new LazyModel(services), services.Interviews, services.InterviewOptions, services.Clock);
+                var session = InterviewSession.Start(services.Library, new LazyModel(services), services.Interviews, services.InterviewOptions, services.Clock, directory);
                 services.Log.Write("interview.started", null, new { interviewId = session.Id });
                 var record = services.Interviews.Load(session.Id)!;
                 return Results.Json(InterviewView.Build(record, services.Library, services.Datasets is not null, services.Dataset, false, services.Clock()), Json, statusCode: StatusCodes.Status201Created);
@@ -171,16 +174,66 @@ public static class WebApp
             catch (RuntimeFailure failure) { return Failure(failure, StatusCodes.Status503ServiceUnavailable); }
         });
 
+        // A file for the interview: JSON {"name": "…", "data": "<base64>"}, read,
+        // checked and converted by AttachmentReader, stored, and referenced by id
+        // in the next message. This endpoint alone accepts a large body.
+        app.MapPost("/api/interviews/{id:guid}/attachments", async (Guid id, HttpContext context) =>
+        {
+            if (context.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } size) size.MaxRequestBodySize = MaxAttachmentRequestBytes;
+            JsonObject? body;
+            try { body = await Body(context.Request); }
+            catch (BodyTooLarge)
+            {
+                return Error(StatusCodes.Status413PayloadTooLarge, "interview.attachment_too_large", $"Attach files up to {AttachmentReader.MaxFileBytes / 1024 / 1024} MB; split or export a smaller part.");
+            }
+            string? name = body?["name"] is JsonValue n && n.TryGetValue(out string? s1) ? s1 : null;
+            string? data = body?["data"] is JsonValue d && d.TryGetValue(out string? s2) ? s2 : null;
+            if (string.IsNullOrWhiteSpace(name) || data is null)
+                return Error(StatusCodes.Status400BadRequest, "interview.attachment_required", "Send {\"name\": \"file name\", \"data\": \"base64 content\"} to attach a file.");
+            byte[] bytes;
+            try { bytes = Convert.FromBase64String(data); }
+            catch (FormatException) { return Error(StatusCodes.Status400BadRequest, "interview.attachment_unreadable", "The file content was not valid base64. Attach the file again from the page."); }
+            try
+            {
+                var record = services.Interviews.Load(id);
+                if (record is null) return NotFound();
+                if (services.Interviews.CountAttachments(id) >= AttachmentReader.MaxFilesPerInterview)
+                    return Error(StatusCodes.Status409Conflict, "interview.too_many_attachments", $"An interview can hold {AttachmentReader.MaxFilesPerInterview} files. Describe the rest in a message, or start a new plant.");
+                var attachment = AttachmentReader.Read(id, name, bytes, services.Clock());
+                services.Interviews.SaveAttachment(attachment);
+                services.Log.Write("interview.attachment", null, new { interviewId = id, attachmentId = attachment.Id, kind = attachment.Kind, sizeBytes = attachment.SizeBytes, truncated = attachment.Truncated });
+                return Results.Json(new
+                {
+                    id = attachment.Id, name = attachment.Name, kind = attachment.Kind, sizeBytes = attachment.SizeBytes,
+                    characters = attachment.Text?.Length, truncated = attachment.Truncated
+                }, Json, statusCode: StatusCodes.Status201Created);
+            }
+            catch (RuntimeFailure failure) when (failure.Error.Code.StartsWith("interview.attachment", StringComparison.Ordinal))
+            {
+                return Failure(failure, StatusCodes.Status400BadRequest);
+            }
+            catch (RuntimeFailure failure) { return Failure(failure, StatusCodes.Status503ServiceUnavailable); }
+        });
+
         app.MapPost("/api/interviews/{id:guid}/messages", async (Guid id, HttpContext context) =>
         {
             JsonObject? body;
             try { body = await Body(context.Request); } catch (BodyTooLarge) { return TooLarge(); }
-            if (body?["text"] is not JsonValue textValue || !textValue.TryGetValue(out string? text))
-                return Error(StatusCodes.Status400BadRequest, "interview.text_required", "Send {\"text\": \"…\"} with the message for the interviewer.");
-            text = text.Trim();
+            string text = body?["text"] is JsonValue textValue && textValue.TryGetValue(out string? typed) ? typed.Trim() : "";
+            var attachments = new List<Guid>();
+            foreach (var item in body?["attachments"] as JsonArray ?? [])
+            {
+                if (item is not JsonValue v || !v.TryGetValue(out string? raw) || !Guid.TryParse(raw, out var attachmentId))
+                    return Error(StatusCodes.Status400BadRequest, "interview.attachment_not_found", "An attachment id was not valid. Remove the file and attach it again.");
+                attachments.Add(attachmentId);
+            }
             int limit = (services.InterviewOptions ?? new InterviewOptions()).MaxUserMessageCharacters;
-            if (text.Length == 0) return Error(StatusCodes.Status400BadRequest, "interview.empty_message", "Type a message for the interviewer.");
+            if (text.Length == 0 && attachments.Count == 0) return Error(StatusCodes.Status400BadRequest, "interview.empty_message", "Type a message for the interviewer, or attach a file.");
             if (text.Length > limit) return Error(StatusCodes.Status400BadRequest, "interview.message_too_long", $"Keep a message under {limit} characters.");
+            if (attachments.Distinct().Count() > AttachmentReader.MaxFilesPerMessage)
+                return Error(StatusCodes.Status400BadRequest, "interview.too_many_attachments", $"Attach at most {AttachmentReader.MaxFilesPerMessage} files to one message; send the rest with the next one.");
+            if (attachments.FirstOrDefault(a => services.Interviews.LoadAttachment(id, a) is null) is var missing && missing != Guid.Empty)
+                return Error(StatusCodes.Status400BadRequest, "interview.attachment_not_found", "An attached file is no longer stored for this interview. Remove it and attach it again.");
 
             var gate = services.Gate.TryEnter(id);
             if (gate is null)
@@ -190,12 +243,8 @@ public static class WebApp
             {
                 var record = services.Interviews.Load(id);
                 if (record is null) { gate.Dispose(); return NotFound(); }
-                if (record.ApprovedSimulation is not null)
-                {
-                    gate.Dispose();
-                    return Error(StatusCodes.Status409Conflict, "interview.approved", $"This interview was approved and {record.ApprovedSimulation} is running. Start a new interview to design another plant.");
-                }
-                session = InterviewSession.Resume(id, services.Library, new LazyModel(services), services.Interviews, services.InterviewOptions, services.Clock);
+                // An approved interview carries on as a change to its plant (InterviewState.LockedSimulation).
+                session = InterviewSession.Resume(id, services.Library, new LazyModel(services), services.Interviews, services.InterviewOptions, services.Clock, directory);
             }
             catch (RuntimeFailure failure) { gate.Dispose(); return Failure(failure, StatusCodes.Status503ServiceUnavailable); }
 
@@ -212,7 +261,7 @@ public static class WebApp
                     {
                         if (e.Kind == InterviewEventKind.Stopped && e.Code?.StartsWith("gage.", StringComparison.Ordinal) == true) services.Gage.ReportFailure(e.Code, e.Text);
                         events.Writer.TryWrite((EventName(e.Kind), new { text = e.Text, code = e.Code }));
-                    }, stopping);
+                    }, stopping, attachments);
                     if (turn.ModelCalls > 0) services.Gage.ReportWorking();
                     services.Log.Write("interview.turn", null, new
                     {
@@ -265,22 +314,120 @@ public static class WebApp
             try { body = await Body(context.Request); } catch (BodyTooLarge) { return TooLarge(); }
             if (body?["confirm"] is not JsonValue confirm || !confirm.TryGetValue(out bool confirmed) || !confirmed)
                 return Error(StatusCodes.Status400BadRequest, "approve.confirm_required", "Approving builds and runs the plant. Send {\"confirm\": true} from the confirmation step in the page.");
+            bool replace = body?["replaceExisting"] is JsonValue r && r.TryGetValue(out bool replacing) && replacing;
             using var gate = services.Gate.TryEnter(id);
             if (gate is null)
                 return Error(StatusCodes.Status409Conflict, "interview.busy", "The interviewer is still answering. Wait for the answer and review the preview, then approve.");
-            try { return await Approve(id, services, context.RequestServices.GetRequiredService<PlantHostingService>(), context.RequestAborted); }
+            try { return await Approve(id, replace, services, hosting, context.RequestAborted); }
             catch (RuntimeFailure failure) { return Failure(failure); }
+        });
+
+        // The Gage kit for the interview's current draft, before (or after) it is
+        // built: the names, tables and tags are the ones the plant gets.
+        app.MapGet("/api/interviews/{id:guid}/gage/{kind}", (Guid id, string kind, string? format) =>
+        {
+            try
+            {
+                var record = services.Interviews.Load(id);
+                if (record is null) return NotFound();
+                if (record.DraftModelJson is null)
+                    return Error(StatusCodes.Status409Conflict, "gage.no_draft", "There is no plant plan yet. Finish the interview until the preview is ready.");
+                var loaded = PlantModelLoader.Load(record.DraftModelJson, services.Clock());
+                if (!loaded.IsValid) return Error(StatusCodes.Status409Conflict, "gage.draft_invalid", "The plan no longer validates. Ask the interviewer to compose and preview it again.");
+                string dataset = record.ApprovedSimulation is { } built
+                    ? services.Registry.Find(built)?.Dataset ?? services.Dataset ?? built
+                    : services.Datasets is not null ? loaded.Model!.Simulation : services.Dataset ?? loaded.Model!.Simulation;
+                return GageKit(kind, format, services, record.NeedsJson, loaded.Model!, dataset);
+            }
+            catch (RuntimeFailure failure) { return Failure(failure, StatusCodes.Status503ServiceUnavailable); }
+        });
+
+        // A stop or start the interviewer proposed (propose_plant_action): the
+        // user confirms or cancels it here, from the bar in the page.
+        app.MapPost("/api/interviews/{id:guid}/plant-action", async (Guid id, HttpContext context) =>
+        {
+            JsonObject? body;
+            try { body = await Body(context.Request); } catch (BodyTooLarge) { return TooLarge(); }
+            bool confirmed = body?["confirm"] is JsonValue c && c.TryGetValue(out bool yes) && yes;
+            using var gate = services.Gate.TryEnter(id);
+            if (gate is null) return Error(StatusCodes.Status409Conflict, "interview.busy", "The interviewer is still answering. Wait for the answer, then confirm.");
+            try
+            {
+                var record = services.Interviews.Load(id);
+                if (record is null) return NotFound();
+                var needs = record.NeedsJson is null ? new JsonObject() : JsonNode.Parse(record.NeedsJson)!.AsObject();
+                if (needs[InterviewTools.PendingActionKey] is not JsonObject pending)
+                    return Error(StatusCodes.Status409Conflict, "plant_action.none", "There is no stop or start waiting for confirmation. Ask the interviewer again.");
+                string plant = pending["plant"]?.GetValue<string>() ?? "", action = pending["action"]?.GetValue<string>() ?? "";
+                needs.Remove(InterviewTools.PendingActionKey);
+                services.Interviews.SaveState(id, needs.ToJsonString(), record.DraftModelJson, record.PreviewJson);
+                string text;
+                if (!confirmed) text = $"Cancelled: {plant} was not {(action == "stop" ? "stopped" : "started")}.";
+                else
+                {
+                    if (Ownership(services, plant) is { } refused) return refused;
+                    if (action == "stop")
+                    {
+                        services.Registry.SetHostingEnabled(plant, false);
+                        await hosting.StopPlant(plant);
+                        text = $"{plant} was stopped. Start it again to continue where it left off.";
+                    }
+                    else
+                    {
+                        services.Registry.SetHostingEnabled(plant, true);
+                        hosting.StartPlant(plant);
+                        text = $"{plant} is starting. It catches up on the time it was stopped, then runs live.";
+                    }
+                    services.Log.Write("plant." + (action == "stop" ? "stop_requested" : "start_requested"), plant, new { interviewId = id, message = "Confirmed from the interview." });
+                }
+                services.Interviews.Append(id, [("notice", new JsonObject { ["code"] = "plant_action", ["text"] = text }.ToJsonString(), null)], record.Status == InterviewStatus.InTurn ? InterviewStatus.Open : record.Status);
+                return Results.Json(new { plant, action, done = confirmed, message = text }, Json);
+            }
+            catch (RuntimeFailure failure) { return Failure(failure); }
+        });
+
+        // A change to an existing plant continues in the interview that built it
+        // (change_plant). The page calls this to take the hand-off: it is cleared
+        // here, and the page opens the target interview and sends the request there.
+        app.MapPost("/api/interviews/{id:guid}/handoff", (Guid id) =>
+        {
+            try
+            {
+                var record = services.Interviews.Load(id);
+                if (record is null) return NotFound();
+                var needs = record.NeedsJson is null ? new JsonObject() : JsonNode.Parse(record.NeedsJson)!.AsObject();
+                if (needs[InterviewTools.HandoffKey] is not JsonObject handoff)
+                    return Error(StatusCodes.Status409Conflict, "handoff.none", "There is no plant change waiting to be opened.");
+                needs.Remove(InterviewTools.HandoffKey);
+                services.Interviews.SaveState(id, needs.ToJsonString(), record.DraftModelJson, record.PreviewJson);
+                string plant = handoff["plant"]?.GetValue<string>() ?? "";
+                if (!Guid.TryParse(handoff["interviewId"]?.GetValue<string>(), out var target) || services.Interviews.Load(target) is null)
+                    return Error(StatusCodes.Status409Conflict, "handoff.missing", $"The interview that built {plant} is no longer stored. Design the change as a new plant instead.");
+                return Results.Json(new { plant, interviewId = target, request = handoff["request"]?.GetValue<string>() ?? "" }, Json);
+            }
+            catch (RuntimeFailure failure) { return Failure(failure, StatusCodes.Status503ServiceUnavailable); }
         });
     }
 
-    private static async Task<IResult> Approve(Guid id, WebServices services, PlantHostingService hosting, CancellationToken stop)
+    private const string ApprovedDraftKey = InterviewState.ApprovedDraftKey;
+    private static string DraftHash(string draftJson) => InterviewState.DraftHash(draftJson);
+
+    private static async Task<IResult> Approve(Guid id, bool replace, WebServices services, PlantHostingService hosting, CancellationToken stop)
     {
         var record = services.Interviews.Load(id);
         if (record is null) return NotFound();
-        if (record.ApprovedSimulation is not null)
-            return Error(StatusCodes.Status409Conflict, "approve.already_approved", $"This interview was already approved as {record.ApprovedSimulation}. See the Plants tab.");
         if (record.DraftModelJson is null || record.PreviewJson is null)
             return Error(StatusCodes.Status409Conflict, "approve.no_preview", "There is no current preview to approve. Ask the interviewer to show the preview, review it, then approve.");
+        var needs = record.NeedsJson is null ? new JsonObject() : JsonNode.Parse(record.NeedsJson)!.AsObject();
+        string draftHash = DraftHash(record.DraftModelJson);
+        if (record.ApprovedSimulation is { } existing)
+        {
+            if (needs[ApprovedDraftKey]?.GetValue<string>() == draftHash)
+                return Error(StatusCodes.Status409Conflict, "approve.unchanged", $"This plan is what {existing} already runs. Ask the interviewer for a change, review the new preview, then approve.");
+            if (!replace)
+                return Error(StatusCodes.Status400BadRequest, "approve.replace_confirm_required", $"Approving rebuilds {existing}: its current tables and the tag history in its Dataset are deleted. Confirm both steps in the page (it sends replaceExisting: true).");
+            return await Rebuild(id, record, existing, needs, draftHash, services, hosting);
+        }
 
         // The anchor is fixed now, in whole seconds like the CLI; the history ends here.
         var now = services.Clock();
@@ -319,6 +466,9 @@ public static class WebApp
         }
         if (!services.Interviews.MarkApproved(id, model.Simulation))
             return Error(StatusCodes.Status409Conflict, "approve.already_approved", "This interview was approved by another request a moment ago. See the Plants tab.");
+        needs[ApprovedDraftKey] = draftHash;
+        needs[InterviewSession.ChangeBriefedKey] = false;
+        services.Interviews.SaveState(id, needs.ToJsonString(), record.DraftModelJson, record.PreviewJson);
         services.Registry.Add(model.Simulation, id, dataset ?? services.Dataset, datasetCreated: dataset is not null);
         hosting.StartPlant(model.Simulation);
         services.Log.Write("plant.approved", model.Simulation, new { interviewId = id, anchorUtc = registration.AnchorUtc, startUtc = registration.StartUtc, tables = PlantSchema.TablesFor(model).Count, dataset = dataset ?? services.Dataset, datasetCreated = dataset is not null });
@@ -471,6 +621,10 @@ public static class WebApp
             return Results.Text(spec["atlas"]!.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), "application/json");
         }));
 
+        // The Gage kit of a built plant: prompts, and the Connect and Atlas briefs to hand Gage.
+        app.MapGet("/api/plants/{name}/gage/{kind}", (string name, string kind, string? format) => Download(services, name, model =>
+            GageKit(kind, format, services, FindInterview(services, name)?.NeedsJson, model, services.Registry.Find(name)?.Dataset ?? services.Dataset)));
+
         app.MapGet("/api/plants/{name}/demo-guide", (string name, string? format) => Download(services, name, model =>
         {
             var interview = services.Interviews.ApprovedSimulations().Contains(name) ? FindInterview(services, name) : null;
@@ -481,6 +635,98 @@ public static class WebApp
     }
 
     /// <summary>Stop, start and remove are only for plants approved in a web interview (flowsim_interviews.approved_simulation).</summary>
+    /// <summary>
+    /// Replaces a running plant with this interview's new draft, under the same
+    /// name: stop it, empty its own Dataset (delete and create it again, same
+    /// name and purge age), drop its tables, admit the new model with the anchor
+    /// fixed now, and start it. Connect and Atlas setups that use its tables and
+    /// tags keep working; the old data is gone. Each step that can fail before
+    /// the tables are dropped leaves the old plant as it was and restarts it.
+    /// </summary>
+    private static async Task<IResult> Rebuild(Guid id, InterviewRecord record, string existing, JsonObject needs, string draftHash,
+        WebServices services, PlantHostingService hosting)
+    {
+        if (Ownership(services, existing) is { } refused) return refused;
+        var now = services.Clock();
+        var anchor = new DateTimeOffset(now.UtcTicks - now.UtcTicks % TimeSpan.TicksPerSecond, TimeSpan.Zero);
+        var loaded = PlantModelLoader.Load(record.DraftModelJson!, anchor);
+        if (!loaded.IsValid)
+            return Results.Json(new
+            {
+                error = new { code = "approve.draft_invalid", message = "The draft no longer validates at the current time. Ask the interviewer to compose and preview it again." },
+                errors = loaded.Errors.Take(10)
+            }, Json, statusCode: StatusCodes.Status409Conflict);
+        var model = loaded.Model!;
+        if (model.Simulation != existing)
+            return Error(StatusCodes.Status409Conflict, "approve.name_changed", $"The new draft is named {model.Simulation}, but this interview changes {existing}. Ask the interviewer to compose it again as {existing}.");
+
+        var entry = services.Registry.Find(existing);
+        bool wasEnabled = entry?.HostingEnabled != false;
+        await hosting.StopPlant(existing);
+        string? dataset = entry?.DatasetCreated == true && services.Datasets is not null ? entry.Dataset : null;
+        if (dataset is not null)
+        {
+            try
+            {
+                await services.Datasets!.Delete(dataset, CancellationToken.None);
+                await services.Datasets.Create(dataset, CancellationToken.None);
+            }
+            catch (RuntimeFailure failure)
+            {
+                if (wasEnabled) hosting.StartPlant(existing);
+                services.Log.Write("plant.rebuild_failed", existing, new { step = "dataset", code = failure.Error.Code });
+                return Error(StatusCodes.Status502BadGateway, "approve.dataset_failed",
+                    $"{existing} was not rebuilt: its Dataset {dataset} could not be emptied ({failure.Message}). Its tables are unchanged. Check Historian → Datasets, then approve again.");
+            }
+        }
+        int dropped = services.Plants.Remove(existing);
+        hosting.Forget(existing);
+        PlantRegistration registration;
+        try { registration = services.Plants.Admit(model, record.DraftModelJson!); }
+        catch (RuntimeFailure failure)
+        {
+            services.Log.Write("plant.rebuild_failed", existing, new { step = "admit", code = failure.Error.Code, droppedTables = dropped });
+            return Error(StatusCodes.Status500InternalServerError, "approve.rebuild_failed",
+                $"{existing}'s old tables were removed, but the new plan could not be admitted: {failure.Message} Ask the interviewer to compose and preview the change again, then approve.");
+        }
+        services.Registry.Add(existing, id, dataset ?? entry?.Dataset ?? services.Dataset, datasetCreated: dataset is not null);
+        services.Registry.SetHostingEnabled(existing, true);
+        hosting.StartPlant(existing);
+        needs[ApprovedDraftKey] = draftHash;
+        needs[InterviewSession.ChangeBriefedKey] = false;
+        services.Interviews.SaveState(id, needs.ToJsonString(), record.DraftModelJson, record.PreviewJson);
+        services.Interviews.SetStatus(id, InterviewStatus.Approved);
+        services.Log.Write("plant.rebuilt", existing, new { interviewId = id, anchorUtc = registration.AnchorUtc, startUtc = registration.StartUtc, droppedTables = dropped, datasetEmptied = dataset is not null });
+        return Results.Json(new
+        {
+            simulation = existing, replaced = true,
+            tablePrefix = model.TablePrefix, tagRoot = model.TagRoot,
+            anchorUtc = registration.AnchorUtc, startUtc = registration.StartUtc,
+            dataset = dataset ?? entry?.Dataset ?? services.Dataset, datasetEmptied = dataset is not null,
+            tables = PlantSchema.TablesFor(model).Select(t => PlantSchema.PhysicalName(model, t.Purpose)).ToList(),
+            message = $"{existing} was rebuilt from the new plan: its old tables{(dataset is null ? "" : " and the tag history in " + dataset)} were deleted, and it is backfilling, then runs live."
+        }, Json, statusCode: StatusCodes.Status201Created);
+    }
+
+    /// <summary>One part of the Gage kit, as a file to save: prompts (Markdown, or JSON with format=json), or the Connect or Atlas brief.</summary>
+    private static IResult GageKit(string kind, string? format, WebServices services, string? needsJson, PlantModel model, string? dataset)
+    {
+        string File(string suffix) => $"{model.Simulation}-{suffix}.md";
+        IResult Markdown(string text, string suffix) => Results.File(System.Text.Encoding.UTF8.GetBytes(text), "text/markdown; charset=utf-8", File(suffix));
+        switch (kind)
+        {
+            case "prompts":
+                var prompts = DemoGuide.GagePrompts(services.Library, needsJson, model, dataset);
+                return format == "json" ? Results.Json(prompts, Json) : Markdown(DemoGuide.GagePromptsMarkdown(prompts, model), "gage-prompts");
+            case "connect":
+                return Markdown(DemoGuide.GageConnectBrief(services.Library, needsJson, model, dataset), "gage-connect");
+            case "atlas":
+                return Markdown(DemoGuide.GageAtlasBrief(services.Library, needsJson, model, dataset), "gage-atlas");
+            default:
+                return Error(StatusCodes.Status404NotFound, "gage.unknown_kit", "The Gage kit has prompts, connect and atlas.");
+        }
+    }
+
     private static IResult? Ownership(WebServices services, string name)
     {
         try

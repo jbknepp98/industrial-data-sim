@@ -18,6 +18,7 @@ const num = n => n == null ? '—' : Number(n).toLocaleString();
 let interviewId = null;
 let interview = null;
 let sending = false;
+let pendingFiles = [];   // files attached to the next message: { name, size, state: uploading | ready | error, id, kind, message }
 let gageOk = true;
 let renderedPreviewKey = null;
 let plantsTimer = null;
@@ -41,27 +42,96 @@ async function api(method, url, body) {
 
 // ---------------- theme and tabs ----------------
 
-function applyTheme(theme) {
-  if (theme) document.documentElement.dataset.theme = theme; else delete document.documentElement.dataset.theme;
+// One button cycles System → Light → Dark, as in Historian and the other Timebase
+// apps; its icon (Lucide monitor, sun, moon) shows the current mode.
+const THEMES = {
+  system: { label: 'System theme', icon: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>' },
+  light: { label: 'Light theme', icon: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>' },
+  dark: { label: 'Dark theme', icon: '<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>' }
+};
+const THEME_ORDER = ['system', 'light', 'dark'];
+let theme = THEMES[store.get('flowsim.theme')] ? store.get('flowsim.theme') : 'system';
+function applyTheme(next) {
+  theme = next;
+  if (theme === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
+  $('theme-icon').innerHTML = THEMES[theme].icon;
+  $('theme').setAttribute('aria-label', THEMES[theme].label);
+  $('theme').title = THEMES[theme].label;
 }
-applyTheme(store.get('flowsim.theme'));
+applyTheme(theme);
 $('theme').addEventListener('click', () => {
-  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-  const next = dark ? 'light' : 'dark';
-  applyTheme(next); store.set('flowsim.theme', next);
+  applyTheme(THEME_ORDER[(THEME_ORDER.indexOf(theme) + 1) % THEME_ORDER.length]);
+  store.set('flowsim.theme', theme);
   renderedPreviewKey = null; renderPreview(); // the preview reads colors when it draws
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (theme === 'system') { renderedPreviewKey = null; renderPreview(); }
+});
+
+// Like the other Timebase apps: the sidebar opens a view as a tab in the top strip;
+// a tab closes with its ×, and the last open tab stays.
+const VIEWS = {
+  interview: { title: 'Interview', icon: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>' },
+  plants: { title: 'Plants', icon: '<path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/>' }
+};
+const openTabs = [];
+let currentTab = null;
+
+function renderTabs() {
+  $('open-tabs').innerHTML = openTabs.map(t => `<div class="tab${t === currentTab ? ' active' : ''}">
+    <button type="button" class="tab-open" data-tab="${t}"${t === currentTab ? ' aria-current="page"' : ''}><svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${VIEWS[t].icon}</svg><span>${VIEWS[t].title}</span></button>
+    ${openTabs.length > 1 ? `<button type="button" class="tab-close" data-close="${t}" aria-label="Close ${VIEWS[t].title}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>` : ''}</div>`).join('');
+}
+$('open-tabs').addEventListener('click', e => {
+  const close = e.target.closest('[data-close]');
+  if (close) {
+    const i = openTabs.indexOf(close.dataset.close);
+    openTabs.splice(i, 1);
+    if (close.dataset.close === currentTab) return showTab(openTabs[Math.max(0, i - 1)]);
+    return renderTabs();
+  }
+  const open = e.target.closest('[data-tab]');
+  if (open) showTab(open.dataset.tab);
 });
 
 function showTab(name) {
-  for (const t of ['interview', 'plants']) {
+  if (!openTabs.includes(name)) openTabs.push(name);
+  currentTab = name;
+  for (const t of Object.keys(VIEWS)) {
     $('tab-' + t).setAttribute('aria-selected', String(t === name));
     $('view-' + t).hidden = t !== name;
   }
+  renderTabs();
   clearInterval(plantsTimer);
   if (name === 'plants') { loadPlants(); plantsTimer = setInterval(loadPlants, 5000); }
 }
 $('tab-interview').addEventListener('click', () => showTab('interview'));
 $('tab-plants').addEventListener('click', () => showTab('plants'));
+
+function applySidebar(collapsed) {
+  document.body.classList.toggle('collapsed', collapsed);
+  $('collapse').setAttribute('aria-expanded', String(!collapsed));
+  $('collapse').setAttribute('aria-label', collapsed ? 'Expand the sidebar' : 'Collapse the sidebar');
+}
+applySidebar(store.get('flowsim.sidebar') === 'collapsed');
+$('collapse').addEventListener('click', () => {
+  const collapsed = !document.body.classList.contains('collapsed');
+  applySidebar(collapsed); store.set('flowsim.sidebar', collapsed ? 'collapsed' : null);
+});
+
+let lastHealth = null;
+function renderInstance() {
+  const h = lastHealth, g = h?.gage;
+  $('instance-facts').innerHTML = h
+    ? `<dt>Page</dt><dd>${esc(h.status)}</dd><dt>Postgres</dt><dd>${esc(h.database)} · <code>flow_data_sim</code></dd><dt>Gage</dt><dd>${esc(g?.state || 'unknown')}${g?.answeredBy ? ` · <code>${esc(g.answeredBy)}</code>` : ''}</dd>${g?.checkedUtc ? `<dt>Checked</dt><dd>${esc(fmtTime(g.checkedUtc))}</dd>` : ''}`
+    : '<dt>Status</dt><dd>Not checked yet</dd>';
+}
+$('instance').addEventListener('click', () => {
+  const open = $('instance-info').hidden;
+  $('instance-info').hidden = !open;
+  $('instance').setAttribute('aria-expanded', String(open));
+  if (open) renderInstance();
+});
 
 // ---------------- Gage health ("explain and stop") ----------------
 
@@ -78,6 +148,8 @@ function showGage(gage) {
 async function loadHealth(refresh) {
   try {
     const health = await api('GET', '/api/health' + (refresh ? '?refresh=true' : ''));
+    lastHealth = health;
+    if (!$('instance-info').hidden) renderInstance();
     showGage(health.gage);
     if (health.gage.state === 'unchecked') setTimeout(() => loadHealth(false), 3000);
   } catch (e) { /* the page keeps working; the next turn reports problems */ }
@@ -93,8 +165,42 @@ $('gage-recheck').addEventListener('click', async () => {
 function setInterviewId(id) {
   interviewId = id;
   store.set('flowsim.interview', id);
-  history.replaceState(null, '', id ? '#interview=' + id : location.pathname);
+  if (!id) step = 'chat';
+  writeHash();
 }
+function writeHash() {
+  history.replaceState(null, '', interviewId ? '#interview=' + interviewId + (step === 'review' ? '&step=review' : '') : location.pathname);
+}
+
+// ---------------- steps: Interview, then Review plan ----------------
+// Once a plant has been previewed, the conversation can be put away: Review plan
+// (in the Ready to build band) hides the chat and gives Storylines, the needs
+// profile and the plant preview the full width; Back to Interview returns. The
+// step is kept in the URL (&step=review), so a reload keeps it.
+let step = /[#&]step=review\b/.test(location.hash) ? 'review' : 'chat';
+function setStep(next) {
+  if (next === 'review' && !interview?.preview) next = 'chat';
+  const changed = next !== step;
+  step = next;
+  document.body.classList.toggle('step-review', step === 'review');
+  // The band's actions follow the step: Review plan on the interview, then
+  // Back to Interview on the left and Approve plan on the right.
+  $('dock-back').hidden = step !== 'review';
+  $('dock-review').hidden = step === 'review';
+  $('approve-open').hidden = step !== 'review';
+  if (step !== 'review') { $('approve-confirm').hidden = true; $('approve-bar').hidden = false; }
+  renderDockText();
+  writeHash();
+  if (changed) {
+    renderedPreviewKey = null; renderPreview();   // redraw the preview at its new width
+    window.scrollTo({ top: 0 });
+    if (step === 'chat') { const box = $('messages'); box.scrollTop = box.scrollHeight; }
+    $(step === 'review' ? 'approve-open' : 'dock-review').focus({ preventScroll: true });
+  }
+}
+$('dock-review').addEventListener('click', () => setStep('review'));
+$('dock-back').addEventListener('click', () => setStep('chat'));
+function renderSteps() { setStep(step); }
 
 async function startInterview() {
   try {
@@ -118,11 +224,15 @@ async function loadInterview() {
   }
 }
 
+// + New plant in the top bar is the one place a plant is started: a fresh
+// interview on step 1.
 $('new-interview').addEventListener('click', () => {
   if (sending) return;
   setInterviewId(null);
   $('messages').innerHTML = '';
+  pendingFiles = []; renderPendingFiles();
   startInterview();
+  setStep('chat');
   showTab('interview');
 });
 
@@ -169,6 +279,13 @@ function messageElement(item) {
   if (item.role === 'tool') { div.className = 'toolchip'; div.textContent = item.text; return div; }
   div.className = 'msg ' + item.role + (item.bad ? ' bad' : '');
   if (item.role === 'assistant') div.innerHTML = formatText(item.text);
+  else if (item.role === 'user' && item.attachments?.length) {
+    const files = document.createElement('div');
+    files.className = 'msg-files';
+    for (const file of item.attachments) files.appendChild(fileChip(file));
+    div.appendChild(files);
+    if (item.text) { const p = document.createElement('div'); p.textContent = item.text; div.appendChild(p); }
+  }
   else div.textContent = item.text;
   return div;
 }
@@ -193,25 +310,44 @@ function append(item) {
   return element;
 }
 
+function renderDockText() {
+  const name = interview?.approval?.simulation;
+  if (!name) return;
+  const rebuild = !!interview.approval.replaces;
+  $('approve-sub').innerHTML = `<code>${esc(name)}</code> · ` + (rebuild
+    ? (step === 'review' ? 'Approving deletes its current data and rebuilds it from this plan.' : 'The interviewer has a changed plan. Review it before you rebuild.')
+    : (step === 'review' ? 'Check the storylines and the preview. Nothing is written until you approve.' : 'The interviewer has a plan. Review it before you approve.'));
+}
+
 function updateComposer() {
-  const approved = !!interview?.approvedSimulation;
+  // The Ready to build band waits until the interviewer's turn is over.
+  document.body.classList.toggle('turn-running', sending);
+  // An approved interview stays open: messages there change its plant.
   const blocked = !gageOk;
-  $('send').disabled = sending || blocked || approved || !interviewId;
-  $('input').disabled = blocked || approved;
-  $('composer-hint').textContent = approved ? 'Approved. Start a new interview to design another plant.'
-    : blocked ? 'Stopped until Pulse can reach a model (see the banner above).'
+  const uploading = pendingFiles.some(f => f.state === 'uploading');
+  $('send').disabled = sending || blocked || !interviewId || uploading;
+  $('input').disabled = blocked;
+  $('attach').disabled = blocked || !interviewId;
+  $('composer-hint').textContent = blocked ? 'Stopped until Pulse can reach a model (see the banner above).'
     : sending ? 'The interviewer is working…' : 'Enter sends · Shift+Enter for a new line';
 }
 
 // ---------------- rendering: side panel ----------------
 
 function renderInterview() {
+  const plant = interview.approvedSimulation;
+  $('plant-context').hidden = !plant;
+  if (plant) {
+    $('plant-context').textContent = `Plant: ${plant}`;
+    $('plant-context').title = `This interview built ${plant}. Changes you approve here rebuild it.`;
+  }
   renderMessages(interview.messages);
   renderStorylines();
   renderNeeds();
   renderApproval();
   renderPreview();
   renderLive();
+  renderSteps();
   updateComposer();
 }
 
@@ -235,9 +371,27 @@ function renderNeeds() {
 
 function renderApproval() {
   const approval = interview.approval;
-  const show = !!approval && !interview.approvedSimulation;
+  const action = interview.pendingAction;
+  const show = !!approval || !!action;
   $('approve-card').hidden = !show;
-  if (!show) return;
+  document.body.classList.toggle('approve-docked', show);
+  // A stop or start the interviewer proposed takes the band until it is confirmed or cancelled.
+  $('action-bar').hidden = !action;
+  if (action) {
+    $('approve-bar').hidden = true; $('approve-confirm').hidden = true;
+    const verb = action.action === 'stop' ? 'Stop' : 'Start';
+    $('action-title').textContent = `${verb} ${action.plant}?`;
+    $('action-yes').textContent = `${verb} plant`;
+    return;
+  }
+  $('approve-bar').hidden = !$('approve-confirm').hidden;
+  if (!approval) return;
+  const rebuild = !!approval.replaces;
+  $('dock-title').textContent = rebuild ? 'Ready to rebuild' : 'Ready to build';
+  $('approve-heading').textContent = rebuild ? `Rebuild ${approval.replaces} from this plan?` : 'Build and run this plant?';
+  $('rebuild-warning').hidden = !rebuild;
+  document.querySelectorAll('.rebuild-name').forEach(n => { n.textContent = approval.replaces || ''; });
+  $('approve-yes').textContent = rebuild ? `Rebuild ${approval.replaces}` : 'Approve plan';
   if (!approval.valid) {
     $('approve-open').disabled = true;
     $('approve-error').hidden = false;
@@ -245,10 +399,13 @@ function renderApproval() {
     return;
   }
   $('approve-open').disabled = false;
+  renderDockText();
   $('approve-facts').innerHTML = [
     ['Simulation', `<code>${esc(approval.simulation)}</code>`],
     ['Backfill', esc(approval.backfill || 'base default') + ` (history from ${esc(fmtTime(approval.historyStartsUtc))})`],
-    ['Dataset', approval.newDataset
+    ['Dataset', rebuild && approval.dataset
+      ? `<code>${esc(approval.dataset)}</code> <span class="muted">emptied and reused: its tag history is deleted</span>`
+      : approval.newDataset
       ? `<code>${esc(approval.dataset)}</code> <span class="muted">new, created on approval, purge age ${esc(approval.datasetPurgeAgeDays)} days</span>`
       : approval.dataset ? `<code>${esc(approval.dataset)}</code>` : '<span class="muted">none: rows only, no Historian configured</span>'],
     ['Tag root', `<code>${esc(approval.tagRoot)}</code>`],
@@ -258,15 +415,76 @@ function renderApproval() {
   $('approve-tables').innerHTML = approval.tables.map(t => `<li><code>${esc(t)}</code></li>`).join('');
 }
 
-$('approve-open').addEventListener('click', () => { $('approve-confirm').hidden = false; $('approve-open').hidden = true; $('approve-error').hidden = true; });
-$('approve-no').addEventListener('click', () => { $('approve-confirm').hidden = true; $('approve-open').hidden = false; });
+$('approve-open').addEventListener('click', () => {
+  $('approve-confirm').hidden = false; $('approve-bar').hidden = true; $('approve-error').hidden = true;
+  // Rebuilding a running plant takes a second, explicit step: tick the box, then Rebuild.
+  const rebuild = !!interview?.approval?.replaces;
+  $('rebuild-ack').checked = false;
+  $('approve-yes').disabled = rebuild;
+  (rebuild ? $('rebuild-ack') : $('approve-yes')).focus();
+});
+$('rebuild-ack').addEventListener('change', () => { $('approve-yes').disabled = !$('rebuild-ack').checked; });
+async function answerAction(confirm) {
+  $('action-yes').disabled = $('action-cancel').disabled = true;
+  $('approve-error').hidden = true;
+  try {
+    const result = await api('POST', `/api/interviews/${interviewId}/plant-action`, { confirm });
+    await loadInterview();
+    if (confirm && currentTab === 'plants') loadPlants();
+    return result;
+  } catch (e) {
+    $('approve-error').hidden = false;
+    $('approve-error').textContent = e.message + (e.code ? ` (${e.code})` : '');
+  } finally { $('action-yes').disabled = $('action-cancel').disabled = false; }
+}
+$('action-yes').addEventListener('click', () => answerAction(true));
+$('action-cancel').addEventListener('click', () => answerAction(false));
+$('approve-no').addEventListener('click', () => { $('approve-confirm').hidden = true; $('approve-bar').hidden = false; $('approve-open').focus(); });
+
+// Wide layout: the chat panel ends 16 px above the window's bottom edge (or above
+// the Ready to build band) whether the page is scrolled or not, so the composer
+// stays in view. (CSS alone cannot: the panel starts below
+// the page title, then sticks under the top bar.)
+const chatPanel = document.querySelector('.chat');
+let fitQueued = false;
+function fitChat() {
+  fitQueued = false;
+  if (matchMedia('(max-width: 980px)').matches) { chatPanel.style.height = ''; return; }
+  const top = Math.max(chatPanel.getBoundingClientRect().top, 72);
+  const dock = $('approve-card');
+  const reserve = dock.hidden ? 0 : dock.offsetHeight;
+  chatPanel.style.height = Math.max(420, window.innerHeight - top - reserve - 16) + 'px';
+}
+const queueFit = () => { if (!fitQueued) { fitQueued = true; requestAnimationFrame(fitChat); } };
+window.addEventListener('scroll', queueFit, { passive: true });
+window.addEventListener('resize', queueFit);
+// Also refit when the view is shown or anything above it (the Gage banner) changes size.
+if ('ResizeObserver' in window) {
+  const ro = new ResizeObserver(queueFit); ro.observe(document.body); ro.observe($('view-interview'));
+  new ResizeObserver(() => { document.body.style.setProperty('--dock-h', $('approve-card').offsetHeight + 'px'); queueFit(); }).observe($('approve-card'));
+}
+queueFit();
+
+// The chat footer (the composer) floats over the
+// messages; keep the last message clear of it whatever its height.
+if ('ResizeObserver' in window) {
+  new ResizeObserver(([entry]) => {
+    document.querySelector('.chat').style.setProperty('--foot-h', Math.ceil(entry.borderBoxSize?.[0]?.blockSize ?? entry.target.offsetHeight) + 'px');
+  }).observe($('chat-foot'));
+}
 $('approve-yes').addEventListener('click', async () => {
   $('approve-yes').disabled = true;
   $('approve-error').hidden = true;
   try {
-    await api('POST', `/api/interviews/${interviewId}/approve`, { confirm: true });
-    $('approve-confirm').hidden = true; $('approve-open').hidden = false;
+    const replaceExisting = !!interview?.approval?.replaces;
+    if (replaceExisting && !$('rebuild-ack').checked) return;
+    await api('POST', `/api/interviews/${interviewId}/approve`, { confirm: true, replaceExisting });
+    $('approve-confirm').hidden = true; $('approve-bar').hidden = false;
+    const approvedName = interview?.approval?.simulation;
     await loadInterview();
+    // Show the plant where it now lives: the Plants list, its row open, Backfilling until it catches up.
+    if (approvedName) expandedPlants.add(approvedName);
+    showTab('plants');
   } catch (e) {
     $('approve-error').hidden = false;
     $('approve-error').textContent = e.message + (e.code ? ` (${e.code})` : '');
@@ -276,14 +494,60 @@ $('approve-yes').addEventListener('click', async () => {
 function renderPreview() {
   const preview = interview?.preview;
   $('preview-section').hidden = !preview;
+  $('gage-kit').hidden = !preview;
   if (!preview) { renderedPreviewKey = null; return; }
   const key = interview.id + preview.anchorUtc + preview.changeCount;
   if (key === renderedPreviewKey) return;
   renderedPreviewKey = key;
+  renderGageKit();
   try {
     PlantPreviewRenderer.render($('preview'), PlantPreviewRenderer.fromPreview(preview));
   } catch (e) {
     $('preview').innerHTML = '<p class="error">The preview could not be drawn. Ask the interviewer to run the preview again.</p>';
+  }
+}
+
+// The Gage kit at the bottom of Review plan: sample prompts with a copy button,
+// and the Connect and Atlas briefs to hand Gage. Served for the interview's
+// plan, so it stays available after the plant is built (and on the Plants tab).
+// Files to save carry a download symbol and save straight away; the demo guide
+// (HTML) is a page to read, so it opens in a new tab instead.
+const DOWNLOAD_ICON = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>';
+const OPEN_ICON = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
+function downloadLink(href, label, file = '') { return `<a class="file" href="${href}" download="${esc(file)}" title="Download ${label}">${DOWNLOAD_ICON}<span>${label}</span></a>`; }
+function viewLink(href, label) { return `<a class="file" href="${href}" target="_blank" rel="noopener" title="Open ${label} in a new tab">${OPEN_ICON}<span>${label}</span></a>`; }
+function gageLinks(base) {
+  return [[`${base}/gage/connect`, 'Gage brief: Connect'], [`${base}/gage/atlas`, 'Gage brief: Atlas'], [`${base}/gage/prompts`, 'Gage prompts']]
+    .map(([href, label]) => downloadLink(href, label)).join('');
+}
+function plantFiles(base) {
+  const name = decodeURIComponent(base.split('/').pop());
+  return viewLink(`${base}/demo-guide?format=html`, 'Demo guide') + downloadLink(`${base}/demo-guide`, 'Demo guide (Markdown)', `${name}-demo-guide.md`) +
+    downloadLink(`${base}/connect-spec`, 'Connect spec', `${name}-connect-spec.md`) + downloadLink(`${base}/connect-spec?format=json`, 'Connect spec (JSON)', `${name}-connect-spec.json`) +
+    downloadLink(`${base}/atlas-starter`, 'Atlas starter', `${name}-atlas-starter.json`) + gageLinks(base);
+}
+async function renderGageKit() {
+  const id = interview?.id;
+  const base = `/api/interviews/${id}`;
+  $('gage-downloads').innerHTML = gageLinks(base);
+  let prompts = [];
+  try { prompts = await api('GET', `${base}/gage/prompts?format=json`); } catch { /* the downloads still work */ }
+  if (interview?.id !== id) return;
+  $('gage-prompts').innerHTML = '';
+  for (const p of prompts) {
+    const item = document.createElement('li');
+    item.className = 'prompt';
+    item.innerHTML = `<div class="prompt-head"><b></b><button type="button" class="copy">Copy</button></div><blockquote></blockquote><span class="muted"></span>`;
+    item.querySelector('b').textContent = p.title;
+    item.querySelector('blockquote').textContent = p.prompt;
+    item.querySelector('.muted').textContent = 'Expect: ' + p.expect;
+    const button = item.querySelector('.copy');
+    button.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(p.prompt); button.textContent = 'Copied'; }
+      catch { const range = document.createRange(); range.selectNodeContents(item.querySelector('blockquote')); getSelection().removeAllRanges(); getSelection().addRange(range); button.textContent = 'Selected'; }
+      setTimeout(() => { button.textContent = 'Copy'; }, 1600);
+    });
+    $('gage-prompts').appendChild(item);
   }
 }
 
@@ -295,10 +559,7 @@ function renderLive() {
   if (!name) return;
   $('live-title').textContent = name;
   const base = `/api/plants/${encodeURIComponent(name)}`;
-  $('live-downloads').innerHTML = [
-    [`${base}/demo-guide?format=html`, 'Demo guide'], [`${base}/demo-guide`, 'Demo guide (Markdown)'],
-    [`${base}/connect-spec`, 'Connect spec'], [`${base}/connect-spec?format=json`, 'Connect spec (JSON)'], [`${base}/atlas-starter`, 'Atlas starter']
-  ].map(([href, label]) => `<a href="${href}" target="_blank" rel="noopener">${label}</a>`).join('');
+  $('live-downloads').innerHTML = plantFiles(base);
   const refresh = async () => {
     try {
       const data = await api('GET', '/api/plants');
@@ -306,7 +567,7 @@ function renderLive() {
       if (!plant) { $('live-facts').innerHTML = '<dt>Status</dt><dd>Removed from flow_data_sim</dd>'; $('live-downloads').innerHTML = ''; clearInterval(liveTimer); return; }
       const h = plant.hosting;
       $('live-facts').innerHTML = [
-        ['Status', `<span class="badge ${esc(h.state)}">${esc(h.state.replace('_', ' '))}</span>${h.message ? ` <span class="muted">${esc(h.message)}</span>` : ''}`],
+        ['Status', `<span class="badge ${esc(shownState(h.state))}">${esc(stateLabel(h.state))}</span>${h.message ? ` <span class="muted">${esc(h.message)}</span>` : ''}`],
         ['Delivered through', esc(fmtTime(h.throughUtc || plant.tagCursorUtc))],
         ['Rows · tag points', `${num(h.rowsApplied)} · ${num(h.pointsPublished)} this run`],
         ['Tag root', `<code>${esc(name)}</code>`],
@@ -321,15 +582,15 @@ function renderLive() {
 
 // ---------------- sending a message (SSE over the POST response) ----------------
 
-async function send(text) {
+async function send(text, attachments = []) {
   if (sending || !interviewId) return;
   sending = true; updateComposer();
-  append({ role: 'user', text });
+  append({ role: 'user', text, attachments });
   let chip = null;
   const finishChip = () => { chip?.classList.remove('running'); chip = null; };
   try {
     const response = await fetch(`/api/interviews/${interviewId}/messages`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' }, body: JSON.stringify({ text })
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' }, body: JSON.stringify({ text, attachments: attachments.map(a => a.id) })
     });
     if (!response.ok) {
       let data = null; try { data = await response.json(); } catch { }
@@ -365,15 +626,122 @@ async function send(text) {
     sending = false;
     await loadInterview(); // the stored state is the truth: cards, preview, approval
   }
+  if (interview?.handoff) await followHandoff();
+}
+
+// change_plant: a change to an existing plant continues in the interview that
+// built it. Take the hand-off, open that interview, and send the request there.
+async function followHandoff() {
+  let handoff;
+  try { handoff = await api('POST', `/api/interviews/${interviewId}/handoff`); }
+  catch (e) { append({ role: 'notice', text: e.message, bad: true }); return; }
+  append({ role: 'notice', text: `Opening ${handoff.plant}'s own interview to make this change…` });
+  await new Promise(resolve => setTimeout(resolve, 900));
+  setInterviewId(handoff.interviewId);
+  pendingFiles = []; renderPendingFiles();
+  setStep('chat'); showTab('interview');
+  await loadInterview();
+  if (handoff.request) await send(handoff.request);
 }
 
 $('composer').addEventListener('submit', e => {
   e.preventDefault();
   const text = $('input').value.trim();
-  if (!text || $('send').disabled) return;
+  const ready = pendingFiles.filter(f => f.state === 'ready');
+  if ((!text && !ready.length) || $('send').disabled) return;
   $('input').value = '';
-  send(text);
+  growInput();
+  pendingFiles = [];
+  renderPendingFiles();
+  send(text, ready.map(f => ({ id: f.id, name: f.name, kind: f.kind })));
 });
+
+// ---------------- attachments ----------------
+// Files go to the server as soon as they are picked (POST …/attachments, base64
+// in JSON); the message then refers to them by id. The server checks the type
+// by content, converts Excel and Word to text, and refuses what it cannot read.
+const MAX_FILE_BYTES = 10 * 1024 * 1024, MAX_FILES_PER_MESSAGE = 5;
+const KIND_LABEL = { pdf: 'PDF', image: 'Image', text: 'Text' };
+function fileExtension(name) { return (/\.([a-z0-9]+)$/i.exec(name)?.[1] || '').toUpperCase(); }
+function sizeText(bytes) { return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB'; }
+function fileChip(file, onRemove) {
+  const chip = document.createElement('span');
+  chip.className = 'file-chip' + (file.state ? ' ' + file.state : '');
+  const badge = document.createElement('span');
+  badge.className = 'file-badge';
+  badge.textContent = fileExtension(file.name || '') || KIND_LABEL[file.kind] || 'FILE';
+  const label = document.createElement('span');
+  label.className = 'file-name';
+  label.textContent = file.name;
+  chip.title = file.message || file.name;
+  chip.append(badge, label);
+  if (file.state) {
+    const meta = document.createElement('span');
+    meta.className = 'file-meta';
+    meta.textContent = file.state === 'uploading' ? 'Uploading…' : file.state === 'error' ? file.message : sizeText(file.size) + (file.truncated ? ' · first part only' : '');
+    chip.appendChild(meta);
+  }
+  if (onRemove) {
+    const remove = document.createElement('button');
+    remove.type = 'button'; remove.className = 'file-remove'; remove.setAttribute('aria-label', 'Remove ' + file.name);
+    remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+    remove.addEventListener('click', onRemove);
+    chip.appendChild(remove);
+  }
+  return chip;
+}
+function renderPendingFiles() {
+  const box = $('files');
+  box.innerHTML = '';
+  for (const file of pendingFiles)
+    box.appendChild(fileChip(file, () => { pendingFiles = pendingFiles.filter(f => f !== file); renderPendingFiles(); $('input').focus(); }));
+  box.hidden = pendingFiles.length === 0;
+  updateComposer();
+}
+function readBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+async function addFiles(list) {
+  if (!interviewId || $('attach').disabled) return;
+  for (const file of Array.from(list)) {
+    const entry = { key: Math.random(), name: file.name, size: file.size, state: 'uploading' };
+    if (pendingFiles.filter(f => f.state !== 'error').length >= MAX_FILES_PER_MESSAGE) {
+      Object.assign(entry, { state: 'error', message: `At most ${MAX_FILES_PER_MESSAGE} files per message` });
+    } else if (file.size > MAX_FILE_BYTES) {
+      Object.assign(entry, { state: 'error', message: 'Over 10 MB' });
+    }
+    pendingFiles.push(entry);
+    renderPendingFiles();
+    if (entry.state === 'error') continue;
+    try {
+      const data = await readBase64(file);
+      const stored = await api('POST', `/api/interviews/${interviewId}/attachments`, { name: file.name, data });
+      Object.assign(entry, { state: 'ready', id: stored.id, kind: stored.kind, name: stored.name, truncated: stored.truncated });
+    } catch (e) {
+      Object.assign(entry, { state: 'error', message: e.message });
+    }
+    renderPendingFiles();
+  }
+}
+$('attach').addEventListener('click', () => $('file-input').click());
+$('file-input').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+$('input').addEventListener('paste', e => { if (e.clipboardData?.files?.length) { e.preventDefault(); addFiles(e.clipboardData.files); } });
+// Drop files anywhere on the conversation.
+chatPanel.addEventListener('dragover', e => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); chatPanel.classList.add('dropping'); } });
+chatPanel.addEventListener('dragleave', e => { if (!chatPanel.contains(e.relatedTarget)) chatPanel.classList.remove('dropping'); });
+chatPanel.addEventListener('drop', e => { if (e.dataTransfer?.files?.length) { e.preventDefault(); chatPanel.classList.remove('dropping'); addFiles(e.dataTransfer.files); } });
+// The input grows with what is typed, up to 10 lines, then scrolls.
+function growInput() {
+  const box = $('input');
+  box.style.height = 'auto';
+  box.style.height = Math.min(box.scrollHeight, 240) + 'px';
+}
+$('input').addEventListener('input', growInput);
 $('input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('composer').requestSubmit(); }
 });
@@ -383,20 +751,42 @@ $('input').addEventListener('keydown', e => {
 let pendingRemove = null;
 let pendingRemoveDataset = false; // the Remove dialog's checkbox; the list redraws every 5 s
 
+let plantsData = [];
+const expandedPlants = new Set(); // rows the user opened; the list redraws every 5 s
+
 async function loadPlants() {
   try {
     const data = await api('GET', '/api/plants');
     $('plants-error').hidden = true;
-    $('plants-dataset').textContent = data.datasetPurgeAgeDays ? `Each plant approved here writes its tags to its own Historian Dataset, named after the plant, with a ${data.datasetPurgeAgeDays}-day purge age.` : '';
-    $('plants').innerHTML = data.plants.length ? data.plants.map(plantRow).join('') : '<tr><td colspan="7" class="muted">No plants yet. Approve a preview on the Interview tab.</td></tr>';
+    $('plants-dataset').textContent = data.datasetPurgeAgeDays ? `Each one writes its tags to its own Historian Dataset, named after the plant, with a ${data.datasetPurgeAgeDays}-day purge age.` : '';
+    plantsData = data.plants;
+    renderPlants();
   } catch (e) {
     $('plants-error').hidden = false;
     $('plants-error').textContent = e.message;
   }
 }
 
+function renderPlants() {
+  const filter = $('plant-filter').value.trim().toLowerCase();
+  const shown = plantsData.filter(p => !filter || p.simulation.toLowerCase().includes(filter));
+  $('plants').innerHTML = shown.length ? shown.map(plantRow).join('')
+    : `<p class="list-empty">${plantsData.length ? 'No plant matches the filter.' : 'No plants yet. Click New plant at the top to design one.'}</p>`;
+}
+$('plant-filter').addEventListener('input', renderPlants);
+
+// The status a person sees: "starting" is the first moment of the backfill, so a
+// newly approved plant reads Backfilling (yellow) until it has caught up to now,
+// then Live (green).
+const STATE_LABEL = { starting: 'Backfilling', backfilling: 'Backfilling', live: 'Live', stopped: 'Stopped', error: 'Error', running_elsewhere: 'Running elsewhere', not_hosted: 'Not hosted' };
+const shownState = state => state === 'starting' ? 'backfilling' : state;
+const stateLabel = state => STATE_LABEL[state] || String(state).replace('_', ' ');
+
+const metric = (label, value) => `<span class="metric"><span class="metric-label">${label}</span><span class="metric-value">${value}</span></span>`;
+
 function plantRow(p) {
   const h = p.hosting, name = esc(p.simulation), running = ['starting', 'backfilling', 'live', 'error'].includes(h.state);
+  const open = expandedPlants.has(p.simulation) || pendingRemove === p.simulation;
   const base = `/api/plants/${encodeURIComponent(p.simulation)}`;
   const actions = p.managed
     ? (running ? `<button type="button" data-act="stop" data-name="${name}">Stop</button>` : h.state === 'running_elsewhere' ? '' : `<button type="button" data-act="start" data-name="${name}">Start</button>`) +
@@ -409,10 +799,17 @@ function plantRow(p) {
   const confirm = pendingRemove === p.simulation
     ? `<div class="remove-confirm"><b>Remove ${name}?</b><span>This stops the plant and drops its tables (<code>${esc(p.tablePrefix)}…</code>) and registration. Other plants are not touched. ${keeps}</span>${datasetChoice}<div class="row"><button type="button" class="danger solid" data-act="remove-yes" data-name="${name}">Remove ${name}</button><button type="button" data-act="remove-no" data-name="${name}">Cancel</button></div></div>`
     : '';
-  return `<tr><td><b>${name}</b><div class="detail"><code>${esc(p.tablePrefix)}…</code>${p.dataset ? ` · Dataset <code>${esc(p.dataset)}</code>` : ''}</div></td>
-    <td><span class="badge ${esc(h.state)}">${esc(h.state.replace('_', ' '))}</span>${h.message || h.code ? `<div class="detail">${h.code ? `<code>${esc(h.code)}</code> ` : ''}${esc(h.message || '')}</div>` : ''}</td>
-    <td class="num">${esc(fmtTime(h.throughUtc || p.tagCursorUtc))}</td><td class="num">${num(h.rowsApplied || null)}</td><td class="num">${num(h.pointsPublished || null)}</td><td class="num">${esc(fmtTime(p.snapshotUtc))}</td>
-    <td><div class="actions">${actions}</div>${p.managed ? `<div class="downloads" style="margin-top:6px"><a href="${base}/demo-guide?format=html" target="_blank" rel="noopener">Demo guide</a><a href="${base}/connect-spec" target="_blank" rel="noopener">Connect spec</a><a href="${base}/atlas-starter" target="_blank" rel="noopener">Atlas starter</a></div>` : ''}${confirm}</td></tr>`;
+  const facts = `<dt>Status</dt><dd><span class="badge ${esc(shownState(h.state))}">${esc(stateLabel(h.state))}</span>${h.message || h.code ? ` ${h.code ? `<code>${esc(h.code)}</code> ` : ''}${esc(h.message || '')}` : ''}</dd>
+    <dt>Tables</dt><dd><code>${esc(p.tablePrefix)}…</code></dd>${p.dataset ? `<dt>Dataset</dt><dd><code>${esc(p.dataset)}</code></dd>` : ''}<dt>Snapshot</dt><dd>${esc(fmtTime(p.snapshotUtc))}</dd>`;
+  return `<div class="list-row${open ? ' open' : ''}">
+    <button type="button" class="row-head" data-act="toggle" data-name="${name}" aria-expanded="${open}">
+      <svg class="icon chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+      <span class="dot ${esc(shownState(h.state))}" title="${esc(stateLabel(h.state))}"></span>
+      <span class="row-name">${name}</span>
+      <span class="metrics">${metric('Status', esc(stateLabel(h.state)))}${metric('Delivered through', esc(fmtTime(h.throughUtc || p.tagCursorUtc)))}${metric('Rows', num(h.rowsApplied || null))}${metric('Tag points', num(h.pointsPublished || null))}</span>
+    </button>
+    ${open ? `<div class="row-body"><dl class="kv">${facts}</dl><div class="row">${actions}</div>${p.managed ? `<div class="downloads">${plantFiles(base)}</div>` : ''}${confirm}</div>` : ''}
+  </div>`;
 }
 
 $('plants').addEventListener('change', e => {
@@ -423,6 +820,7 @@ $('plants').addEventListener('click', async e => {
   const button = e.target.closest('button[data-act]');
   if (!button) return;
   const name = button.dataset.name, act = button.dataset.act;
+  if (act === 'toggle') { expandedPlants.has(name) ? expandedPlants.delete(name) : expandedPlants.add(name); return renderPlants(); }
   if (act === 'remove') { pendingRemove = name; pendingRemoveDataset = false; return loadPlants(); }
   if (act === 'remove-no') { pendingRemove = null; pendingRemoveDataset = false; return loadPlants(); }
   button.disabled = true;
@@ -432,6 +830,7 @@ $('plants').addEventListener('click', async e => {
       await api('DELETE', `/api/plants/${encodeURIComponent(name)}?confirm=true${pendingRemoveDataset ? '&deleteDataset=true' : ''}`);
       pendingRemove = null;
       pendingRemoveDataset = false;
+      expandedPlants.delete(name);
     }
   } catch (err) {
     $('plants-error').hidden = false;
@@ -442,6 +841,18 @@ $('plants').addEventListener('click', async e => {
 
 // ---------------- start ----------------
 
-interviewId = /#interview=([0-9a-f-]{36})/.exec(location.hash)?.[1] || store.get('flowsim.interview');
+// Where the page opens: a link to an interview opens that interview; otherwise
+// the Plants view when this page has created plants, and the interview (step 1)
+// when it has none yet.
+const linkedInterview = /#interview=([0-9a-f-]{36})/.exec(location.hash)?.[1];
+interviewId = linkedInterview || store.get('flowsim.interview');
 loadHealth(false);
 loadInterview();
+(async () => {
+  let open = 'interview';
+  if (!linkedInterview) {
+    try { if (((await api('GET', '/api/plants')).plants || []).some(p => p.managed)) open = 'plants'; }
+    catch { /* open the interview; the Plants view reports its own errors */ }
+  }
+  showTab(open);
+})();

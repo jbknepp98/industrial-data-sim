@@ -84,7 +84,7 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
             lineNames = Array.Empty<object>(), productNames = Array.Empty<object>(), peopleNames = Array.Empty<object>()
         })),
         _ => Reply("tool_use", Call(InterviewTools.PreviewPlant, new { hours = 4 })),
-        _ => Reply("end_turn", Text("Here is the preview. Click Approve and run when it looks right."))
+        _ => Reply("end_turn", Text("Here is the preview. Click Review plan, then Approve plan when it looks right."))
     ];
 
     // ---------------- harness ----------------
@@ -171,6 +171,44 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
     // ---------------- endpoints ----------------
 
     [Fact]
+    public async Task FilesAreUploadedThenSentWithAMessageAndShownInTheChat()
+    {
+        GageMessageRequest? seen = null;
+        await using var web = await Start(() => new ScriptedModel(r => { seen = r; return Reply("end_turn", Text("Thanks, I read the equipment list.")); }));
+        var id = await NewInterview(web.Http);
+
+        var upload = await web.Http.PostAsync($"/api/interviews/{id}/attachments", JsonBody(new { name = "lines.xlsx", data = Convert.ToBase64String(AttachmentTests.Workbook()) }));
+        Assert.Equal(HttpStatusCode.Created, upload.StatusCode);
+        var file = (await upload.Content.ReadFromJsonAsync<JsonObject>())!;
+        Assert.Equal("text", file["kind"]!.GetValue<string>());
+
+        // Refused: a type it cannot read, a renamed file, a file over the limit.
+        var exe = await web.Http.PostAsync($"/api/interviews/{id}/attachments", JsonBody(new { name = "tool.exe", data = Convert.ToBase64String([0x4D, 0x5A]) }));
+        Assert.Equal((HttpStatusCode.BadRequest, "interview.attachment_type"), (exe.StatusCode, await ErrorCode(exe)));
+        var fake = await web.Http.PostAsync($"/api/interviews/{id}/attachments", JsonBody(new { name = "plan.pdf", data = Convert.ToBase64String("hello"u8.ToArray()) }));
+        Assert.Equal((HttpStatusCode.BadRequest, "interview.attachment_unreadable"), (fake.StatusCode, await ErrorCode(fake)));
+        var big = await web.Http.PostAsync($"/api/interviews/{id}/attachments", JsonBody(new { name = "big.txt", data = Convert.ToBase64String(new byte[AttachmentReader.MaxFileBytes + 1]) }));
+        Assert.Equal("interview.attachment_too_large", await ErrorCode(big));
+        // An ordinary request still has the small limit.
+        var long_ = await web.Http.PostAsync($"/api/interviews/{id}/messages", JsonBody(new { text = new string('x', 70_000) }));
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, long_.StatusCode);
+
+        var response = await web.Http.PostAsync($"/api/interviews/{id}/messages", JsonBody(new { text = "Here is the line list.", attachments = new[] { file["id"]!.GetValue<string>() } }));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await response.Content.ReadAsStringAsync();
+        var sent = JsonNode.Parse(JsonSerializer.Serialize(seen!.Messages[0]))!["content"]!.AsArray();
+        Assert.Contains(sent, b => b!["type"]!.GetValue<string>() == "document" && b["title"]!.GetValue<string>() == "lines.xlsx");
+
+        var view = await Get(web.Http, $"/api/interviews/{id}");
+        var mine = view["messages"]![0]!;
+        Assert.Equal("Here is the line list.", mine["text"]!.GetValue<string>());
+        Assert.Equal("lines.xlsx", mine["attachments"]![0]!["name"]!.GetValue<string>());
+
+        var unknown = await web.Http.PostAsync($"/api/interviews/{id}/messages", JsonBody(new { text = "", attachments = new[] { Guid.NewGuid().ToString() } }));
+        Assert.Equal((HttpStatusCode.BadRequest, "interview.attachment_not_found"), (unknown.StatusCode, await ErrorCode(unknown)));
+    }
+
+    [Fact]
     public async Task AnInterviewRunsThroughToAPreviewOverTheEventStream()
     {
         await using var web = await Start(() => new ScriptedModel(InterviewToPreview("PlanTestWebPreview")));
@@ -181,7 +219,7 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
 
         Assert.Contains(events, e => e.Event == "tool_activity");
         Assert.Contains(events, e => e.Event == "preview_ready");
-        Assert.Equal("Here is the preview. Click Approve and run when it looks right.", events.Last(e => e.Event == "assistant_text").Data["text"]!.GetValue<string>());
+        Assert.Equal("Here is the preview. Click Review plan, then Approve plan when it looks right.", events.Last(e => e.Event == "assistant_text").Data["text"]!.GetValue<string>());
         Assert.Equal("completed", events.Last().Data["outcome"]!.GetValue<string>());
 
         var view = await Get(web.Http, $"/api/interviews/{id}");
@@ -316,6 +354,21 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Contains("PlantPreviewRenderer", await web.Http.GetStringAsync("/shared/plant-preview.js"));
         Assert.Contains(".pp", await web.Http.GetStringAsync("/shared/plant-preview.css"));
         Assert.Contains("/api/interviews", await web.Http.GetStringAsync("/app.js"));
+        // Named like the other Timebase apps: "TIMEBASE" with the product under it.
+        Assert.Contains("<title>Timebase Plant Simulator</title>", page);
+        Assert.Contains("<span class=\"product-sub\">Plant Simulator</span>", page);
+        Assert.DoesNotContain("Data Simulator", page);
+        // The Timebase look: its fonts and icon are served by the page itself, never fetched from the internet.
+        string styles = await web.Http.GetStringAsync("/styles.css");
+        Assert.DoesNotContain("https://", styles);
+        foreach (string font in new[] { "poppins-latin-400-normal", "poppins-latin-500-normal", "poppins-latin-600-normal", "jetbrains-mono-latin-400-normal", "jetbrains-mono-latin-500-normal" })
+        {
+            Assert.Contains($"fonts/{font}.woff2", styles);
+            var response = await web.Http.GetAsync($"/fonts/{font}.woff2");
+            Assert.True(response.IsSuccessStatusCode, $"/fonts/{font}.woff2 answered {(int)response.StatusCode}");
+            Assert.Equal("font/woff2", response.Content.Headers.ContentType?.MediaType);
+        }
+        Assert.Equal("image/png", (await web.Http.GetAsync("/favicon.png")).Content.Headers.ContentType?.MediaType);
         // After an upgrade the browser must ask again instead of running a cached script.
         foreach (string path in new[] { "/", "/app.js", "/shared/plant-preview.js" })
             Assert.Equal("no-cache", (await web.Http.GetAsync(path)).Headers.CacheControl?.ToString());
@@ -364,7 +417,7 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
             var approved = (await approve.Content.ReadFromJsonAsync<JsonObject>())!;
             Assert.Equal(name.ToLowerInvariant() + "_", approved["tablePrefix"]!.GetValue<string>());
             Assert.Equal(name, approved["tagRoot"]!.GetValue<string>());
-            Assert.Equal("approve.already_approved", await ErrorCode(await web.Http.PostAsync($"/api/interviews/{id}/approve", JsonBody(new { confirm = true }))));
+            Assert.Equal("approve.unchanged", await ErrorCode(await web.Http.PostAsync($"/api/interviews/{id}/approve", JsonBody(new { confirm = true }))));
 
             JsonObject? plant = null;
             await WaitFor(async () =>
@@ -395,6 +448,116 @@ public class WebTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.Equal(HttpStatusCode.OK, removed.StatusCode);
             Assert.Null(web.Services.Plants.Registration(name));
             Assert.Equal(0L, CountTables(name));
+        }
+        finally { Cleanup(name); }
+    }
+
+    [Fact]
+    public async Task ThePlanOffersGagePromptsAndConnectAndAtlasBriefs()
+    {
+        await using var web = await Start(() => new ScriptedModel(InterviewToPreview("PlanTestGageKit")));
+        var id = await NewInterview(web.Http);
+        Assert.Equal("gage.no_draft", await ErrorCode(await web.Http.GetAsync($"/api/interviews/{id}/gage/prompts?format=json")));
+        await Send(web.Http, id, "A bottler; late orders after labeler jams.");
+
+        var prompts = (await web.Http.GetFromJsonAsync<JsonArray>($"/api/interviews/{id}/gage/prompts?format=json"))!;
+        Assert.Contains(prompts, p => p!["prompt"]!.GetValue<string>().Contains("Labeler 202"));   // the storyline's own Gage question
+        Assert.Contains(prompts, p => p!["title"]!.GetValue<string>() == "Shift report");
+        Assert.DoesNotContain(prompts, p => p!["prompt"]!.GetValue<string>().Contains('{'));      // every placeholder filled
+
+        var connect = await web.Http.GetAsync($"/api/interviews/{id}/gage/connect");
+        Assert.Equal("PlanTestGageKit-gage-connect.md", connect.Content.Headers.ContentDisposition?.FileNameStar ?? connect.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
+        string connectBrief = await connect.Content.ReadAsStringAsync();
+        Assert.Contains("Ask the user for the password", connectBrief);
+        Assert.Contains("plantestgagekit_maintenancetickets", connectBrief);
+        Assert.DoesNotContain("FLOWSIM_READER_PASSWORD=", connectBrief);
+
+        string atlasBrief = await web.Http.GetStringAsync($"/api/interviews/{id}/gage/atlas");
+        Assert.Contains("`PlanTestGageKit.L1.LB-202.Vibration`", atlasBrief);
+        Assert.Contains("\"queryProperties\"", atlasBrief);
+        Assert.Contains("# Gage prompts for PlanTestGageKit", await web.Http.GetStringAsync($"/api/interviews/{id}/gage/prompts"));
+        Assert.Equal("gage.unknown_kit", await ErrorCode(await web.Http.GetAsync($"/api/interviews/{id}/gage/other")));
+    }
+
+    [Fact]
+    public async Task AnApprovedInterviewTakesChangesAndAProposedStopWaitsForTheUser()
+    {
+        var interviews = new InMemoryInterviewStore();
+        var registry = new InMemoryWebPlantRegistry();
+        await using var web = await Start(() => new ScriptedModel(
+            _ => Reply("tool_use", Call(InterviewTools.ProposePlantAction, new { plant = "PlanTestGallo", action = "stop" })),
+            _ => Reply("end_turn", Text("Confirm the stop in the bar at the bottom."))), interviews: interviews, registry: registry);
+        var id = await NewInterview(web.Http);
+        interviews.MarkApproved(id, "PlanTestGallo");
+        registry.Add("PlanTestGallo", id);
+        // The directory reads the plant store, which has no database here, so the tool reports the plant as unknown;
+        // the proposal is stored directly, as propose_plant_action stores it.
+        var record = interviews.Load(id)!;
+        interviews.SaveState(id, new JsonObject { [InterviewTools.PendingActionKey] = new JsonObject { ["plant"] = "PlanTestGallo", ["action"] = "stop" } }.ToJsonString(), null, null);
+
+        // Approved interviews stay open: a message is a change request, not refused.
+        var response = await web.Http.PostAsync($"/api/interviews/{id}/messages", JsonBody(new { text = "Stop Gallo for now." }));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await response.Content.ReadAsStringAsync();
+        var view = await Get(web.Http, $"/api/interviews/{id}");
+        Assert.Equal("stop", view["pendingAction"]!["action"]!.GetValue<string>());
+        Assert.Null(view["approval"]); // nothing new to approve
+        Assert.Contains(interviews.Load(id)!.Messages, m => m.Role == "user" && m.ContentJson.Contains("[Session facts, not typed by the user] PlanTestGallo"));
+
+        var confirmed = await web.Http.PostAsync($"/api/interviews/{id}/plant-action", JsonBody(new { confirm = true }));
+        Assert.Equal(HttpStatusCode.OK, confirmed.StatusCode);
+        Assert.False(registry.List().Single().HostingEnabled);
+        view = await Get(web.Http, $"/api/interviews/{id}");
+        Assert.Null(view["pendingAction"]);
+        Assert.Contains(view["messages"]!.AsArray(), m => m!["role"]!.GetValue<string>() == "notice" && m["text"]!.GetValue<string>().StartsWith("PlanTestGallo was stopped"));
+        Assert.Equal("plant_action.none", await ErrorCode(await web.Http.PostAsync($"/api/interviews/{id}/plant-action", JsonBody(new { confirm = true }))));
+    }
+
+    [Fact]
+    public async Task AChangeApprovedTwiceRebuildsThePlantInPlace()
+    {
+        if (Connection is null) return; // needs FLOWSIM_TEST_PG
+        string name = "PlanTestRebuild" + Guid.NewGuid().ToString("N")[..6];
+        using var registry = new PostgresWebPlantRegistry(Connection);
+        var datasets = new InMemoryPlantDatasets();
+        int sessions = 0;
+        Func<GageMessageRequest, Task<Message>>[] change =
+        [
+            _ => Reply("tool_use", Call(InterviewTools.ComposeModel, new
+            {
+                storylines = new[] { "labeler-jams-late-orders" }, simulation = name, backfill = "7d",
+                lineNames = Array.Empty<object>(), productNames = Array.Empty<object>(), peopleNames = Array.Empty<object>()
+            })),
+            _ => Reply("tool_use", Call(InterviewTools.PreviewPlant, new { hours = 2 })),
+            _ => Reply("end_turn", Text("Here is the changed plant. Approving rebuilds it; its current data is deleted."))
+        ];
+        await using var web = await Start(() => Interlocked.Increment(ref sessions) == 1 ? new ScriptedModel(InterviewToPreview(name)) : new ScriptedModel(change),
+            Connection, hostPlants: true, registry: registry, datasets: datasets);
+        try
+        {
+            var id = await NewInterview(web.Http);
+            await Send(web.Http, id, "A bottler; late orders after labeler jams.");
+            Assert.Equal(HttpStatusCode.Created, (await web.Http.PostAsync($"/api/interviews/{id}/approve", JsonBody(new { confirm = true }))).StatusCode);
+
+            await Send(web.Http, id, "Drop the bearing story; keep only the labeler jams.");
+            var view = await Get(web.Http, $"/api/interviews/{id}");
+            Assert.Equal(name, view["approval"]!["replaces"]!.GetValue<string>());
+
+            // One step is not enough: the page must send replaceExisting after the second confirmation.
+            Assert.Equal("approve.replace_confirm_required", await ErrorCode(await web.Http.PostAsync($"/api/interviews/{id}/approve", JsonBody(new { confirm = true }))));
+            var rebuilt = await web.Http.PostAsync($"/api/interviews/{id}/approve", JsonBody(new { confirm = true, replaceExisting = true }));
+            Assert.Equal(HttpStatusCode.Created, rebuilt.StatusCode);
+            var result = (await rebuilt.Content.ReadFromJsonAsync<JsonObject>())!;
+            Assert.True(result["replaced"]!.GetValue<bool>());
+            Assert.True(result["datasetEmptied"]!.GetValue<bool>());
+            Assert.True(datasets.Current.ContainsKey(name));                       // emptied and reused, same name
+            var model = JsonNode.Parse(web.Services.Plants.Registration(name)!.ModelJson)!.ToJsonString();
+            Assert.Contains("\"7d\"", model);
+            Assert.Null((await Get(web.Http, $"/api/interviews/{id}"))["approval"]); // the new plan is what runs now
+            await WaitFor(async () => (await Get(web.Http, "/api/plants"))["plants"]!.AsArray().OfType<JsonObject>()
+                .Any(p => p["simulation"]!.GetValue<string>() == name && p["hosting"]!["state"]!.GetValue<string>() == "live"), TimeSpan.FromMinutes(2), "the rebuilt plant to go live");
+            Assert.True(CountTables(name) > 0);
+            Assert.True(registry.List().Single(e => e.Simulation == name).DatasetCreated);
         }
         finally { Cleanup(name); }
     }

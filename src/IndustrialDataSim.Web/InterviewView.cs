@@ -24,7 +24,10 @@ public static class InterviewView
             messages = Messages(record),
             needs = new { audience = needs["audience"], requests = needs["requests"] ?? new JsonArray() },
             storylines = Cards(needs, library),
-            approval = Approval(record, ownDatasets, sharedDataset, nowUtc),
+            approval = Approval(record, needs, ownDatasets, sharedDataset, nowUtc),
+            // Set by the existing-plant tools: a stop or start to confirm, and a move into a plant's interview.
+            pendingAction = needs[InterviewTools.PendingActionKey],
+            handoff = needs[InterviewTools.HandoffKey],
             // The stored preview document as written by preview_plant (camelCase, like plant preview).
             preview = record.PreviewJson is null ? null : JsonNode.Parse(record.PreviewJson)
         };
@@ -46,16 +49,25 @@ public static class InterviewView
             if (message.Role == "notice")
             {
                 string code = node["code"]?.GetValue<string>() ?? "";
-                items.Add(new { role = "notice", code, text = NoticeText(code) });
+                items.Add(new { role = "notice", code, text = node["text"]?.GetValue<string>() ?? NoticeText(code) });
                 continue;
             }
-            foreach (var block in (node["content"] as JsonArray ?? []).OfType<JsonObject>())
+            var blocks = (node["content"] as JsonArray ?? []).OfType<JsonObject>().ToList();
+            if (message.Role == "user")
+            {
+                // What the user sent: their text and the files they attached, as one bubble.
+                var files = blocks.Where(b => b["type"]?.GetValue<string>() == "attachment")
+                    .Select(b => new { id = b["id"]?.GetValue<string>(), name = b["name"]?.GetValue<string>(), kind = b["kind"]?.GetValue<string>() }).ToList();
+                string typed = string.Join("\n\n", blocks.Where(b => b["type"]?.GetValue<string>() == "text").Select(b => b["text"]?.GetValue<string>() ?? "")
+                    .Where(t => !t.StartsWith("[Session facts", StringComparison.Ordinal) && !t.StartsWith("[Note from the interview service]", StringComparison.Ordinal)));
+                if (typed.Length > 0 || files.Count > 0) items.Add(new { role = "user", text = typed, attachments = files });
+                continue;
+            }
+            foreach (var block in blocks)
             {
                 string type = block["type"]?.GetValue<string>() ?? "";
                 string text = block["text"]?.GetValue<string>() ?? "";
-                if (message.Role == "user" && type == "text" && !text.StartsWith("[Session facts", StringComparison.Ordinal) && !text.StartsWith("[Note from the interview service]", StringComparison.Ordinal))
-                    items.Add(new { role = "user", text });
-                else if (message.Role == "assistant" && type == "text" && text.Length > 0)
+                if (message.Role == "assistant" && type == "text" && text.Length > 0)
                     items.Add(new { role = "assistant", text });
                 else if (message.Role == "assistant" && type == "tool_use")
                     items.Add(new { role = "tool", text = InterviewTools.Activity(block["name"]?.GetValue<string>() ?? "") });
@@ -97,9 +109,12 @@ public static class InterviewView
     /// Dataset and tables, computed from the draft with "now" as the anchor.
     /// Null while there is no preview to approve.
     /// </summary>
-    private static object? Approval(InterviewRecord record, bool ownDatasets, string? sharedDataset, DateTimeOffset nowUtc)
+    private static object? Approval(InterviewRecord record, JsonObject needs, bool ownDatasets, string? sharedDataset, DateTimeOffset nowUtc)
     {
         if (record.DraftModelJson is null || record.PreviewJson is null) return null;
+        // An approved interview offers approval again only for a changed plan, which rebuilds the plant.
+        string? replaces = record.ApprovedSimulation;
+        if (replaces is not null && (needs[InterviewState.ApprovedDraftKey]?.GetValue<string>() is not { } approvedDraft || approvedDraft == InterviewState.DraftHash(record.DraftModelJson))) return null;
         var loaded = PlantModelLoader.Load(record.DraftModelJson, nowUtc);
         if (!loaded.IsValid)
             return new { valid = false, errors = loaded.Errors.Take(5).Select(e => new { e.Code, e.Path, e.Message }) };
@@ -108,13 +123,14 @@ public static class InterviewView
         return new
         {
             valid = true,
+            replaces,
             simulation = model.Simulation,
             tagRoot = model.TagRoot,
             tablePrefix = model.TablePrefix,
             backfill,
             historyStartsUtc = model.StartUtc,
             dataset = ownDatasets ? model.Simulation : sharedDataset,
-            newDataset = ownDatasets,
+            newDataset = ownDatasets && replaces is null,
             datasetPurgeAgeDays = ownDatasets ? PlantDatasets.PurgeAgeDays : (int?)null,
             tables = PlantSchema.TablesFor(model).Select(t => PlantSchema.PhysicalName(model, t.Purpose)).ToList()
         };

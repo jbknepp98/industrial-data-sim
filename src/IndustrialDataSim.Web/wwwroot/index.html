@@ -3,20 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Flow Data Simulator</title>
+<title>Timebase Plant Simulator</title>
+<link rel="icon" type="image/png" href="favicon.png">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="shared/plant-preview.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand"><span class="star" aria-hidden="true">✳</span><span class="eyebrow">Flow Data Simulator</span><b>Demo plant interview</b></div>
-  <nav class="tabs" role="tablist">
-    <button type="button" role="tab" id="tab-interview" aria-selected="true" aria-controls="view-interview">Interview</button>
-    <button type="button" role="tab" id="tab-plants" aria-selected="false" aria-controls="view-plants">Plants</button>
+<aside class="sidebar" aria-label="Timebase Plant Simulator">
+  <div class="logo">
+    <svg class="mark" viewBox="0 0 166.5 214.93" aria-hidden="true"><path d="M166.5,110.84v-6.87l-46.18-8.81L109.9,0l-6.87,.02-8.19,79.35L34.15,31.97l-4.79,4.93,48.58,58.82L0,104.15v6.87l78.75,8.35-47.45,60.74,4.93,4.79,58.85-48.6,8.61,78.63,6.87-.02,9.82-95.16,46.1-8.91Z"/></svg>
+    <span class="wordmark"><span class="product-name">Timebase</span><span class="product-sub">Plant Simulator</span></span>
+    <button type="button" class="collapse" id="collapse" aria-label="Collapse the sidebar" aria-expanded="true"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+  </div>
+  <nav class="nav" role="tablist" aria-label="Views">
+    <button type="button" role="tab" id="tab-interview" aria-selected="true" aria-controls="view-interview" title="Interview"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Interview</span></button>
+    <div class="nav-label">Status</div>
+    <button type="button" role="tab" id="tab-plants" aria-selected="false" aria-controls="view-plants" title="Plants"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M17 18h1"/><path d="M12 18h1"/><path d="M7 18h1"/></svg><span>Plants</span></button>
   </nav>
+  <div class="nav-foot">
+    <div class="instance" id="instance-info" role="dialog" aria-label="Instance info" hidden><dl class="kv" id="instance-facts"></dl></div>
+    <button type="button" class="nav-item" id="instance" aria-expanded="false" aria-controls="instance-info" title="Instance Info"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></svg><span>Instance Info</span></button>
+  </div>
+</aside>
+
+<div class="shell">
+<header class="topbar">
+  <div class="tabs" id="open-tabs" aria-label="Open views"></div>
   <div class="top-actions">
-    <button type="button" class="ghost" id="new-interview">New interview</button>
-    <button type="button" class="ghost" id="theme" aria-label="Switch light or dark">◐</button>
+    <button type="button" class="icon-button theme-button" id="theme" aria-label="System theme" title="System theme"><svg class="icon" id="theme-icon" viewBox="0 0 24 24" aria-hidden="true"></svg></button>
+    <button type="button" class="primary" id="new-interview"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>New plant</span></button>
   </div>
 </header>
 
@@ -29,16 +44,25 @@
   <button type="button" id="gage-recheck">Check again</button>
 </div>
 
-<main id="view-interview" role="tabpanel" aria-labelledby="tab-interview">
+<main id="view-interview" class="view" role="tabpanel" aria-labelledby="tab-interview">
+  <header class="page-head">
+    <div class="head-row"><h1>Interview</h1><span class="plant-context" id="plant-context" hidden></span></div>
+    <p>Tell the interviewer who will watch the demo and what costs them the most. It picks storylines, previews a matching plant, and builds it once you approve.</p></header>
+  <div class="interview-grid" id="interview-grid">
   <section class="chat" aria-label="Interview">
     <div class="messages" id="messages" aria-live="polite"></div>
+    <div class="chat-foot" id="chat-foot">
     <form class="composer" id="composer">
-      <textarea id="input" rows="3" maxlength="8000" placeholder="Tell the interviewer who will watch the demo and what costs them the most…" aria-label="Message to the interviewer"></textarea>
-      <div class="composer-row">
-        <span class="hint" id="composer-hint">Enter sends · Shift+Enter for a new line</span>
-        <button type="submit" id="send">Send</button>
+      <div class="composer-box" id="composer-box">
+        <div class="files" id="files" hidden></div>
+        <button type="button" class="attach" id="attach" aria-label="Attach files" title="Attach files: PDF, images, Excel, Word, text (up to 10 MB each)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <input type="file" id="file-input" multiple hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.xlsx,.docx,.txt,.csv,.tsv,.md,.json">
+        <textarea id="input" rows="1" maxlength="8000" placeholder="Tell the interviewer who will watch the demo and what costs them the most…" aria-label="Message to the interviewer"></textarea>
+        <button type="submit" id="send" class="send" aria-label="Send" title="Send (Enter)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
+      <p class="composer-row"><span class="hint" id="composer-hint">Enter sends · Shift+Enter for a new line</span><span class="disclaimer"> · The interviewer is AI and can make mistakes.</span></p>
     </form>
+    </div>
   </section>
 
   <aside class="side" aria-label="Storylines and preview">
@@ -59,35 +83,56 @@
       <dl class="kv" id="needs"></dl>
     </section>
 
-    <section class="card" id="approve-card" hidden>
-      <div class="eyebrow">Ready to build</div>
-      <p>Review the preview below. Nothing is written until you approve.</p>
-      <button type="button" class="primary" id="approve-open">Approve and run…</button>
-      <div class="confirm" id="approve-confirm" hidden>
-        <h3>Build and run this plant?</h3>
-        <dl class="kv" id="approve-facts"></dl>
-        <details><summary id="approve-tables-summary">Tables</summary><ul class="tables" id="approve-tables"></ul></details>
-        <p class="muted">The plant backfills its history, then keeps running in this container until you stop or remove it on the Plants tab.</p>
-        <div class="row"><button type="button" class="primary" id="approve-yes">Approve and run</button><button type="button" class="ghost" id="approve-no">Cancel</button></div>
-        <p class="error" id="approve-error" hidden></p>
-      </div>
-    </section>
-
     <section class="preview-host" id="preview-section" hidden>
       <div class="eyebrow">Plant preview</div>
       <div class="pp" id="preview"></div>
     </section>
-  </aside>
-</main>
 
-<main id="view-plants" role="tabpanel" aria-labelledby="tab-plants" hidden>
-  <section class="card wide">
-    <div class="eyebrow">Plants in flow_data_sim</div>
-    <p class="muted">Plants approved on this page run inside this container. Others are listed read-only; a plant another process delivers shows "running elsewhere" and is never touched here. <span id="plants-dataset"></span></p>
-    <div class="scroll"><table class="plants"><thead><tr><th>Simulation</th><th>Status</th><th>Delivered through</th><th>Rows</th><th>Tag points</th><th>Snapshot</th><th></th></tr></thead><tbody id="plants"></tbody></table></div>
-    <p class="error" id="plants-error" hidden></p>
+    <section class="card gage-kit" id="gage-kit" hidden>
+      <div class="eyebrow">Ask Gage</div>
+      <p class="muted">Once the plant runs and Connect and Atlas are set up, paste one of these into Ask Gage in any Timebase app. Hand Gage the two briefs to set up Connect and Atlas for you.</p>
+      <ol class="prompts" id="gage-prompts"></ol>
+      <div class="downloads" id="gage-downloads"></div>
+    </section>
+  </aside>
+  </div>
+  <section class="approve-dock glass" id="approve-card" aria-label="Ready to build" hidden>
+    <div class="dock-inner">
+    <div class="confirm" id="approve-confirm" hidden>
+      <h3 id="approve-heading">Build and run this plant?</h3>
+      <div class="rebuild-warning" id="rebuild-warning" hidden>
+        <p><b>This replaces the running plant <span class="rebuild-name"></span>.</b> Its current tables and all the tag history in its Dataset are deleted, then rebuilt from this plan and backfilled. Connect and Atlas setups that use its tables and tags keep working.</p>
+        <label class="ack"><input type="checkbox" id="rebuild-ack"> I understand the current data of <span class="rebuild-name"></span> will be deleted.</label>
+      </div>
+      <dl class="kv" id="approve-facts"></dl>
+      <details><summary id="approve-tables-summary">Tables</summary><ul class="tables" id="approve-tables"></ul></details>
+      <p class="muted">The plant backfills its history, then keeps running in this container until you stop or remove it on the Plants tab.</p>
+      <div class="row"><button type="button" class="primary" id="approve-yes">Approve plan</button><button type="button" class="ghost" id="approve-no">Cancel</button></div>
+    </div>
+    <div class="dock-bar" id="approve-bar">
+      <button type="button" class="back" id="dock-back" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Back to Interview</button>
+      <div class="dock-text"><span class="dock-title" id="dock-title">Ready to build</span><span class="dock-sub" id="approve-sub"></span></div>
+      <div class="dock-actions"><button type="button" class="primary" id="dock-review">Review plan</button><button type="button" class="primary" id="approve-open" hidden>Approve plan…</button></div>
+    </div>
+    <div class="dock-bar" id="action-bar" hidden>
+      <div class="dock-text"><span class="dock-title" id="action-title"></span><span class="dock-sub" id="action-sub">Suggested by the interviewer. Nothing happens until you confirm.</span></div>
+      <div class="dock-actions"><button type="button" class="back" id="action-cancel">Cancel</button><button type="button" class="primary" id="action-yes"></button></div>
+    </div>
+    <p class="error" id="approve-error" hidden></p>
+    </div>
   </section>
 </main>
+
+<main id="view-plants" class="view" role="tabpanel" aria-labelledby="tab-plants" hidden>
+  <header class="page-head"><h1>Plants</h1><p>Plants approved on this page run inside this container and write to their own tables in <code>flow_data_sim</code>. <span id="plants-dataset"></span></p></header>
+  <div class="toolbar">
+    <label class="filter"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="search" id="plant-filter" placeholder="Filter plants…" aria-label="Filter plants" autocomplete="off"></label>
+  </div>
+  <div class="list" id="plants" aria-live="polite"></div>
+  <p class="error" id="plants-error" hidden></p>
+</main>
+
+</div>
 
 <script src="shared/plant-preview.js"></script>
 <script src="app.js"></script>
