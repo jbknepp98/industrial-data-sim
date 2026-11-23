@@ -102,6 +102,7 @@ function showTab(name) {
     $('view-' + t).hidden = t !== name;
   }
   renderTabs();
+  writeHash();
   clearInterval(plantsTimer);
   if (name === 'plants') { loadPlants(); plantsTimer = setInterval(loadPlants, 5000); }
 }
@@ -168,8 +169,19 @@ function setInterviewId(id) {
   if (!id) step = 'chat';
   writeHash();
 }
+// The URL keeps the interview, its step and the open plant together, so a
+// reload or a shared link comes back to the same place:
+// #interview=…&step=review&plant=Name&section=tables&table=name_lots
 function writeHash() {
-  history.replaceState(null, '', interviewId ? '#interview=' + interviewId + (step === 'review' ? '&step=review' : '') : location.pathname);
+  const parts = [];
+  if (interviewId) parts.push('interview=' + interviewId);
+  if (interviewId && step === 'review') parts.push('step=review');
+  if (currentTab === 'plants' && browse?.plant) {
+    parts.push('plant=' + encodeURIComponent(browse.plant));
+    if (browse.section !== 'summary') parts.push('section=' + browse.section);
+    if (browse.section === 'tables' && browse.table) parts.push('table=' + encodeURIComponent(browse.table));
+  }
+  history.replaceState(null, '', parts.length ? '#' + parts.join('&') : location.pathname);
 }
 
 // ---------------- steps: Interview, then Review plan ----------------
@@ -482,9 +494,9 @@ $('approve-yes').addEventListener('click', async () => {
     $('approve-confirm').hidden = true; $('approve-bar').hidden = false;
     const approvedName = interview?.approval?.simulation;
     await loadInterview();
-    // Show the plant where it now lives: the Plants list, its row open, Backfilling until it catches up.
-    if (approvedName) expandedPlants.add(approvedName);
+    // Show the plant where it now lives: its page on the Plants tab, Backfilling until it catches up.
     showTab('plants');
+    if (approvedName) openPlant(approvedName);
   } catch (e) {
     $('approve-error').hidden = false;
     $('approve-error').textContent = e.message + (e.code ? ` (${e.code})` : '');
@@ -746,13 +758,23 @@ $('input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('composer').requestSubmit(); }
 });
 
-// ---------------- Plants tab ----------------
+// ---------------- Plants: the list, and one plant's page ----------------
+// The list is the overview (like Historian's Datasets). Opening a plant shows its
+// page: a header with status and Stop / Start / Remove, and three read-only
+// sections, Summary, Time series and Tables. The 5-second poll updates the list
+// and the header in place; it never redraws a section, so a search, a page of
+// rows or an open Remove dialog stays as it is.
 
 let pendingRemove = null;
-let pendingRemoveDataset = false; // the Remove dialog's checkbox; the list redraws every 5 s
-
-let plantsData = [];
-const expandedPlants = new Set(); // rows the user opened; the list redraws every 5 s
+let pendingRemoveDataset = false; // the Remove dialog's checkbox survives the poll
+let plantsData = null;            // null until the first answer
+var browse = {      // var: writeHash may run before this line is reached
+  plant: null, section: 'summary', table: null,
+  summary: null, tables: null, rows: null,
+  grid: { sort: 'row_version', dir: 'desc', q: '', deleted: false, page: 1 },
+  seq: 0                           // drops answers that arrive after the user moved on
+};
+const MAX_PAGE = 501, PAGE_SIZE = 200;
 
 async function loadPlants() {
   try {
@@ -760,7 +782,7 @@ async function loadPlants() {
     $('plants-error').hidden = true;
     $('plants-dataset').textContent = data.datasetPurgeAgeDays ? `Each one writes its tags to its own Historian Dataset, named after the plant, with a ${data.datasetPurgeAgeDays}-day purge age.` : '';
     plantsData = data.plants;
-    renderPlants();
+    if (browse.plant) renderDetailHead(); else renderPlants();
   } catch (e) {
     $('plants-error').hidden = false;
     $('plants-error').textContent = e.message;
@@ -768,6 +790,7 @@ async function loadPlants() {
 }
 
 function renderPlants() {
+  if (!plantsData) return;
   const filter = $('plant-filter').value.trim().toLowerCase();
   const shown = plantsData.filter(p => !filter || p.simulation.toLowerCase().includes(filter));
   $('plants').innerHTML = shown.length ? shown.map(plantRow).join('')
@@ -785,52 +808,92 @@ const stateLabel = state => STATE_LABEL[state] || String(state).replace('_', ' '
 const metric = (label, value) => `<span class="metric"><span class="metric-label">${label}</span><span class="metric-value">${value}</span></span>`;
 
 function plantRow(p) {
-  const h = p.hosting, name = esc(p.simulation), running = ['starting', 'backfilling', 'live', 'error'].includes(h.state);
-  const open = expandedPlants.has(p.simulation) || pendingRemove === p.simulation;
-  const base = `/api/plants/${encodeURIComponent(p.simulation)}`;
-  const actions = p.managed
-    ? (running ? `<button type="button" data-act="stop" data-name="${name}">Stop</button>` : h.state === 'running_elsewhere' ? '' : `<button type="button" data-act="start" data-name="${name}">Start</button>`) +
-      `<button type="button" class="danger" data-act="remove" data-name="${name}">Remove…</button>`
-    : '<span class="muted">read-only</span>';
-  const datasetChoice = p.datasetCreated
-    ? `<label class="remove-dataset"><input type="checkbox" data-remove-dataset="${name}"${pendingRemoveDataset ? ' checked' : ''}><span>Also delete its Dataset <code>${esc(p.dataset)}</code> and every tag in it. This cannot be undone.</span></label>`
-    : '';
-  const keeps = p.datasetCreated ? 'Its Dataset and tags stay unless you tick the box below.' : 'Tags already in Historian stay.';
-  const confirm = pendingRemove === p.simulation
-    ? `<div class="remove-confirm"><b>Remove ${name}?</b><span>This stops the plant and drops its tables (<code>${esc(p.tablePrefix)}…</code>) and registration. Other plants are not touched. ${keeps}</span>${datasetChoice}<div class="row"><button type="button" class="danger solid" data-act="remove-yes" data-name="${name}">Remove ${name}</button><button type="button" data-act="remove-no" data-name="${name}">Cancel</button></div></div>`
-    : '';
-  const facts = `<dt>Status</dt><dd><span class="badge ${esc(shownState(h.state))}">${esc(stateLabel(h.state))}</span>${h.message || h.code ? ` ${h.code ? `<code>${esc(h.code)}</code> ` : ''}${esc(h.message || '')}` : ''}</dd>
-    <dt>Tables</dt><dd><code>${esc(p.tablePrefix)}…</code></dd>${p.dataset ? `<dt>Dataset</dt><dd><code>${esc(p.dataset)}</code></dd>` : ''}<dt>Snapshot</dt><dd>${esc(fmtTime(p.snapshotUtc))}</dd>`;
-  return `<div class="list-row${open ? ' open' : ''}">
-    <button type="button" class="row-head" data-act="toggle" data-name="${name}" aria-expanded="${open}">
+  const h = p.hosting, name = esc(p.simulation);
+  return `<div class="list-row">
+    <button type="button" class="row-head" data-open="${name}" title="Open ${name}">
       <svg class="icon chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
       <span class="dot ${esc(shownState(h.state))}" title="${esc(stateLabel(h.state))}"></span>
       <span class="row-name">${name}</span>
       <span class="metrics">${metric('Status', esc(stateLabel(h.state)))}${metric('Delivered through', esc(fmtTime(h.throughUtc || p.tagCursorUtc)))}${metric('Rows', num(h.rowsApplied || null))}${metric('Tag points', num(h.pointsPublished || null))}</span>
     </button>
-    ${open ? `<div class="row-body"><dl class="kv">${facts}</dl><div class="row">${actions}</div>${p.managed ? `<div class="downloads">${plantFiles(base)}</div>` : ''}${confirm}</div>` : ''}
   </div>`;
 }
-
-$('plants').addEventListener('change', e => {
-  if (e.target.matches('input[data-remove-dataset]')) pendingRemoveDataset = e.target.checked;
+$('plants').addEventListener('click', e => {
+  const row = e.target.closest('[data-open]');
+  if (row) openPlant(row.dataset.open);
 });
 
-$('plants').addEventListener('click', async e => {
+function openPlant(name, section = 'summary', table = null) {
+  browse.plant = name; browse.table = table;
+  browse.summary = browse.tables = browse.rows = null;
+  browse.grid = { sort: 'row_version', dir: 'desc', q: '', deleted: false, page: 1 };
+  $('grid-search').value = ''; $('grid-deleted').checked = false;
+  pendingRemove = null; pendingRemoveDataset = false;
+  $('plants-overview').hidden = true;
+  $('plant-detail').hidden = false;
+  window.scrollTo({ top: 0 });
+  renderDetailHead();
+  selectSection(['summary', 'series', 'tables'].includes(section) ? section : 'summary');
+}
+function closePlant() {
+  browse.plant = null; pendingRemove = null;
+  $('plant-detail').hidden = true;
+  $('plants-overview').hidden = false;
+  renderPlants();
+  writeHash();
+}
+$('plant-back').addEventListener('click', closePlant);
+
+function detailPlant() { return plantsData?.find(p => p.simulation === browse.plant) || null; }
+
+function renderDetailHead() {
+  const name = browse.plant, p = detailPlant();
+  $('detail-name').textContent = name;
+  $('detail-crumb').textContent = name;
+  if (!p) {
+    $('detail-badge').hidden = true;
+    $('detail-sub').textContent = plantsData ? "That plant is not in this page's list. Pick one from Plants." : 'Loading…';
+    $('detail-actions').innerHTML = ''; $('detail-confirm').innerHTML = '';
+    return;
+  }
+  const h = p.hosting, running = ['starting', 'backfilling', 'live', 'error'].includes(h.state), safe = esc(name);
+  $('detail-badge').hidden = false;
+  $('detail-badge').className = 'badge ' + shownState(h.state);
+  $('detail-badge').textContent = stateLabel(h.state);
+  $('detail-sub').innerHTML = [
+    p.dataset ? `Dataset <code>${esc(p.dataset)}</code>` : '',
+    `tables <code>${esc(p.tablePrefix)}…</code>`,
+    `delivered through ${esc(fmtTime(h.throughUtc || p.tagCursorUtc))}`,
+    h.message || h.code ? `${h.code ? `<code>${esc(h.code)}</code> ` : ''}${esc(h.message || '')}` : ''
+  ].filter(Boolean).join(' · ');
+  $('detail-actions').innerHTML =
+    (running ? `<button type="button" data-act="stop">Stop</button>` : h.state === 'running_elsewhere' ? '' : `<button type="button" data-act="start">Start</button>`) +
+    `<button type="button" class="danger" data-act="remove">Remove…</button>`;
+  if (pendingRemove !== name) { $('detail-confirm').innerHTML = ''; return; }
+  if ($('detail-confirm').firstElementChild) return; // already open: leave the dialog alone
+  const keeps = p.datasetCreated ? 'Its Dataset and tags stay unless you tick the box below.' : 'Tags already in Historian stay.';
+  const datasetChoice = p.datasetCreated
+    ? `<label class="remove-dataset"><input type="checkbox" id="remove-dataset"${pendingRemoveDataset ? ' checked' : ''}><span>Also delete its Dataset <code>${esc(p.dataset)}</code> and every tag in it. This cannot be undone.</span></label>`
+    : '';
+  $('detail-confirm').innerHTML = `<div class="remove-confirm"><b>Remove ${safe}?</b><span>This stops the plant and drops its tables (<code>${esc(p.tablePrefix)}…</code>) and registration. Other plants are not touched. ${keeps}</span>${datasetChoice}<div class="row"><button type="button" class="danger solid" data-act="remove-yes">Remove ${safe}</button><button type="button" data-act="remove-no">Cancel</button></div></div>`;
+}
+
+$('plant-detail').addEventListener('change', e => {
+  if (e.target.id === 'remove-dataset') pendingRemoveDataset = e.target.checked;
+});
+document.querySelector('.detail-head').addEventListener('click', async e => {
   const button = e.target.closest('button[data-act]');
   if (!button) return;
-  const name = button.dataset.name, act = button.dataset.act;
-  if (act === 'toggle') { expandedPlants.has(name) ? expandedPlants.delete(name) : expandedPlants.add(name); return renderPlants(); }
-  if (act === 'remove') { pendingRemove = name; pendingRemoveDataset = false; return loadPlants(); }
-  if (act === 'remove-no') { pendingRemove = null; pendingRemoveDataset = false; return loadPlants(); }
+  const name = browse.plant, act = button.dataset.act;
+  if (act === 'remove') { pendingRemove = name; pendingRemoveDataset = false; return renderDetailHead(); }
+  if (act === 'remove-no') { pendingRemove = null; pendingRemoveDataset = false; return renderDetailHead(); }
   button.disabled = true;
   try {
     if (act === 'stop' || act === 'start') await api('POST', `/api/plants/${encodeURIComponent(name)}/${act}`);
     if (act === 'remove-yes') {
       await api('DELETE', `/api/plants/${encodeURIComponent(name)}?confirm=true${pendingRemoveDataset ? '&deleteDataset=true' : ''}`);
-      pendingRemove = null;
-      pendingRemoveDataset = false;
-      expandedPlants.delete(name);
+      pendingRemove = null; pendingRemoveDataset = false;
+      closePlant();
     }
   } catch (err) {
     $('plants-error').hidden = false;
@@ -839,16 +902,224 @@ $('plants').addEventListener('click', async e => {
   await loadPlants();
 });
 
+// ----- sections -----
+
+function selectSection(section) {
+  browse.section = section;
+  for (const name of ['summary', 'series', 'tables']) {
+    $('sec-' + name).setAttribute('aria-selected', String(name === section));
+    $('pane-' + name).hidden = name !== section;
+  }
+  writeHash();
+  if (section === 'summary' && !browse.summary) loadSummary();
+  if (section === 'tables' && !browse.tables) loadTables();
+  if (section === 'series') renderSeriesPane();
+}
+document.querySelector('.section-tabs').addEventListener('click', e => {
+  const tab = e.target.closest('[data-section]');
+  if (tab) selectSection(tab.dataset.section);
+});
+document.querySelector('.section-tabs').addEventListener('keydown', e => {
+  if (!['ArrowLeft', 'ArrowRight'].includes(e.key) || !e.target.matches('[data-section]')) return;
+  const order = ['summary', 'series', 'tables'];
+  const next = order[(order.indexOf(e.target.dataset.section) + (e.key === 'ArrowRight' ? 1 : 2)) % 3];
+  selectSection(next); $('sec-' + next).focus();
+});
+$('detail-refresh').addEventListener('click', () => {
+  if (browse.section === 'summary') loadSummary();
+  if (browse.section === 'tables') { loadTables(); }
+  if (browse.section === 'series') renderSeriesPane(true);
+});
+
+const browseUrl = (path = '') => `/api/browse/${encodeURIComponent(browse.plant)}${path}`;
+const problem = e => `<p class="error">${esc(e.message)}${e.code ? ` <code>${esc(e.code)}</code>` : ''}</p>`;
+
+// ----- Summary -----
+
+async function loadSummary() {
+  const seq = ++browse.seq, plant = browse.plant;
+  if (!browse.summary) $('pane-summary').innerHTML = '<p class="muted">Loading…</p>';
+  try {
+    const summary = await api('GET', browseUrl());
+    if (plant !== browse.plant || seq !== browse.seq) return;
+    browse.summary = summary;
+    renderSummary();
+  } catch (e) {
+    if (plant !== browse.plant) return;
+    $('pane-summary').insertAdjacentHTML('afterbegin', problem(e));
+  }
+}
+
+function renderSummary() {
+  const s = browse.summary, base = `/api/plants/${encodeURIComponent(s.simulation)}`;
+  const modules = Object.entries(s.modules).filter(([, on]) => on).map(([name]) => name);
+  const lines = s.lines.map(l => `<li><b>${esc(l.name)}</b> <code>${esc(l.id)}</code> <span class="muted">${esc(l.kind)}</span>
+      <ul>${l.equipment.map(e => `<li><code>${esc(e.id)}</code> ${esc(e.name)} <span class="muted">${esc(e.class)}</span></li>`).join('')}</ul></li>`).join('');
+  const incidents = s.incidents.length
+    ? `<div class="grid-wrap"><table class="grid compact"><thead><tr><th>When</th><th>Line</th><th>Machine</th><th>Failure mode</th><th>Note</th></tr></thead><tbody>${s.incidents.map(i =>
+        `<tr><td class="mono">${esc(fmtTime(i.atUtc))}</td><td class="mono">${esc(i.line || '—')}</td><td class="mono">${esc(i.equipment || '—')}</td><td class="mono">${esc(i.failureMode)}</td><td>${esc(i.note)}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="muted">No planted incidents.</p>';
+  const drifts = s.drifts.length
+    ? `<p class="muted">Golden-batch drifts: ${s.drifts.map(d => `${esc(d.line)} ${esc(d.phase)} from ${esc(fmtTime(d.fromUtc))} (${esc(d.cause)})`).join('; ')}</p>` : '';
+  $('pane-summary').innerHTML = `<div class="summary-grid">
+    <section class="card"><div class="eyebrow">Run</div><dl class="kv">
+      <dt>History starts</dt><dd>${esc(fmtTime(s.window.startUtc))}</dd>
+      <dt>Approved ("now")</dt><dd>${esc(fmtTime(s.window.anchorUtc))}</dd>
+      <dt>Tags delivered through</dt><dd>${esc(fmtTime(s.delivery.tagCursorUtc))}</dd>
+      <dt>Last snapshot</dt><dd>${esc(fmtTime(s.delivery.snapshotUtc))}</dd>
+      <dt>Changes applied</dt><dd>${num(s.delivery.appliedSequence)}</dd>
+      <dt>Status</dt><dd><span class="badge ${esc(shownState(s.hosting.state))}">${esc(stateLabel(s.hosting.state))}</span> ${esc(s.hosting.message || '')}</dd>
+    </dl></section>
+    <section class="card"><div class="eyebrow">Where the data is</div><dl class="kv">
+      <dt>Dataset</dt><dd>${s.dataset ? `<code>${esc(s.dataset)}</code>${s.datasetCreated ? ' <span class="muted">created by this page, 365-day purge</span>' : ''}` : '—'}</dd>
+      <dt>Tag root</dt><dd><code>${esc(s.tagRoot)}</code></dd>
+      <dt>Postgres tables</dt><dd><code>${esc(s.tablePrefix)}…</code> in <code>flow_data_sim</code></dd>
+      <dt>Counts</dt><dd>${num(s.counts.tables)} tables · ${num(s.counts.tags)} tags</dd>
+      <dt>Areas</dt><dd>${modules.length ? modules.map(esc).join(', ') : 'core only'}</dd>
+    </dl></section>
+    <section class="card"><div class="eyebrow">Lines and equipment</div><ul class="tree">${lines}</ul></section>
+    <section class="card"><div class="eyebrow">Storylines and planted incidents</div>
+      ${s.storylines.length ? `<ul class="plain">${s.storylines.map(t => `<li>${esc(t.title)} <code>${esc(t.id)}</code></li>`).join('')}</ul>` : '<p class="muted">No storylines recorded.</p>'}
+      ${incidents}${drifts}
+    </section>
+  </div>
+  <section class="card"><div class="eyebrow">Files</div><div class="downloads">${plantFiles(base)}</div></section>`;
+}
+
+// ----- Time series (Phase 4 fills this) -----
+
+function renderSeriesPane() {
+  $('pane-series').innerHTML = '<p class="muted">Trends are coming in this build.</p>';
+}
+
+// ----- Tables -----
+
+async function loadTables() {
+  const plant = browse.plant;
+  $('table-list').innerHTML = '<li class="muted">Loading…</li>';
+  try {
+    const tables = await api('GET', browseUrl('/tables'));
+    if (plant !== browse.plant) return;
+    browse.tables = tables;
+    if (!tables.some(t => t.name === browse.table)) browse.table = tables[0]?.name || null;
+    renderTableList();
+    writeHash();
+    if (browse.table) loadRows();
+  } catch (e) {
+    if (plant !== browse.plant) return;
+    $('table-list').innerHTML = `<li>${problem(e)}</li>`;
+  }
+}
+
+function renderTableList() {
+  $('table-list').innerHTML = browse.tables.map(t => `<li><button type="button" data-table="${esc(t.name)}"${t.name === browse.table ? ' aria-current="true"' : ''} title="${esc(t.description)}">
+    <span class="table-purpose">${esc(t.purpose)}</span><span class="table-count">${num(t.rows)}${t.deletedRows ? ` <span class="muted">(${num(t.deletedRows)} deleted)</span>` : ''}</span></button></li>`).join('');
+}
+$('table-list').addEventListener('click', e => {
+  const button = e.target.closest('[data-table]');
+  if (!button || button.dataset.table === browse.table) return;
+  browse.table = button.dataset.table;
+  browse.grid = { sort: 'row_version', dir: 'desc', q: '', deleted: $('grid-deleted').checked, page: 1 };
+  $('grid-search').value = '';
+  renderTableList();
+  writeHash();
+  loadRows();
+});
+
+async function loadRows() {
+  const seq = ++browse.seq, g = browse.grid;
+  const query = new URLSearchParams({ sort: g.sort, dir: g.dir, page: String(g.page) });
+  if (g.q) query.set('q', g.q);
+  if (g.deleted) query.set('deleted', 'true');
+  $('grid').classList.add('loading');
+  try {
+    const rows = await api('GET', browseUrl(`/tables/${encodeURIComponent(browse.table)}/rows?${query}`));
+    if (seq !== browse.seq) return;
+    browse.rows = rows;
+    $('grid-error').hidden = true;
+    renderGrid();
+  } catch (e) {
+    if (seq !== browse.seq) return;
+    $('grid-error').hidden = false;                 // the last good page stays visible
+    $('grid-error').innerHTML = `${esc(e.message)}${e.code ? ` <code>${esc(e.code)}</code>` : ''}`;
+  } finally { if (seq === browse.seq) $('grid').classList.remove('loading'); }
+}
+
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+function cell(value) {
+  if (value === null || value === undefined) return '<td class="null">null</td>';
+  if (typeof value === 'number') return `<td class="num">${esc(value.toLocaleString(undefined, { maximumFractionDigits: 6 }))}</td>`;
+  if (typeof value === 'boolean') return `<td class="mono">${value}</td>`;
+  const text = String(value);
+  if (ISO_TIME.test(text)) return `<td class="mono" title="${esc(text)}">${esc(text.slice(0, 19).replace('T', ' '))}</td>`;
+  return `<td${text.endsWith('…') ? ` title="${esc(text)}"` : ''}>${esc(text)}</td>`;
+}
+
+function renderGrid() {
+  const r = browse.rows, g = browse.grid;
+  const deletedAt = r.columns.indexOf('is_deleted');
+  $('grid').querySelector('thead').innerHTML = '<tr>' + r.columns.map(c => {
+    const sorted = c === r.sort;
+    return `<th aria-sort="${sorted ? (r.dir === 'asc' ? 'ascending' : 'descending') : 'none'}"><button type="button" data-sort="${esc(c)}">${esc(c)}${sorted ? `<span class="arrow" aria-hidden="true">${r.dir === 'asc' ? '▲' : '▼'}</span>` : ''}</button></th>`;
+  }).join('') + '</tr>';
+  $('grid').querySelector('tbody').innerHTML = r.rows.length
+    ? r.rows.map(row => `<tr${deletedAt >= 0 && row[deletedAt] === true ? ' class="deleted"' : ''}>${row.map(cell).join('')}</tr>`).join('')
+    : `<tr><td class="muted" colspan="${r.columns.length}">${g.q ? 'No rows match the search.' : 'No rows.'}</td></tr>`;
+  const pages = Math.max(1, Math.min(MAX_PAGE, Math.ceil(r.total / PAGE_SIZE)));
+  $('grid-count').textContent = `${num(r.total)} rows · page ${r.page} of ${num(pages)}`;
+  $('grid-page').textContent = `Page ${r.page} of ${num(pages)}`;
+  $('grid-prev').disabled = r.page <= 1;
+  $('grid-next').disabled = r.page >= pages;
+}
+$('grid').addEventListener('click', e => {
+  const th = e.target.closest('[data-sort]');
+  if (!th) return;
+  const g = browse.grid, column = th.dataset.sort;
+  g.dir = g.sort === column && g.dir === 'desc' ? 'asc' : 'desc';
+  g.sort = column; g.page = 1;
+  loadRows();
+});
+$('grid-prev').addEventListener('click', () => { if (browse.grid.page > 1) { browse.grid.page--; loadRows(); } });
+$('grid-next').addEventListener('click', () => { if (browse.grid.page < MAX_PAGE) { browse.grid.page++; loadRows(); } });
+$('grid-deleted').addEventListener('change', e => { browse.grid.deleted = e.target.checked; browse.grid.page = 1; loadRows(); });
+let searchTimer = null;
+function search() { clearTimeout(searchTimer); browse.grid.q = $('grid-search').value.trim(); browse.grid.page = 1; loadRows(); }
+$('grid-search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(search, 300); });
+$('grid-search').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); search(); } });
+
 // ---------------- start ----------------
 
 // Where the page opens: a link to an interview opens that interview; otherwise
 // the Plants view when this page has created plants, and the interview (step 1)
 // when it has none yet.
 const linkedInterview = /#interview=([0-9a-f-]{36})/.exec(location.hash)?.[1];
+const hashValue = key => { const m = new RegExp(`[#&]${key}=([^&]*)`).exec(location.hash); return m ? decodeURIComponent(m[1]) : null; };
+const linkedPlant = hashValue('plant');
+// A link pasted or followed while the page is open (the page itself writes the
+// URL with replaceState, which does not fire this).
+window.addEventListener('hashchange', () => {
+  const plant = hashValue('plant');
+  if (!plant) return;
+  if (currentTab !== 'plants') showTab('plants');
+  if (plant !== browse.plant) return openPlant(plant, hashValue('section') || 'summary', hashValue('table'));
+  const section = hashValue('section') || 'summary', table = hashValue('table');
+  if (section === 'tables' && table && table !== browse.table && browse.tables?.some(t => t.name === table)) {
+    browse.table = table; renderTableList();
+    browse.grid = { sort: 'row_version', dir: 'desc', q: '', deleted: $('grid-deleted').checked, page: 1 };
+    $('grid-search').value = '';
+  }
+  if (section !== browse.section) selectSection(section);
+  else if (section === 'tables' && table === browse.table) loadRows();
+});
 interviewId = linkedInterview || store.get('flowsim.interview');
 loadHealth(false);
 loadInterview();
 (async () => {
+  if (linkedPlant) {
+    showTab('plants');
+    openPlant(linkedPlant, hashValue('section') || 'summary', hashValue('table'));
+    return;
+  }
   let open = 'interview';
   if (!linkedInterview) {
     try { if (((await api('GET', '/api/plants')).plants || []).some(p => p.managed)) open = 'plants'; }

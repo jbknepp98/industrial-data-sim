@@ -359,6 +359,10 @@ public partial class WebTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Contains("<title>Timebase Plant Simulator</title>", page);
         Assert.Contains("<span class=\"product-sub\">Plant Simulator</span>", page);
         Assert.DoesNotContain("Data Simulator", page);
+        // The plant browser: a plant's page with Summary, Time series and Tables, read from /api/browse.
+        Assert.Contains("id=\"plant-detail\"", page);
+        Assert.Contains("id=\"pane-tables\"", page);
+        Assert.Contains("/api/browse/", await web.Http.GetStringAsync("/app.js"));
         // The Timebase look: its fonts and icon are served by the page itself, never fetched from the internet.
         string styles = await web.Http.GetStringAsync("/styles.css");
         Assert.DoesNotContain("https://", styles);

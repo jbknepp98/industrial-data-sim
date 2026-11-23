@@ -124,11 +124,46 @@
 </main>
 
 <main id="view-plants" class="view" role="tabpanel" aria-labelledby="tab-plants" hidden>
-  <header class="page-head"><h1>Plants</h1><p>Plants approved on this page run inside this container and write to their own tables in <code>flow_data_sim</code>. <span id="plants-dataset"></span></p></header>
-  <div class="toolbar">
-    <label class="filter"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="search" id="plant-filter" placeholder="Filter plants…" aria-label="Filter plants" autocomplete="off"></label>
+  <div id="plants-overview">
+    <header class="page-head"><h1>Plants</h1><p>Plants approved on this page run inside this container and write to their own tables in <code>flow_data_sim</code>. <span id="plants-dataset"></span> Open one to browse its summary, trends and tables.</p></header>
+    <div class="toolbar">
+      <label class="filter"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="search" id="plant-filter" placeholder="Filter plants…" aria-label="Filter plants" autocomplete="off"></label>
+    </div>
+    <div class="list" id="plants" aria-live="polite"></div>
   </div>
-  <div class="list" id="plants" aria-live="polite"></div>
+
+  <section id="plant-detail" aria-labelledby="detail-name" hidden>
+    <nav class="crumbs" aria-label="Breadcrumb"><button type="button" class="crumb" id="plant-back">Plants</button><span aria-hidden="true">/</span><span id="detail-crumb"></span></nav>
+    <header class="page-head detail-head">
+      <div class="detail-title"><h1 id="detail-name"></h1><span class="badge" id="detail-badge"></span></div>
+      <p id="detail-sub"></p>
+      <div class="detail-actions" id="detail-actions"></div>
+      <div id="detail-confirm"></div>
+    </header>
+    <div class="section-tabs" role="tablist" aria-label="Plant sections">
+      <button type="button" role="tab" id="sec-summary" data-section="summary" aria-selected="true" aria-controls="pane-summary">Summary</button>
+      <button type="button" role="tab" id="sec-series" data-section="series" aria-selected="false" aria-controls="pane-series">Time series</button>
+      <button type="button" role="tab" id="sec-tables" data-section="tables" aria-selected="false" aria-controls="pane-tables">Tables</button>
+      <button type="button" class="ghost section-refresh" id="detail-refresh" title="Read the section again"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg><span>Refresh</span></button>
+    </div>
+    <div id="pane-summary" role="tabpanel" aria-labelledby="sec-summary"></div>
+    <div id="pane-series" role="tabpanel" aria-labelledby="sec-series" hidden></div>
+    <div id="pane-tables" role="tabpanel" aria-labelledby="sec-tables" hidden>
+      <div class="tables-layout">
+        <nav class="table-list card" aria-label="Tables"><div class="eyebrow">Tables</div><ul id="table-list"></ul></nav>
+        <div class="table-view">
+          <div class="grid-toolbar">
+            <label class="filter"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="search" id="grid-search" placeholder="Search text columns…" aria-label="Search the table's text columns" maxlength="100" autocomplete="off"></label>
+            <label class="check"><input type="checkbox" id="grid-deleted"><span>Show deleted rows</span></label>
+            <span class="grid-count" id="grid-count"></span>
+          </div>
+          <div class="grid-wrap"><table class="grid" id="grid"><thead></thead><tbody></tbody></table></div>
+          <div class="pager"><button type="button" id="grid-prev">Previous</button><span id="grid-page"></span><button type="button" id="grid-next">Next</button></div>
+          <p class="error" id="grid-error" hidden></p>
+        </div>
+      </div>
+    </div>
+  </section>
   <p class="error" id="plants-error" hidden></p>
 </main>
 

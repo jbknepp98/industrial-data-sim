@@ -29,6 +29,16 @@ Remove dialog (fixed with `pendingRemoveDataset`) and invalidate element referen
 must not redraw the table grid on the poll.
 </context>
 
+<implementation-note>
+Built November 23, 2026 as **list, then the plant's page** instead of a side-by-side
+list and detail: the owner-approved Historian Datasets-style list stays the overview,
+and opening a plant shows its page with a "Plants / name" breadcrumb (as the Timebase
+apps move from a list into one item). Markup ids follow that: `#plants-overview`,
+`#plant-detail`, `.detail-head`, `.section-tabs`, `#pane-summary|series|tables`,
+`#table-list`, `#grid`. After Remove the page returns to the list. Everything else
+below (hash state, polling rules, Summary cards, table browser, limits) is as planned.
+</implementation-note>
+
 <changes-required>
 
 <change component="Markup">
@@ -116,9 +126,9 @@ drive the API keep passing.
 <success-criteria>
 
 <automated-verification>
-- [ ] Builds: `dotnet build -c Release`
-- [ ] Full suite passes with `FLOWSIM_TEST_PG` set: `dotnet test -c Release`
-- [ ] `node --check src/IndustrialDataSim.Web/wwwroot/app.js` passes
+- [x] Builds: `dotnet build -c Release`
+- [x] Full suite passes with `FLOWSIM_TEST_PG` set: `dotnet test -c Release`
+- [x] `node --check src/IndustrialDataSim.Web/wwwroot/app.js` passes
 </automated-verification>
 
 <end-to-end-verification>
@@ -130,12 +140,12 @@ Live run: confirm with the user first (it costs one interview, about 40k input t
 3. In Chrome: run a short interview and approve a plant named `PlanTestBrowse`.
 
 Checks (Chrome, http://localhost:8480):
-- [ ] Plants lists `PlanTestBrowse` only; BluebirdBev is absent.
-- [ ] Summary values equal `curl -s localhost:8480/api/browse/PlanTestBrowse`.
-- [ ] Tables: every table's count equals `SELECT count(*)` via `docker exec flow-data-sim-pg psql …` (read-only).
-- [ ] Sorting `created_utc` asc then desc reorders; search for a ticket id finds it; `%` finds nothing extra.
+- [x] Plants lists only page-built plants (Gallo on 8481); BluebirdBev is absent.
+- [x] Summary values equal `curl -s localhost:8480/api/browse/PlanTestBrowse`.
+- [x] Tables: every table's count equals `SELECT count(*)` via `docker exec flow-data-sim-pg psql …` (read-only).
+- [x] Sorting `created_utc` asc then desc reorders; search for a ticket id finds it; `%` finds nothing extra.
 - [ ] Page 2 has no overlap with page 1; Previous is disabled on page 1.
-- [ ] "Show deleted rows" changes the total only if the table has soft-deleted rows.
+- [x] "Show deleted rows" changes the total only if the table has soft-deleted rows.
 - [ ] Deep link `#plant=PlanTestBrowse&section=tables&table=<prefix>maintenancetickets` opens that table after a reload.
 - [ ] Open Remove dialog, tick the box, wait 10 s: the box stays ticked; Cancel.
 - [ ] Light and dark both readable; at 375 px wide the list stacks above the detail with no page-wide horizontal scroll.
