@@ -15,7 +15,7 @@ import sys
 import zipfile
 
 RIDS = ('linux-arm64', 'linux-x64', 'osx-arm64', 'win-x64')
-DEFAULT_VERSION = '2.0.0-rc.2'
+DEFAULT_VERSION = '2.0.0-rc.3'
 # Phase 4 prereleases, numbered 1.0.0 release candidates, 1.0.0 (owner-approved
 # November 21, 2026, as a version-only rebuild of rc.2) and 1.0.1 (owner-approved
 # the same day: 1.0.0 source plus a native linux-arm64 package). Any later
