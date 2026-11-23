@@ -105,7 +105,7 @@ public partial class WebTests(Xunit.Abstractions.ITestOutputHelper output)
 
     private static async Task<Harness> Start(Func<IInterviewModel> model, string connection = NoDatabase, bool hostPlants = false,
         IInterviewStore? interviews = null, IWebPlantRegistry? registry = null, Func<CancellationToken, Task<GageCheckResult>>? gageCheck = null,
-        IPlantDatasets? datasets = null)
+        IPlantDatasets? datasets = null, Func<HistorianClient>? historianReader = null)
     {
         var log = new StringWriter();
         var services = new WebServices
@@ -118,6 +118,7 @@ public partial class WebTests(Xunit.Abstractions.ITestOutputHelper output)
             Gage = new GageHealth(gageCheck ?? (_ => Task.FromResult(new GageCheckResult("anthropic/claude", "test", "ok", 1, 1, ["anthropic/claude"]))), "anthropic/claude"),
             Historian = _ => null,
             Datasets = datasets,
+            HistorianReader = historianReader,
             Dataset = "Test",
             Log = new JsonLog(TextWriter.Synchronized(log)),
             DemoGuideTemplate = File.ReadAllText(Path.Combine(StorylineFolder, "demo-guide.md")),

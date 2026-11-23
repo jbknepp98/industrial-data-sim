@@ -68,6 +68,7 @@ var services = new WebServices
     Gage = new GageHealth(stop => Gage().Check(stop), Setting("FLOWSIM_GAGE_MODEL") ?? GageSettings.DefaultModel),
     Historian = _ => new HistorianClient(HistorianConnection.FromEnvironment()),
     Datasets = new HistorianPlantDatasets(() => new HistorianClient(HistorianConnection.FromEnvironment())),
+    HistorianReader = () => new HistorianClient(HistorianConnection.FromEnvironment()),
     Dataset = Setting("TIMEBASE_DATASET"),
     Log = log,
     DemoGuideTemplate = template

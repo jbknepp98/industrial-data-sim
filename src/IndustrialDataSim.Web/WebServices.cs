@@ -27,6 +27,12 @@ public sealed class WebServices
     /// its own Dataset (2.0.0-rc.1) still write to it.
     /// </summary>
     public string? Dataset { get; init; }
+    /// <summary>
+    /// Creates a Historian client for the plant browser's trend reads (one per
+    /// request, disposed after it). Null: no Historian, and trends answer 503
+    /// browse.historian_unavailable.
+    /// </summary>
+    public Func<HistorianClient>? HistorianReader { get; init; }
     public required JsonLog Log { get; init; }
     /// <summary>The demo guide template (examples/storylines/demo-guide.md).</summary>
     public required string DemoGuideTemplate { get; init; }

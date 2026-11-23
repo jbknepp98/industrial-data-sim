@@ -223,4 +223,87 @@ public partial class WebTests
         }
         finally { Cleanup(name); }
     }
+
+    [Fact]
+    public async Task TrendsReadThePlantsOwnTagsWithinItsRunAndRefuseEverythingElse()
+    {
+        if (Connection is null) return;
+        string name = "PlanTestBrowseTrend" + Guid.NewGuid().ToString("N")[..6];
+        string other = "PlanTestOther" + Guid.NewGuid().ToString("N")[..8];
+        var server = new HistorianReadTests.FakeHistorian(query =>
+        {
+            // Every requested tag gets 5,000 one-second points.
+            var names = query.Split('&').Where(p => p.Contains("tagname=")).Select(p => Uri.UnescapeDataString(p[(p.IndexOf("tagname=") + 8)..]));
+            var start = DateTimeOffset.Parse(Uri.UnescapeDataString(query.Split("start=")[1].Split('&')[0]));
+            string Points(int count) => string.Join(",", Enumerable.Range(0, count).Select(i => $"{{\"t\":\"{start.AddSeconds(i):yyyy-MM-ddTHH:mm:ssZ}\",\"v\":{i % 97},\"q\":192}}"));
+            return (HttpStatusCode.OK, "{\"tl\":[" + string.Join(",", names.Select(n => $"{{\"t\":{{\"n\":\"{n}\"}},\"d\":[{Points(5000)}]}}")) + "]}");
+        });
+        await using var web = await Start(() => new ScriptedModel(InterviewToPreview(name)), Connection, historianReader: () => HistorianReadTests.Client(server));
+        try
+        {
+            var id = await NewInterview(web.Http);
+            await Send(web.Http, id, "A bottler; late orders after labeler jams.");
+            Assert.Equal(HttpStatusCode.Created, (await web.Http.PostAsync($"/api/interviews/{id}/approve", JsonBody(new { confirm = true }))).StatusCode);
+            await web.App.Services.GetRequiredService<PlantHostingService>().StopPlant(name);
+            var registration = web.Services.Plants.Registration(name)!;
+            var model = PlantModelLoader.Load(registration.ModelJson, registration.AnchorUtc).Model!;
+            var tags = new PlantSignals(new PlantRun(model, model.StartUtc, model.StartUtc, [], [], [])).Tags;
+
+            // The tag tree groups line tags and machine tags.
+            var series = await Get(web.Http, $"/api/browse/{name}/series");
+            Assert.Equal("Test", series["dataset"]!.GetValue<string>());
+            var line = series["lines"]![0]!;
+            Assert.Contains(line["tags"]!.AsArray(), t => t!["name"]!.GetValue<string>().EndsWith(".Speed"));
+            var machine = line["equipment"]!.AsArray().First()!;
+            Assert.All(machine["tags"]!.AsArray(), t => Assert.Contains("." + machine["id"]!.GetValue<string>() + ".", t!["name"]!.GetValue<string>()));
+            Assert.Equal(tags.Count, series["lines"]!.AsArray().Sum(l => l!["tags"]!.AsArray().Count + l["equipment"]!.AsArray().Sum(e => e!["tags"]!.AsArray().Count)) + series["plantTags"]!.AsArray().Count);
+
+            string speed = tags.First(t => t.Name.EndsWith(".Speed")).Name, state = tags.First(t => t.Name.EndsWith(".State")).Name;
+            var from = registration.StartUtc.AddHours(1);
+            string Range(DateTimeOffset a, DateTimeOffset b) => $"&start={Uri.EscapeDataString(a.ToString("O"))}&end={Uri.EscapeDataString(b.ToString("O"))}";
+            string url = $"/api/browse/{name}/trend?tag={Uri.EscapeDataString(speed)}&tag={Uri.EscapeDataString(state)}" + Range(from, from.AddHours(2));
+            var trend = await Get(web.Http, url);
+            var speedSeries = trend["tags"]![0]!;
+            Assert.Equal(speed, speedSeries["name"]!.GetValue<string>());
+            Assert.Equal(5000, speedSeries["rawPoints"]!.GetValue<int>());
+            Assert.True(speedSeries["thinned"]!.GetValue<bool>());
+            Assert.InRange(speedSeries["points"]!.AsArray().Count, 1, TrendThinning.MaxPoints);
+            Assert.Equal("string", trend["tags"]![1]!["valueType"]!.GetValue<string>());
+
+            async Task Refused(string query, HttpStatusCode status, string code)
+            {
+                var refused = await Refusal(web.Http, $"/api/browse/{name}/trend?{query}");
+                Assert.Equal((status, code), (refused.Status, refused.Code));
+            }
+            string t1 = "tag=" + Uri.EscapeDataString(speed);
+            await Refused($"tag={Uri.EscapeDataString(other + ".L1.Speed")}" + Range(from, from.AddHours(1)), HttpStatusCode.BadRequest, "browse.bad_tags");
+            await Refused(string.Join("&", tags.Take(5).Select(t => "tag=" + Uri.EscapeDataString(t.Name))) + Range(from, from.AddHours(1)), HttpStatusCode.BadRequest, "browse.bad_tags");
+            await Refused(Range(from, from.AddHours(1))[1..], HttpStatusCode.BadRequest, "browse.bad_tags");
+            await Refused(t1 + Range(from, from.AddDays(32)), HttpStatusCode.BadRequest, "browse.bad_range");
+            await Refused(t1 + Range(registration.StartUtc.AddMinutes(-1), from), HttpStatusCode.BadRequest, "browse.bad_range");
+            await Refused(t1 + Range(from, from), HttpStatusCode.BadRequest, "browse.bad_range");
+            await Refused(t1 + Range(DateTimeOffset.UtcNow.AddMinutes(-30), DateTimeOffset.UtcNow.AddHours(1)), HttpStatusCode.BadRequest, "browse.bad_range");
+            Assert.All(server.Queries, q => Assert.StartsWith("/api/datasets/Test/data?", q)); // only the plant's Dataset was read
+            Assert.Equal(HttpStatusCode.NotFound, (await web.Http.GetAsync($"/api/browse/{other}/trend?{t1}" + Range(from, from.AddHours(1)))).StatusCode);
+        }
+        finally { Cleanup(name); }
+
+        // Without a Historian connection the page says so.
+        string plain = "PlanTestBrowseNoH" + Guid.NewGuid().ToString("N")[..6];
+        await using var noHistorian = await Start(() => new ScriptedModel(InterviewToPreview(plain)), Connection);
+        try
+        {
+            var id = await NewInterview(noHistorian.Http);
+            await Send(noHistorian.Http, id, "A bottler; late orders after labeler jams.");
+            Assert.Equal(HttpStatusCode.Created, (await noHistorian.Http.PostAsync($"/api/interviews/{id}/approve", JsonBody(new { confirm = true }))).StatusCode);
+            // Stop the host approval started, so cleanup never drops tables it is writing.
+            await noHistorian.App.Services.GetRequiredService<PlantHostingService>().StopPlant(plain);
+            var registration = noHistorian.Services.Plants.Registration(plain)!;
+            var model = PlantModelLoader.Load(registration.ModelJson, registration.AnchorUtc).Model!;
+            string speed = new PlantSignals(new PlantRun(model, model.StartUtc, model.StartUtc, [], [], [])).Tags.First(t => t.Name.EndsWith(".Speed")).Name;
+            var refused = await Refusal(noHistorian.Http, $"/api/browse/{plain}/trend?tag={Uri.EscapeDataString(speed)}&start={Uri.EscapeDataString(registration.StartUtc.AddHours(1).ToString("O"))}&end={Uri.EscapeDataString(registration.StartUtc.AddHours(2).ToString("O"))}");
+            Assert.Equal((HttpStatusCode.ServiceUnavailable, "browse.historian_unavailable"), (refused.Status, refused.Code));
+        }
+        finally { Cleanup(plain); }
+    }
 }

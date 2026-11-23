@@ -217,6 +217,94 @@ public sealed class PlantBrowser(WebServices services, PlantHostingService hosti
         };
     }
 
+    public const int MaxTrendTags = 4;
+    public static readonly TimeSpan MaxTrendSpan = TimeSpan.FromDays(31);
+
+    private static IReadOnlyList<PlantTag> TagsOf(PlantModel model) =>
+        new PlantSignals(new PlantRun(model, model.StartUtc, model.StartUtc, [], [], [])).Tags;
+
+    /// <summary>The plant's tags grouped by line and machine, and the time range that has data.</summary>
+    public object Series(string simulation)
+    {
+        var (registration, model) = Find(simulation);
+        var tags = TagsOf(model);
+        object Tag(PlantTag t) => new { name = t.Name, measure = t.Measure, valueType = t.ValueType };
+        return new
+        {
+            dataset = DatasetOf(simulation),
+            range = new { minUtc = registration.StartUtc, maxUtc = DataEnd(registration) },
+            lines = model.Lines.Select(l => new
+            {
+                id = l.Id, name = l.Name,
+                tags = tags.Where(t => t.Line == l.Id && t.Equipment is null).Select(Tag),
+                equipment = l.Equipment.Select(e => new
+                {
+                    id = e.Id, name = e.Name,
+                    tags = tags.Where(t => t.Line == l.Id && t.Equipment == e.Id).Select(Tag)
+                }).Where(e => e.tags.Any())
+            }),
+            plantTags = tags.Where(t => model.Lines.All(l => l.Id != t.Line)).Select(Tag)
+        };
+    }
+
+    private string? DatasetOf(string simulation) => services.Registry.Find(simulation)?.Dataset ?? services.Dataset;
+
+    private DateTimeOffset DataEnd(PlantRegistration registration)
+    {
+        var now = services.Clock();
+        return registration.TagCursorUtc is { } cursor && cursor < now ? cursor : now;
+    }
+
+    /// <summary>Up to 4 of the plant's tags between start and end, each thinned to at most 1,000 points.</summary>
+    public async Task<object> Trend(string simulation, IReadOnlyList<string> tagNames, DateTimeOffset? start, DateTimeOffset? end, CancellationToken stop)
+    {
+        var (registration, model) = Find(simulation);
+        var tags = TagsOf(model).ToDictionary(t => t.Name, StringComparer.Ordinal);
+        var requested = tagNames.Distinct(StringComparer.Ordinal).ToList();
+        if (requested.Count is < 1 or > MaxTrendTags)
+            throw new BrowseRefusal(400, "browse.bad_tags", $"Pick 1 to {MaxTrendTags} tags for one trend.");
+        if (requested.FirstOrDefault(t => !tags.ContainsKey(t)) is { } unknown)
+            throw new BrowseRefusal(400, "browse.bad_tags", $"{unknown} is not one of {simulation}'s tags. Pick tags from its tag list.");
+
+        var latest = services.Clock().AddMinutes(5);
+        string window = $"from {registration.StartUtc:yyyy-MM-dd HH:mm} UTC to now, at most {MaxTrendSpan.TotalDays:0} days at a time";
+        if (start is not { } from || end is not { } to || from >= to)
+            throw new BrowseRefusal(400, "browse.bad_range", $"Give a start before the end. The plant has data {window}.");
+        from = from.ToUniversalTime(); to = to.ToUniversalTime();
+        if (to - from > MaxTrendSpan || from < registration.StartUtc || to > latest)
+            throw new BrowseRefusal(400, "browse.bad_range", $"Choose a range {window}.");
+
+        string dataset = DatasetOf(simulation)
+            ?? throw new BrowseRefusal(409, "browse.dataset_unknown", $"The page does not know which Dataset {simulation} writes to, so it cannot show its trends.");
+        if (services.HistorianReader is null)
+            throw new BrowseRefusal(503, "browse.historian_unavailable", "The page has no Historian connection (TIMEBASE_BASE_URL and the Pulse client settings), so it cannot show trends.");
+
+        IReadOnlyList<TagSeries> series;
+        using (var historian = services.HistorianReader())
+        {
+            try { series = await historian.ReadTagData(dataset, requested, from, to, stop); }
+            catch (RuntimeFailure failure) { throw new BrowseRefusal(502, failure.Error.Code, failure.Message); }
+        }
+        return new
+        {
+            dataset,
+            start = from,
+            end = to,
+            tags = series.Select(s =>
+            {
+                var tag = tags[s.Tag];
+                var (points, thinned) = TrendThinning.Thin(s.Points, from, to, tag.ValueType);
+                return new
+                {
+                    name = s.Tag, measure = tag.Measure, valueType = tag.ValueType,
+                    points = points.Select(p => new object[] { p.Time.UtcDateTime, p.Value }),
+                    rawPoints = s.Points.Count,
+                    thinned
+                };
+            })
+        };
+    }
+
     private static object? Cell(object? value) => value switch
     {
         string text when text.Length > MaxCellLength => text[..MaxCellLength] + "…",

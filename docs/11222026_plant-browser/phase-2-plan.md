@@ -131,22 +131,33 @@ public static class TrendThinning
 <success-criteria>
 
 <automated-verification>
-- [ ] Builds: `dotnet build -c Release`
-- [ ] Full suite passes with `FLOWSIM_TEST_PG` set: `dotnet test -c Release`
-- [ ] New test classes run: `--filter "FullyQualifiedName~HistorianReadTests|FullyQualifiedName~TrendThinningTests"`
+- [x] Builds: `dotnet build -c Release`
+- [x] Full suite passes with `FLOWSIM_TEST_PG` set: `dotnet test -c Release`
+- [x] New test classes run: `--filter "FullyQualifiedName~HistorianReadTests|FullyQualifiedName~TrendThinningTests"`
 </automated-verification>
 
 <end-to-end-verification>
-- [ ] Live shape probe done; notes below filled in; `PlanTestReadProbe` deleted (`GET /api/datasets/PlanTestReadProbe/exists` → false).
-- [ ] The parser in `ReadTagData` matches the recorded live shape (tag-name field, point fields).
-- [ ] No other Dataset was read or written (probe script lists only `PlanTestReadProbe` URLs).
+- [x] Live shape probe done; notes below filled in; `PlanTestReadProbe` deleted (`GET /api/datasets/PlanTestReadProbe/exists` → false).
+- [x] The parser in `ReadTagData` matches the recorded live shape (tag-name field, point fields).
+- [x] No other Dataset was read or written (probe script lists only `PlanTestReadProbe` URLs).
 </end-to-end-verification>
 
 </success-criteria>
 
 <notes>
-Live shape (fill in during Step 0): tag-name field in `tl[].t` = …; boundary point observed = …;
-placeholder observed = …; latest-point read = ….
+Live shape, recorded November 23, 2026 on Historian 2.0.0 (`PlanTestReadProbe`, created,
+written, read and deleted twice; `exists` false afterwards; no other Dataset touched):
+- `tl[].t` has `n` (tag name) and `t` (type); points are `{t, v, q}`; the write answered
+  `{a, r: {cs, pp, lda}, t: {tag: {a, r}}}` tallies.
+- Boundary point: a range starting mid-way returns the last point before `start`
+  (e.g. 03:51:46 for a start of 03:52:16). **Deviation from Step 0's plan:** Historian
+  stores changes only (20 boolean writes kept 4 points), so dropping it would leave a
+  step chart empty until the next change. `ReadTagData` keeps it, moved to `start`.
+- Placeholder: a range with no earlier data starts with `{"t":"0001-01-01T00:00:00Z","q":0}`
+  (no `v`); an empty range returns only that. Dropped.
+- Booleans come back as `0`/`1`; integers without a decimal point. Plant tags are only
+  `number` and `string`, so the page never needs boolean handling.
+- No start/end: the latest point of each tag.
 </notes>
 
 <post-verification>

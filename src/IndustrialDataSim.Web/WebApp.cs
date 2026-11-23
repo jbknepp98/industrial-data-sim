@@ -736,6 +736,13 @@ public static class WebApp
         }
         app.MapGet("/api/browse/{name}", (string name) => Run(() => browser.Summary(name)));
         app.MapGet("/api/browse/{name}/tables", (string name) => Run(() => browser.Tables(name)));
+        app.MapGet("/api/browse/{name}/series", (string name) => Run(() => browser.Series(name)));
+        app.MapGet("/api/browse/{name}/trend", async (string name, string[]? tag, DateTimeOffset? start, DateTimeOffset? end, CancellationToken stop) =>
+        {
+            try { return Results.Json(await browser.Trend(name, tag ?? [], start, end, stop), Json); }
+            catch (BrowseRefusal refusal) { return Error(refusal.Status, refusal.Code, refusal.Message); }
+            catch (RuntimeFailure failure) { return Failure(failure, StatusCodes.Status503ServiceUnavailable); }
+        });
         app.MapGet("/api/browse/{name}/tables/{table}/rows", (string name, string table, string? sort, string? dir, string? q, bool? deleted, int? page) =>
             Run(() => browser.Rows(name, table, sort, dir, q, deleted == true, page ?? 1)));
     }

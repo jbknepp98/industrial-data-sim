@@ -22,6 +22,11 @@ internal sealed record ObservedPoint(DateTimeOffset Timestamp, JsonElement Value
 internal sealed record TagRead(string Name, string? Type, IReadOnlyList<ObservedPoint> Points);
 
 /// <summary>Bounded HTTP operations with no automatic write retry or response-body logging.</summary>
+/// <summary>One point of a tag read for display: time, raw JSON value, quality.</summary>
+public sealed record TagPoint(DateTimeOffset Time, JsonElement Value, int Quality);
+/// <summary>A tag's points in a read range, oldest first.</summary>
+public sealed record TagSeries(string Tag, IReadOnlyList<TagPoint> Points);
+
 public sealed class HistorianClient : IDisposable
 {
     internal HistorianConnection Connection { get; }
@@ -307,10 +312,84 @@ public sealed class HistorianClient : IDisposable
         return result;
     }
 
-    private async Task<JsonDocument> GetJson(string path, CancellationToken stop)
+    /// <summary>Largest tag-read answer accepted for the page's trends.</summary>
+    public const int MaxTagReadBytes = 32 * 1024 * 1024;
+
+    /// <summary>
+    /// Reads raw points for a few tags between startUtc and endUtc, for display
+    /// (GET /api/datasets/{dataset}/data). Observed on Historian 2.0.0: the
+    /// answer can begin with the last point before the range, which is kept as
+    /// the value at startUtc (Historian stores changes only, so it is the value
+    /// in force); the empty-range placeholder (year 1, quality 0, no value) is
+    /// dropped. Tags Historian does not know, or that are missing from the
+    /// answer, come back with no points. Up to 32 MB and 30 seconds; error
+    /// bodies are never echoed and nothing is retried except one token refresh.
+    /// </summary>
+    public async Task<IReadOnlyList<TagSeries>> ReadTagData(string dataset, IReadOnlyList<string> tags,
+        DateTimeOffset startUtc, DateTimeOffset endUtc, CancellationToken stop)
+    {
+        string query = string.Join("&", tags.Select(t => "tagname=" + Uri.EscapeDataString(t))) +
+                       "&start=" + Uri.EscapeDataString(startUtc.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")) +
+                       "&end=" + Uri.EscapeDataString(endUtc.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
+        JsonDocument? json;
+        try { json = await GetJson(DatasetPath(dataset) + "/data?" + query, stop, MaxTagReadBytes, TimeSpan.FromSeconds(30), allowNotFound: true); }
+        catch (RuntimeFailure failure) when (failure.Error.Code == "historian.response_limit")
+        {
+            throw new RuntimeFailure("historian.read_too_large", "Historian returned more than 32 MB for this range. Choose a shorter time range or fewer tags.");
+        }
+        catch (JsonException)
+        {
+            throw ReadUnexpected();
+        }
+        var byTag = tags.ToDictionary(t => t, _ => new List<TagPoint>(), StringComparer.Ordinal);
+        if (json is null) return tags.Select(t => new TagSeries(t, byTag[t])).ToList(); // 404: tags not written yet
+        using (json)
+        {
+            try
+            {
+                if (!json.RootElement.TryGetProperty("tl", out var list) || list.ValueKind != JsonValueKind.Array) throw ReadUnexpected();
+                foreach (var entry in list.EnumerateArray())
+                {
+                    string? name = entry.GetProperty("t").GetProperty("n").GetString();
+                    if (name is null || !byTag.TryGetValue(name, out var points)) continue;
+                    foreach (var point in entry.GetProperty("d").EnumerateArray())
+                    {
+                        var time = point.GetProperty("t").GetDateTimeOffset();
+                        bool hasValue = point.TryGetProperty("v", out var value);
+                        int quality = point.GetProperty("q").GetInt32();
+                        if (time == DateTimeOffset.MinValue && !hasValue) continue; // empty-range placeholder
+                        if (!hasValue) continue;
+                        if (time < startUtc)
+                        {
+                            // The value in force when the range starts.
+                            if (points.Count > 0 && points[^1].Time == startUtc) points.RemoveAt(points.Count - 1);
+                            points.Add(new TagPoint(startUtc, value.Clone(), quality));
+                            continue;
+                        }
+                        if (time > endUtc) continue;
+                        points.Add(new TagPoint(time, value.Clone(), quality));
+                    }
+                }
+            }
+            catch (Exception error) when (error is KeyNotFoundException or InvalidOperationException or FormatException)
+            {
+                throw ReadUnexpected();
+            }
+        }
+        return tags.Select(t => new TagSeries(t, byTag[t])).ToList();
+    }
+
+    private static RuntimeFailure ReadUnexpected() =>
+        new("historian.read_unexpected", "Historian answered the tag read in an unexpected format. Check that TIMEBASE_BASE_URL points at Historian 2.0.0.");
+
+    private async Task<JsonDocument> GetJson(string path, CancellationToken stop) =>
+        (await GetJson(path, stop, 4 * 1024 * 1024, TimeSpan.FromSeconds(20), allowNotFound: false))!;
+
+    /// <returns>The parsed body, or null for HTTP 404 when allowNotFound.</returns>
+    private async Task<JsonDocument?> GetJson(string path, CancellationToken stop, int limit, TimeSpan timeout, bool allowNotFound)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
-        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        deadline.CancelAfter(timeout);
         stop = deadline.Token;
         // A token can be rejected before its advertised expiry, or expire
         // between related reads. Only this GET is eligible for one refresh and
@@ -333,8 +412,9 @@ public sealed class HistorianClient : IDisposable
                 await Authenticate(stop);
                 continue;
             }
+            if (allowNotFound && response.StatusCode == HttpStatusCode.NotFound) return null;
             RequireOk(response, "read");
-            return await ReadJson(response, 4 * 1024 * 1024, stop);
+            return await ReadJson(response, limit, stop);
         }
         throw new InvalidOperationException("Bounded read attempts did not return or fail.");
     }
