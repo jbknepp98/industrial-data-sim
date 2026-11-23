@@ -473,13 +473,18 @@ public partial class WebTests(Xunit.Abstractions.ITestOutputHelper output)
         var connect = await web.Http.GetAsync($"/api/interviews/{id}/gage/connect");
         Assert.Equal("PlanTestGageKit-gage-connect.md", connect.Content.Headers.ContentDisposition?.FileNameStar ?? connect.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
         string connectBrief = await connect.Content.ReadAsStringAsync();
-        Assert.Contains("Ask the user for the password", connectBrief);
-        Assert.Contains("plantestgagekit_maintenancetickets", connectBrief);
+        Assert.Contains("ask the user to type it into the connection string field themselves", connectBrief);
+        Assert.Contains("`Timebase.Historian`", connectBrief);                 // the tags, not only the tables
+        Assert.Contains("Dataset `Test`", connectBrief);   // this harness has no per-plant Datasets, so the shared one
+        Assert.Contains("`PGDG.PostgreSql`", connectBrief);
+        Assert.Contains("`plantestgagekit_maintenancetickets`", connectBrief);
+        Assert.Contains("PlanTestGageKit/Equipment/OpenMaintenanceTickets/[EquipmentId]", connectBrief);
         Assert.DoesNotContain("FLOWSIM_READER_PASSWORD=", connectBrief);
 
         string atlasBrief = await web.Http.GetStringAsync($"/api/interviews/{id}/gage/atlas");
         Assert.Contains("`PlanTestGageKit.L1.LB-202.Vibration`", atlasBrief);
-        Assert.Contains("\"queryProperties\"", atlasBrief);
+        Assert.Contains("`PlanTestGageKit Historian` connector", atlasBrief);
+        Assert.Contains("PlanTestGageKit/Equipment/OpenMaintenanceTickets/[EquipmentId]", atlasBrief);
         Assert.Contains("# Gage prompts for PlanTestGageKit", await web.Http.GetStringAsync($"/api/interviews/{id}/gage/prompts"));
         Assert.Equal("gage.unknown_kit", await ErrorCode(await web.Http.GetAsync($"/api/interviews/{id}/gage/other")));
     }

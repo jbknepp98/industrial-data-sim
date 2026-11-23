@@ -195,8 +195,9 @@ name to `FLOWSIM_WEB_ALLOWED_HOSTS` in `web.env`.
   unless you tick **Also delete its Dataset** in the dialog; then the Dataset is
   deleted too, and the plant's name can be used again.
 - **Logs:** `docker logs flow-data-simulator-web`, one JSON line per event.
-- **Downloads per plant:** the Connect mapping spec, the Atlas starter, the
-  demo guide, and the Gage kit (prompts, Connect brief, Atlas brief).
+- **Downloads per plant:** the demo guide, **1 · Gage brief: Connect** (a Timebase
+  Historian connector for the plant's Dataset and a PostgreSQL connector for its
+  tables) and **2 · Gage brief: Atlas**. Attach each in Ask Gage in that app.
 - **Storage:** interviews, their messages and attached files are kept in
   `flow_data_sim` (`flowsim_interviews`, `flowsim_interview_messages`,
   `flowsim_interview_attachments`).
