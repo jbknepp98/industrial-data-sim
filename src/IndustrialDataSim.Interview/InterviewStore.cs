@@ -54,6 +54,14 @@ public interface IInterviewStore
     bool MarkApproved(Guid id, string simulation);
     /// <summary>Simulations admitted from an approved interview: the plants a web container may stop, start and remove.</summary>
     IReadOnlySet<string> ApprovedSimulations();
+
+    /// <summary>Stores a file the user attached (<see cref="AttachmentReader.Read"/> checked and converted it).</summary>
+    void SaveAttachment(StoredAttachment attachment) =>
+        throw new RuntimeFailure("interview.attachments_unsupported", "This interview store cannot keep attached files.");
+    /// <summary>An attachment of this interview, with its content; null when there is none with this id.</summary>
+    StoredAttachment? LoadAttachment(Guid interviewId, Guid attachmentId) => null;
+    /// <summary>How many files are attached to the interview so far.</summary>
+    int CountAttachments(Guid interviewId) => 0;
 }
 
 /// <summary>
@@ -61,8 +69,9 @@ public interface IInterviewStore
 /// that no simulation prefix can claim (they are created like
 /// flowsim_snapshots, on first use, under the admission lock):
 /// flowsim_interviews (one row per interview) and flowsim_interview_messages
-/// (the append-only history). Message content is stored as text, not jsonb,
-/// so it is replayed byte for byte.
+/// (the append-only history), plus flowsim_interview_attachments (files the
+/// user attached; the history refers to them by id). Message content is stored
+/// as text, not jsonb, so it is replayed byte for byte.
 /// </summary>
 public sealed class PostgresInterviewStore : IInterviewStore, IDisposable
 {
@@ -109,6 +118,19 @@ public sealed class PostgresInterviewStore : IInterviewStore, IDisposable
               draft_model_json    text,
               preview_json        text,
               approved_simulation text)
+            """);
+        Execute(connection, transaction, """
+            CREATE TABLE IF NOT EXISTS flowsim_interview_attachments (
+              id                  uuid PRIMARY KEY,
+              interview_id        uuid NOT NULL REFERENCES flowsim_interviews (id) ON DELETE CASCADE,
+              created_utc         timestamptz NOT NULL,
+              name                text NOT NULL,
+              kind                text NOT NULL CHECK (kind IN ('pdf', 'image', 'text')),
+              media_type          text NOT NULL,
+              size_bytes          bigint NOT NULL,
+              data                bytea,
+              text_content        text,
+              truncated           boolean NOT NULL DEFAULT false)
             """);
         Execute(connection, transaction, """
             CREATE TABLE IF NOT EXISTS flowsim_interview_messages (
@@ -246,6 +268,46 @@ public sealed class PostgresInterviewStore : IInterviewStore, IDisposable
         return names;
     }
 
+    public void SaveAttachment(StoredAttachment a)
+    {
+        using var connection = Open();
+        using var command = new NpgsqlCommand("""
+            INSERT INTO flowsim_interview_attachments (id, interview_id, created_utc, name, kind, media_type, size_bytes, data, text_content, truncated)
+            VALUES (@i, @v, @c, @n, @k, @m, @s, @d, @t, @x)
+            """, connection);
+        command.Parameters.AddWithValue("i", a.Id);
+        command.Parameters.AddWithValue("v", a.InterviewId);
+        command.Parameters.AddWithValue("c", a.CreatedUtc.ToUniversalTime());
+        command.Parameters.AddWithValue("n", a.Name);
+        command.Parameters.AddWithValue("k", a.Kind);
+        command.Parameters.AddWithValue("m", a.MediaType);
+        command.Parameters.AddWithValue("s", a.SizeBytes);
+        command.Parameters.AddWithValue("d", (object?)a.Data ?? DBNull.Value);
+        command.Parameters.AddWithValue("t", (object?)a.Text ?? DBNull.Value);
+        command.Parameters.AddWithValue("x", a.Truncated);
+        command.ExecuteNonQuery();
+    }
+
+    public StoredAttachment? LoadAttachment(Guid interviewId, Guid attachmentId)
+    {
+        using var connection = Open();
+        using var command = new NpgsqlCommand("SELECT created_utc, name, kind, media_type, size_bytes, data, text_content, truncated FROM flowsim_interview_attachments WHERE id = @i AND interview_id = @v", connection);
+        command.Parameters.AddWithValue("i", attachmentId);
+        command.Parameters.AddWithValue("v", interviewId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read()) return null;
+        return new StoredAttachment(attachmentId, interviewId, reader.GetFieldValue<DateTimeOffset>(0).ToUniversalTime(), reader.GetString(1), reader.GetString(2),
+            reader.GetString(3), reader.GetInt64(4), reader.IsDBNull(5) ? null : reader.GetFieldValue<byte[]>(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.GetBoolean(7));
+    }
+
+    public int CountAttachments(Guid interviewId)
+    {
+        using var connection = Open();
+        using var command = new NpgsqlCommand("SELECT count(*) FROM flowsim_interview_attachments WHERE interview_id = @v", connection);
+        command.Parameters.AddWithValue("v", interviewId);
+        return System.Convert.ToInt32(command.ExecuteScalar());
+    }
+
     private static void Execute(NpgsqlConnection connection, NpgsqlTransaction transaction, string sql)
     {
         using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -303,5 +365,27 @@ public sealed class InMemoryInterviewStore : IInterviewStore
     public IReadOnlySet<string> ApprovedSimulations()
     {
         lock (gate) return interviews.Values.Select(i => i.ApprovedSimulation).OfType<string>().ToHashSet(StringComparer.Ordinal);
+    }
+
+    private readonly Dictionary<Guid, StoredAttachment> attachments = [];
+
+    public void SaveAttachment(StoredAttachment attachment)
+    {
+        lock (gate)
+        {
+            if (!interviews.ContainsKey(attachment.InterviewId))
+                throw new RuntimeFailure("interview.not_found", "The interview no longer exists. Start a new interview.");
+            attachments.Add(attachment.Id, attachment);
+        }
+    }
+
+    public StoredAttachment? LoadAttachment(Guid interviewId, Guid attachmentId)
+    {
+        lock (gate) return attachments.TryGetValue(attachmentId, out var a) && a.InterviewId == interviewId ? a : null;
+    }
+
+    public int CountAttachments(Guid interviewId)
+    {
+        lock (gate) return attachments.Values.Count(a => a.InterviewId == interviewId);
     }
 }

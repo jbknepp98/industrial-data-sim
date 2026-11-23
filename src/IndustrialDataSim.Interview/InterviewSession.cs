@@ -86,21 +86,22 @@ public sealed class InterviewSession
     private string status;
 
     private InterviewSession(Guid id, InterviewLibrary library, IInterviewModel model, IInterviewStore store, InterviewOptions? options,
-        Func<DateTimeOffset>? clock, InterviewRecord record)
+        Func<DateTimeOffset>? clock, InterviewRecord record, IPlantDirectory? plants)
     {
         Id = id;
         this.model = model;
         this.store = store;
         this.options = options ?? new InterviewOptions();
         this.clock = clock ?? (() => DateTimeOffset.UtcNow);
-        tools = new InterviewTools(library, this.clock);
-        systemPrompt = InterviewPrompt.Build(library);
+        tools = new InterviewTools(library, this.clock, plants);
+        systemPrompt = InterviewPrompt.Build(library, plants is not null);
         status = record.Status;
         State = new InterviewState
         {
             Needs = record.NeedsJson is { } needs ? JsonNode.Parse(needs)!.AsObject() : new JsonObject(),
             DraftModelJson = record.DraftModelJson,
-            PreviewJson = record.PreviewJson
+            PreviewJson = record.PreviewJson,
+            LockedSimulation = record.ApprovedSimulation
         };
         foreach (var message in record.Messages.Where(m => m.Role is "user" or "assistant")) history.Add(message.ContentJson);
         TotalUsage = record.Messages.Where(m => m.Usage is not null).Aggregate(InterviewUsage.None, (sum, m) => sum.Add(m.Usage!));
@@ -118,36 +119,65 @@ public sealed class InterviewSession
     /// <summary>The number of user messages the user typed (tool results and continuation notes excluded).</summary>
     public int UserMessageCount => history.Count(IsTypedUserMessage);
 
+    /// <param name="plants">The page's plants, for the existing-plant tools; null (CLI probe, tests) leaves them out.</param>
     public static InterviewSession Start(InterviewLibrary library, IInterviewModel model, IInterviewStore store,
-        InterviewOptions? options = null, Func<DateTimeOffset>? clock = null)
+        InterviewOptions? options = null, Func<DateTimeOffset>? clock = null, IPlantDirectory? plants = null)
     {
         var id = Guid.NewGuid();
         var now = (clock ?? (() => DateTimeOffset.UtcNow))();
         store.Create(id, now);
-        return new InterviewSession(id, library, model, store, options, clock, store.Load(id)!);
+        return new InterviewSession(id, library, model, store, options, clock, store.Load(id)!, plants);
     }
 
     public static InterviewSession Resume(Guid id, InterviewLibrary library, IInterviewModel model, IInterviewStore store,
-        InterviewOptions? options = null, Func<DateTimeOffset>? clock = null)
+        InterviewOptions? options = null, Func<DateTimeOffset>? clock = null, IPlantDirectory? plants = null)
     {
         var record = store.Load(id) ?? throw new RuntimeFailure("interview.not_found", "No interview with this id is stored in flow_data_sim. Start a new interview.");
-        return new InterviewSession(id, library, model, store, options, clock, record);
+        return new InterviewSession(id, library, model, store, options, clock, record, plants);
     }
 
-    /// <summary>Runs one user turn. An interrupted earlier turn is finished first.</summary>
-    public async Task<InterviewTurnResult> Send(string userText, Action<InterviewEvent>? onEvent = null, CancellationToken stop = default)
+    /// <summary>Needs key: set once the model has been told this interview now changes a running plant.</summary>
+    public const string ChangeBriefedKey = "changeBriefed";
+
+    /// <summary>
+    /// Runs one user turn. An interrupted earlier turn is finished first.
+    /// <paramref name="attachments"/> are ids of files already stored for this
+    /// interview (<see cref="IInterviewStore.SaveAttachment"/>); the message may
+    /// be only attachments, without text.
+    /// </summary>
+    public async Task<InterviewTurnResult> Send(string userText, Action<InterviewEvent>? onEvent = null, CancellationToken stop = default,
+        IReadOnlyList<Guid>? attachments = null)
     {
         string text = userText.Trim();
-        if (text.Length == 0)
+        var files = (attachments ?? []).Distinct().ToList();
+        if (text.Length == 0 && files.Count == 0)
             throw new RuntimeFailure("interview.empty_message", "Type a message for the interviewer.");
         if (text.Length > options.MaxUserMessageCharacters)
             throw new RuntimeFailure("interview.message_too_long", $"Keep a message under {options.MaxUserMessageCharacters} characters.");
+        if (files.Count > AttachmentReader.MaxFilesPerMessage)
+            throw new RuntimeFailure("interview.too_many_attachments", $"Attach at most {AttachmentReader.MaxFilesPerMessage} files to one message; send the rest with the next one.");
+        var stored = new List<StoredAttachment>();
+        foreach (var fileId in files)
+            stored.Add(store.LoadAttachment(Id, fileId)
+                ?? throw new RuntimeFailure("interview.attachment_not_found", "An attached file is no longer stored for this interview. Remove it and attach it again."));
         if (NeedsContinue) await Continue(onEvent, stop);
 
         var content = new JsonArray();
         // The first turn carries the per-session facts, so the system prompt stays identical across sessions.
         if (history.Count == 0) content.Add(TextBlock(InterviewPrompt.SessionFacts(Id, clock())));
-        content.Add(TextBlock(text));
+        // After approval the conversation continues as a change to the running plant: say so once.
+        if (State.LockedSimulation is { } locked && State.Needs[ChangeBriefedKey]?.GetValue<bool>() != true)
+        {
+            content.Add(TextBlock(InterviewPrompt.ChangeFacts(locked, clock())));
+            State.Needs[ChangeBriefedKey] = true;
+            // Plants approved before this was recorded: the current draft is what runs.
+            if (State.Needs[InterviewState.ApprovedDraftKey] is null && State.DraftModelJson is { } running)
+                State.Needs[InterviewState.ApprovedDraftKey] = InterviewState.DraftHash(running);
+            store.SaveState(Id, State.Needs.ToJsonString(), State.DraftModelJson, State.PreviewJson);
+        }
+        // Files before the question, as the provider recommends. Only a reference is stored.
+        foreach (var file in stored) { content.Add(AttachmentReader.Reference(file)); attachmentCache[file.Id] = file; }
+        if (text.Length > 0) content.Add(TextBlock(text));
         Append([("user", Message("user", content), null)], InterviewStatus.InTurn);
         return await RunTurn(onEvent ?? (_ => { }), stop);
     }
@@ -281,7 +311,32 @@ public sealed class InterviewSession
 
     // ---------------- history ----------------
 
-    private List<MessageParam> BuildMessages() => history.Select(json => JsonSerializer.Deserialize<MessageParam>(json)!).ToList();
+    private readonly Dictionary<Guid, StoredAttachment?> attachmentCache = [];
+
+    /// <summary>
+    /// The history as the model receives it: stored messages as they are, except
+    /// that each attachment reference becomes the file's document or image block.
+    /// The expansion is the same on every call, so the request prefix stays stable.
+    /// </summary>
+    private List<MessageParam> BuildMessages() => history.Select(json =>
+    {
+        if (!json.Contains("\"attachment\"", StringComparison.Ordinal)) return JsonSerializer.Deserialize<MessageParam>(json)!;
+        var message = JsonNode.Parse(json)!.AsObject();
+        var expanded = new JsonArray();
+        foreach (var block in (message["content"] as JsonArray ?? []).Select(b => b?.DeepClone()))
+        {
+            if (block is JsonObject reference && reference["type"]?.GetValue<string>() == "attachment")
+            {
+                var fileId = Guid.TryParse(reference["id"]?.GetValue<string>(), out var parsed) ? parsed : Guid.Empty;
+                if (!attachmentCache.TryGetValue(fileId, out var file)) attachmentCache[fileId] = file = store.LoadAttachment(Id, fileId);
+                if (file is null) expanded.Add(TextBlock($"[The attached file {reference["name"]?.GetValue<string>()} is no longer stored.]"));
+                else foreach (var modelBlock in AttachmentReader.ModelBlocks(file)) expanded.Add(modelBlock?.DeepClone());
+            }
+            else expanded.Add(block);
+        }
+        message["content"] = expanded;
+        return JsonSerializer.Deserialize<MessageParam>(message.ToJsonString())!;
+    }).ToList();
 
     private void Append(IReadOnlyList<(string Role, string ContentJson, InterviewUsage? Usage)> messages, string newStatus)
     {
@@ -326,7 +381,7 @@ public sealed class InterviewSession
         var message = JsonNode.Parse(json)!.AsObject();
         if (message["role"]?.GetValue<string>() != "user") return false;
         var blocks = (message["content"] as JsonArray ?? []).OfType<JsonObject>().ToList();
-        return blocks.All(b => b["type"]?.GetValue<string>() == "text") &&
+        return blocks.All(b => b["type"]?.GetValue<string>() is "text" or "attachment") &&
             !blocks.Any(b => b["text"]?.GetValue<string>()?.StartsWith("[Note from the interview service]", StringComparison.Ordinal) == true);
     }
 

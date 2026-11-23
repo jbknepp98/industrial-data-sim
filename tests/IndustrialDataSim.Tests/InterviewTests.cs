@@ -124,7 +124,7 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
                 var result = LastResults(r).Single();
                 Assert.False(IsError(result), result.ToJsonString());
                 preview = ResultJson(result);
-                return Reply("end_turn", Text("Here is the preview. Review it and click Approve and run when it looks right."));
+                return Reply("end_turn", Text("Here is the preview. Click Review plan, then Approve plan when it looks right."));
             });
         var events = new List<InterviewEvent>();
         var store = new InMemoryInterviewStore();
@@ -157,7 +157,7 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
         // Events for the page.
         Assert.Contains(events, e => e.Kind == InterviewEventKind.PreviewReady);
         Assert.Contains(events, e => e is { Kind: InterviewEventKind.ToolActivity, Text: "Checking the plant model…" });
-        Assert.Contains(events, e => e.Kind == InterviewEventKind.AssistantText && e.Text.Contains("Approve and run"));
+        Assert.Contains(events, e => e.Kind == InterviewEventKind.AssistantText && e.Text.Contains("Approve plan"));
 
         // Everything is persisted; usage is recorded per reply and summed.
         var record = store.Load(session.Id)!;
@@ -192,7 +192,7 @@ public class InterviewTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.All(model.Requests, r => Assert.Equal("user", JsonNode.Parse(JsonSerializer.Serialize(r.Messages[^1]))!["role"]!.GetValue<string>()));
         // The library and the no-build rule are in the prompt.
         Assert.Contains("labeler-jams-late-orders", request.System);
-        Assert.Contains("Approve and run", request.System);
+        Assert.Contains("Approve plan", request.System);
     }
 
     [Fact]

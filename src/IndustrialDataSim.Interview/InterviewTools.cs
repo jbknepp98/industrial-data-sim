@@ -22,6 +22,18 @@ public sealed class InterviewState
     public JsonObject Needs { get; set; } = new();
     public string? DraftModelJson { get; set; }
     public string? PreviewJson { get; set; }
+    /// <summary>
+    /// Set when this interview already built a plant (it was approved): every
+    /// new draft must keep this simulation name, because approving it rebuilds
+    /// that plant in place.
+    /// </summary>
+    public string? LockedSimulation { get; set; }
+
+    /// <summary>Needs key: the hash of the draft that was last approved, so an unchanged plan is not offered for approval again.</summary>
+    public const string ApprovedDraftKey = "approvedDraft";
+
+    public static string DraftHash(string draftJson) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(draftJson)));
 }
 
 /// <summary>The result of one tool call, returned to the model as a tool_result block.</summary>
@@ -41,12 +53,20 @@ public sealed record ToolOutcome(string Content, bool IsError)
 /// only from the user's Approve click in the page (phase 7). A test asserts
 /// that no tool name or description offers either.
 /// </summary>
-public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset> clock)
+public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset> clock, IPlantDirectory? plants = null)
 {
     public const string RecordAudience = "record_audience";
     public const string FindStorylines = "find_storylines";
     public const string ComposeModel = "compose_model";
     public const string PreviewPlant = "preview_plant";
+    // Existing plants (only with a plant directory, that is in the web container).
+    public const string ListPlants = "list_plants";
+    public const string DescribePlant = "describe_plant";
+    public const string ProposePlantAction = "propose_plant_action";
+    public const string ChangePlant = "change_plant";
+
+    /// <summary>Needs keys the plant tools set for the page: a stop or start to confirm, and a move to another interview.</summary>
+    public const string PendingActionKey = "pendingAction", HandoffKey = "handoff";
 
     public const int MaxStorylinesPerPlant = 3;
     public const int DefaultPreviewHours = 24, MaxPreviewHours = 72;
@@ -64,6 +84,10 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
         FindStorylines => "Matching storylines to the audience…",
         ComposeModel => "Checking the plant model…",
         PreviewPlant => "Running the plant preview…",
+        ListPlants => "Looking up your plants…",
+        DescribePlant => "Reading the plant's details…",
+        ProposePlantAction => "Preparing the request for you to confirm…",
+        ChangePlant => "Opening the plant's own interview…",
         _ => "Working…"
     };
 
@@ -75,15 +99,16 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
     /// required and additionalProperties false, strings, integers, enums and
     /// arrays. Ranges and counts are enforced in code instead.
     /// </summary>
-    public IReadOnlyList<ToolUnion> Definitions => definitions ??= BuildDefinitions(library.Storylines.Storylines.Select(st => st.Id).Append(NoStoryline).ToList());
+    public IReadOnlyList<ToolUnion> Definitions => definitions ??= BuildDefinitions(library.Storylines.Storylines.Select(st => st.Id).Append(NoStoryline).ToList(), plants is not null);
     private IReadOnlyList<ToolUnion>? definitions;
 
     /// <summary>The askedFor value for a request that no library storyline covers.</summary>
     public const string NoStoryline = "none";
 
     public static IReadOnlyList<string> Names { get; } = [RecordAudience, FindStorylines, ComposeModel, PreviewPlant];
+    public static IReadOnlyList<string> PlantToolNames { get; } = [ListPlants, DescribePlant, ProposePlantAction, ChangePlant];
 
-    private static IReadOnlyList<ToolUnion> BuildDefinitions(IReadOnlyList<string> storylineIds)
+    private static IReadOnlyList<ToolUnion> BuildDefinitions(IReadOnlyList<string> storylineIds, bool withPlants)
     {
         IReadOnlyList<string> StorylineIds() => storylineIds;
         JsonObject StringList(string description) => new() { ["type"] = "array", ["description"] = description, ["items"] = new JsonObject { ["type"] = "string" } };
@@ -141,6 +166,31 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
                 "Run the simulation engine offline over the draft model's backfill plus the given hours after now. Returns the headline numbers and where each storyline appears (times, tickets, holds, uncertified assignments) so you can explain it. Nothing is written to Postgres or Historian. The full preview is saved for the page.",
                 new() { ["hours"] = new JsonObject { ["type"] = "integer", ["description"] = $"Hours after now to include, 1 to {MaxPreviewHours} ({DefaultPreviewHours} is the default)." } })
         };
+        if (withPlants)
+            tools =
+            [
+                .. tools,
+                Tool(ListPlants,
+                    "List the plants this page already built, with their status (live, backfilling, stopped …), storylines, history window and Dataset. Call it when the user mentions an existing plant, asks what exists, or asks how a plant is doing. Plants made by other tools are not listed and cannot be changed here.",
+                    new()),
+                Tool(DescribePlant,
+                    "Details of one plant this page built: lines and machines, storylines, tag root, table names, Dataset, history window and how far delivery has got. Read-only.",
+                    new() { ["plant"] = new JsonObject { ["type"] = "string", ["description"] = "The simulation name, exactly as list_plants gives it." } }),
+                Tool(ProposePlantAction,
+                    "Ask the user to stop or start (resume) one of their plants. Nothing happens until the user confirms in the bar at the bottom of the page. Use it only when the user asks for it.",
+                    new()
+                    {
+                        ["plant"] = new JsonObject { ["type"] = "string", ["description"] = "The simulation name, exactly as list_plants gives it." },
+                        ["action"] = Enum(["stop", "start"])
+                    }),
+                Tool(ChangePlant,
+                    "Move the user into the interview that built an existing plant, to change it there (storylines, names, history). That interview has the plant's whole conversation; the page opens it and passes the request on. Call it as soon as the user asks to change a plant, and do not compose anything for that plant here.",
+                    new()
+                    {
+                        ["plant"] = new JsonObject { ["type"] = "string", ["description"] = "The simulation name, exactly as list_plants gives it." },
+                        ["request"] = new JsonObject { ["type"] = "string", ["description"] = "What the user wants changed, in their own words." }
+                    })
+            ];
         return tools.Select(t => JsonSerializer.Deserialize<ToolUnion>(t.ToJsonString())!).ToList();
     }
 
@@ -173,6 +223,10 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
                 FindStorylines => Find(input, state),
                 ComposeModel => Compose(input, state),
                 PreviewPlant => Preview(input, state),
+                ListPlants when plants is not null => Success(new JsonObject { ["plants"] = plants.List() }),
+                DescribePlant when plants is not null => Describe(input, plants),
+                ProposePlantAction when plants is not null => Propose(input, state, plants),
+                ChangePlant when plants is not null => Change(input, state, plants),
                 _ => Failure([new("tool.unknown", "$", $"There is no tool named that. The tools are {string.Join(", ", Names)}. Building and running are not tools: the user starts them with the Approve button.")])
             };
         }
@@ -181,6 +235,65 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
             // Raw exception text can carry model content or paths; it is not returned.
             return Failure([new("tool.internal_error", "$", "The tool failed unexpectedly. Tell the user the preview service hit an internal problem and suggest retrying; do not retry more than once.")]);
         }
+    }
+
+    // ---------------- existing plants ----------------
+
+    private static ToolOutcome Success(JsonObject content, bool needsChanged = false) =>
+        new(content.ToJsonString(Compact), false) { NeedsChanged = needsChanged };
+
+    private static (string? Plant, ToolOutcome? Problem) KnownPlant(ToolInput read, IPlantDirectory plants)
+    {
+        string plant = read.Text("plant", allowEmpty: false, 64);
+        if (!read.IsValid) return (null, Failure(read.Errors));
+        if (plants.Describe(plant) is null)
+        {
+            var names = plants.List().Select(p => p?["simulation"]?.GetValue<string>()).OfType<string>().ToList();
+            return (null, Failure([new("tool.unknown_plant", "$.plant", names.Count == 0
+                ? "This page has not built any plants yet. Offer to design one."
+                : $"This page did not build a plant with that name. Its plants are: {string.Join(", ", names)}. Plants made by other tools cannot be seen or changed here.")]));
+        }
+        return (plant, null);
+    }
+
+    private static ToolOutcome Describe(JsonElement input, IPlantDirectory plants)
+    {
+        var read = new ToolInput(input, ["plant"]);
+        var (plant, problem) = KnownPlant(read, plants);
+        return problem ?? Success(plants.Describe(plant!)!);
+    }
+
+    private static ToolOutcome Propose(JsonElement input, InterviewState state, IPlantDirectory plants)
+    {
+        var read = new ToolInput(input, ["plant", "action"]);
+        string action = read.Text("action", allowEmpty: false, 8);
+        var (plant, problem) = KnownPlant(read, plants);
+        if (problem is not null) return problem;
+        if (action is not ("stop" or "start")) return Failure([new("tool.invalid_action", "$.action", "The action is \"stop\" or \"start\".")]);
+        state.Needs[PendingActionKey] = new JsonObject { ["plant"] = plant, ["action"] = action };
+        return Success(new JsonObject
+        {
+            ["proposed"] = true, ["plant"] = plant, ["action"] = action,
+            ["next"] = $"A bar at the bottom of the page now asks the user to confirm: {(action == "stop" ? "Stop" : "Start")} {plant}. Nothing happens until they click it. Tell them so in one sentence."
+        }, needsChanged: true);
+    }
+
+    private static ToolOutcome Change(JsonElement input, InterviewState state, IPlantDirectory plants)
+    {
+        var read = new ToolInput(input, ["plant", "request"]);
+        string request = read.Text("request", allowEmpty: false, 2000);
+        var (plant, problem) = KnownPlant(read, plants);
+        if (problem is not null) return problem;
+        if (state.LockedSimulation == plant)
+            return Failure([new("tool.same_plant", "$.plant", $"This interview already is {plant}'s interview. Make the change here: compose_model with simulation \"{plant}\", then preview_plant.")]);
+        if (plants.InterviewOf(plant!) is not { } interview)
+            return Failure([new("tool.no_interview", "$.plant", $"The interview that built {plant} is no longer stored, so it cannot be changed here. Offer to design a new plant instead.")]);
+        state.Needs[HandoffKey] = new JsonObject { ["plant"] = plant, ["interviewId"] = interview.ToString("D"), ["request"] = request };
+        return Success(new JsonObject
+        {
+            ["handedOff"] = true, ["plant"] = plant,
+            ["next"] = $"The page now opens {plant}'s own interview, with its history, and passes the request there. Say so in one short sentence and stop; do not compose or preview anything here."
+        }, needsChanged: true);
     }
 
     private ToolOutcome Record(JsonElement input, InterviewState state)
@@ -293,6 +406,8 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
         if (!library.Bases.TryGetValue(baseId, out var baseJson))
             return Failure([new("tool.base_missing", "$.storylines", $"The base plant \"{baseId}\" is missing from the storyline folder. Tell the user the library is incomplete.")]);
 
+        if (state.LockedSimulation is { } locked && !string.Equals(simulation, locked, StringComparison.Ordinal))
+            return Failure([new("tool.simulation_locked", "$.simulation", $"This interview changes the plant {locked}, which is running. Keep simulation \"{locked}\": approving the new draft rebuilds {locked} in place.")]);
         var overrides = new JsonObject { ["simulation"] = simulation };
         if (backfill.Length > 0) overrides["timeline"] = new JsonObject { ["backfill"] = backfill };
         var composed = PlantStorylines.Compose(baseId, baseJson, chosen, overrides);
@@ -419,7 +534,7 @@ public sealed class InterviewTools(InterviewLibrary library, Func<DateTimeOffset
             ["summary"] = document["summary"]?.DeepClone(),
             ["rows"] = new JsonObject(tables.Select(t => KeyValuePair.Create(model.TablePrefix + t.Key, (JsonNode?)t.Value.Count))),
             ["storylines"] = new JsonArray(chosen.Select(s => (JsonNode)Appearances(s, model, run, tables, document, PlantStorylines.CommonBase(chosen))).ToArray()),
-            ["next"] = "Explain the numbers and each storyline's moments, then ask the user to review the preview and click \"Approve and run\", or say what to change. You cannot build or run the plant yourself."
+            ["next"] = "Explain the numbers and each storyline's moments, then ask the user to click \"Review plan\" in the bar at the bottom, check the plan, and click \"Approve plan\", or say what to change. You cannot build or run the plant yourself."
         };
         return new ToolOutcome(Json(output), false) { PreviewChanged = true };
     }
