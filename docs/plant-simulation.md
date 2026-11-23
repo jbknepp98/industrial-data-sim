@@ -636,11 +636,11 @@ would need a change to `GageMessageRequest`.
 Core minimal API with a plain HTML/JS page (no framework, no CDN). It calls Core, Runtime and the interview service
 directly, and runs approved plants in its own process (no Docker socket).
 
-**The page: Timebase Plant Simulator.** It is named and laid out like the other
+**The page: Timebase PlantSim.** It is named and laid out like the other
 Timebase 2.0 apps (owner decision, November 22, 2026), with the Timebase color
 tokens in light and dark (the same values as Explorer, Historian and Pulse):
 
-- **Sidebar:** "TIMEBASE" with "PLANT SIMULATOR" under the star and a chevron
+- **Sidebar:** "TIMEBASE" with "PLANTSIM" under the star and a chevron
   that collapses it to icons; **Interview** and **Plants**, the open one filled
   with a blue bar; **Instance Info** at the bottom (page, Postgres and Gage
   status from `/api/health`).

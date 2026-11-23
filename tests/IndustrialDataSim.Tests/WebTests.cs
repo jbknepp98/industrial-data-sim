@@ -356,8 +356,8 @@ public partial class WebTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Contains(".pp", await web.Http.GetStringAsync("/shared/plant-preview.css"));
         Assert.Contains("/api/interviews", await web.Http.GetStringAsync("/app.js"));
         // Named like the other Timebase apps: "TIMEBASE" with the product under it.
-        Assert.Contains("<title>Timebase Plant Simulator</title>", page);
-        Assert.Contains("<span class=\"product-sub\">Plant Simulator</span>", page);
+        Assert.Contains("<title>Timebase PlantSim</title>", page);
+        Assert.Contains("<span class=\"product-sub\">PlantSim</span>", page);
         Assert.DoesNotContain("Data Simulator", page);
         // The plant browser: a plant's page with Summary, Time series and Tables, read from /api/browse.
         Assert.Contains("id=\"plant-detail\"", page);

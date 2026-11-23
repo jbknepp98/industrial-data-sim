@@ -1,6 +1,6 @@
 # Flow Data Simulator web container: setup
 
-`flow-data-simulator-web` serves **Timebase Plant Simulator**, a page in your
+`flow-data-simulator-web` serves **Timebase PlantSim**, a page in your
 Timebase Docker stack that looks and works like the other Timebase apps. It
 interviews you about what a demo should show and to whom, previews a matching
 simulated plant, and runs the plant only after you click **Review plan**, then

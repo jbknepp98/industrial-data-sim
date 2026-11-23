@@ -315,7 +315,7 @@ their stack.
   be deleted.
 
 - **The page as a Timebase app (November 22, 2026):** it is called Timebase
-  Plant Simulator and follows the other Timebase apps' layout (Historian is
+  Plant Simulator (renamed Timebase PlantSim on November 23, 2026) and follows the other Timebase apps' layout (Historian is
   the reference): the "TIMEBASE" wordmark with the product name under it,
   view tabs, page titles with a one-line description, the Datasets-style list
   for plants, and Historian's three-mode theme button. The interview has two

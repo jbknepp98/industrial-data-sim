@@ -2,6 +2,8 @@
 
 Held for more work before rc.4 (owner decision, November 23, 2026).
 
+- **The page is now Timebase PlantSim** (was Timebase Plant Simulator; owner
+  decision, November 23, 2026): the browser title and the name under "TIMEBASE".
 - **The Connect brief sets up the Historian too.** It now has Gage create two
   connectors with Connect's own field names: `<Plant> Historian` (`Timebase.Historian`)
   for the plant's Dataset, and `<Plant> Postgres` (`PGDG.PostgreSql`) with one query
