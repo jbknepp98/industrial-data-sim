@@ -793,14 +793,24 @@ and stays available after building:
   plant-wide ones (shift report, worst hour, stop to ticket, quality holds), at
   most 8, each with what the answer should show. Shown as cards with **Copy**
   on Review plan.
-- **Connect brief:** the task and rules for Gage to set the plant's tables up
-  in Timebase Connect, followed by the full Connect mapping spec. It never
-  contains the database password: Gage must ask the user for it.
-- **Atlas brief:** the task and rules for modeling the plant in Atlas, a table
-  of sensors bound to the plant's Historian tags, and the Atlas starter JSON.
+- **Connect brief:** two connectors for Gage to create in Timebase Connect, with
+  the field names Connect's settings use (read from Connect on November 23, 2026):
+  `<Plant> Historian` (`Timebase.Historian`: host `historian`, port 4512, TLS,
+  authentication "This host", one Dataset entry for the plant's Dataset), which
+  publishes the tags to Atlas; and `<Plant> Postgres` (`PGDG.PostgreSql`, user
+  `flowsim_reader`), with one query topic per table watermarked on `row_version`
+  and the parameterized template topics the Atlas brief binds to (for example
+  `Gallo/Equipment/OpenMaintenanceTickets/[EquipmentId]`). It never contains the
+  database password: the user types it into the connection string field.
+- **Atlas brief:** the domain, instances (lines, machines, sensors, products,
+  people), each sensor bound to its tag through the Historian connector, and the
+  query properties bound to the Postgres connector's template topics.
 
-The three downloads appear on Review plan, on the live card after approval and
-in each page-made plant's row on the Plants tab.
+The page offers only the essentials (owner decision, November 23, 2026): **Demo
+guide** (opens to read), **1 · Gage brief: Connect** and **2 · Gage brief: Atlas**,
+on Review plan, on the live card and on each plant's page. The prompts are on the
+page with a Copy button. The Connect spec, Atlas starter, Markdown demo guide and
+prompts file are still served at their addresses for scripts, but not linked.
 
 **Browsing a plant** (owner decisions, November 22, 2026). Plants lists only the
 plants this page built (approved from one of its interviews and still registered,
@@ -811,8 +821,18 @@ in its own tab in the top strip (owner decision, November 23, 2026): several can
 open, opening one again focuses its tab, closing a tab returns to the one shown before,
 and `#plant=Name&section=summary|series|tables&table=…` opens or focuses that tab:
 
-- **Summary:** run window and delivery, where the data is (Dataset, tag root, table
-  prefix, counts, areas), lines and equipment, storylines and planted incidents, the files.
+- **Summary** (owner decision, November 23, 2026: open layout, no grey cards):
+  one paragraph on the plant and its life so far (lines, machines, products, days
+  run, output and records, its storylines, and what each line is doing now); the key
+  numbers; **Process flow, now**, one animated strip per line with each machine's
+  live status and key value, product moving while the line runs and paused with the
+  reason otherwise, and a purple count on machines with planted storyline incidents;
+  **The week, by line**, a timeline of every downtime event (red unplanned, amber
+  planned), the planted storyline moments (purple) and now; the storylines; records
+  so far per transaction table; where the data is; the files. Live values come from
+  `GET /api/browse/{name}/overview` (one Historian read of every tag's value in force,
+  table counts, up to 500 downtime events) and refresh every 15 seconds while the
+  Summary is shown. Motion stops for viewers who ask for reduced motion.
 - **Time series:** one UTC start/end for the plant (quick picks 1 h, 8 h, 24 h, 7 d,
   whole run; at most 31 days, inside the run) and any number of trend windows that follow
   it, each with up to 4 tags from the line → machine tree. Numbers are step lines on up

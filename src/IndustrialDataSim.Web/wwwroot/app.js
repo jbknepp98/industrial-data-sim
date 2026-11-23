@@ -560,15 +560,15 @@ const DOWNLOAD_ICON = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
 const OPEN_ICON = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
 function downloadLink(href, label, file = '') { return `<a class="file" href="${href}" download="${esc(file)}" title="Download ${label}">${DOWNLOAD_ICON}<span>${label}</span></a>`; }
 function viewLink(href, label) { return `<a class="file" href="${href}" target="_blank" rel="noopener" title="Open ${label} in a new tab">${OPEN_ICON}<span>${label}</span></a>`; }
+// The essentials only: the two briefs that hand the plant to Gage (Connect
+// first, then Atlas), and the demo guide to read. The prompts are on the page
+// with a Copy button. The older spec and starter files are still served for
+// scripts, but the page no longer offers them: the briefs contain what they held.
 function gageLinks(base) {
-  return [[`${base}/gage/connect`, 'Gage brief: Connect'], [`${base}/gage/atlas`, 'Gage brief: Atlas'], [`${base}/gage/prompts`, 'Gage prompts']]
-    .map(([href, label]) => downloadLink(href, label)).join('');
+  return downloadLink(`${base}/gage/connect`, '1 · Gage brief: Connect') + downloadLink(`${base}/gage/atlas`, '2 · Gage brief: Atlas');
 }
 function plantFiles(base) {
-  const name = decodeURIComponent(base.split('/').pop());
-  return viewLink(`${base}/demo-guide?format=html`, 'Demo guide') + downloadLink(`${base}/demo-guide`, 'Demo guide (Markdown)', `${name}-demo-guide.md`) +
-    downloadLink(`${base}/connect-spec`, 'Connect spec', `${name}-connect-spec.md`) + downloadLink(`${base}/connect-spec?format=json`, 'Connect spec (JSON)', `${name}-connect-spec.json`) +
-    downloadLink(`${base}/atlas-starter`, 'Atlas starter', `${name}-atlas-starter.json`) + gageLinks(base);
+  return viewLink(`${base}/demo-guide?format=html`, 'Demo guide') + gageLinks(base);
 }
 async function renderGageKit() {
   const id = interview?.id;
@@ -970,50 +970,192 @@ async function loadSummary() {
   const seq = ++browse.seq, plant = browse.plant;
   if (!browse.summary) $('pane-summary').innerHTML = '<p class="muted">Loading…</p>';
   try {
-    const summary = await api('GET', browseUrl());
+    const [summary, overview] = await Promise.all([api('GET', browseUrl()), api('GET', browseUrl('/overview')).catch(e => ({ failed: e }))]);
     if (plant !== browse.plant || seq !== browse.seq) return;
-    browse.summary = summary;
+    browse.summary = summary; browse.overview = overview;
     renderSummary();
   } catch (e) {
     if (plant !== browse.plant) return;
     $('pane-summary').insertAdjacentHTML('afterbegin', problem(e));
   }
+  // Live values move: refresh every 15 s while this plant's Summary is showing.
+  clearTimeout(browse.summaryTimer);
+  browse.summaryTimer = setTimeout(() => { if (browse.plant === plant && browse.section === 'summary' && !$('pane-summary').hidden) loadSummary(); }, 15000);
 }
 
+// The Summary leads with what the plant is doing now: key numbers, then each
+// line's process flow (product moving machine to machine while the line runs,
+// paused otherwise), then the week as a timeline of stops and planted storyline
+// moments, then the storylines and the records produced so far.
+const SVGNS = 'http://www.w3.org/2000/svg';
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const lc = v => String(v ?? '').toLowerCase();
+function unitState(value) {
+  const v = lc(value);
+  if (!v) return 'idle';
+  if (/run|produc|ok/.test(v)) return 'run';
+  if (/down|fault|fail|jam|trip|stop/.test(v)) return 'down';
+  if (/change|setup|clean|cip|rinse|wash|starv|block/.test(v)) return 'change';
+  return 'idle';
+}
+const SHORT_MEASURE = { Vibration: 'vib', FillVolume: 'fill', Temperature: 'temp', Pressure: 'press', Level: 'level', Speed: 'speed' };
+function fmtValue(v) { return typeof v === 'number' ? (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : v.toFixed(Math.abs(v) < 10 ? 2 : 1)) : String(v); }
+
 function renderSummary() {
-  const s = browse.summary, base = `/api/plants/${encodeURIComponent(s.simulation)}`;
-  const modules = Object.entries(s.modules).filter(([, on]) => on).map(([name]) => name);
-  const lines = s.lines.map(l => `<li><b>${esc(l.name)}</b> <code>${esc(l.id)}</code> <span class="muted">${esc(l.kind)}</span>
-      <ul>${l.equipment.map(e => `<li><code>${esc(e.id)}</code> ${esc(e.name)} <span class="muted">${esc(e.class)}</span></li>`).join('')}</ul></li>`).join('');
-  const incidents = s.incidents.length
-    ? `<div class="grid-wrap"><table class="grid compact"><thead><tr><th>When</th><th>Line</th><th>Machine</th><th>Failure mode</th><th>Note</th></tr></thead><tbody>${s.incidents.map(i =>
-        `<tr><td class="mono">${esc(fmtTime(i.atUtc))}</td><td class="mono">${esc(i.line || '—')}</td><td class="mono">${esc(i.equipment || '—')}</td><td class="mono">${esc(i.failureMode)}</td><td>${esc(i.note)}</td></tr>`).join('')}</tbody></table></div>`
-    : '<p class="muted">No planted incidents.</p>';
-  const drifts = s.drifts.length
-    ? `<p class="muted">Golden-batch drifts: ${s.drifts.map(d => `${esc(d.line)} ${esc(d.phase)} from ${esc(fmtTime(d.fromUtc))} (${esc(d.cause)})`).join('; ')}</p>` : '';
-  $('pane-summary').innerHTML = `<div class="summary-grid">
-    <section class="card"><div class="eyebrow">Run</div><dl class="kv">
-      <dt>History starts</dt><dd>${esc(fmtTime(s.window.startUtc))}</dd>
-      <dt>Approved ("now")</dt><dd>${esc(fmtTime(s.window.anchorUtc))}</dd>
-      <dt>Tags delivered through</dt><dd>${esc(fmtTime(s.delivery.tagCursorUtc))}</dd>
-      <dt>Last snapshot</dt><dd>${esc(fmtTime(s.delivery.snapshotUtc))}</dd>
-      <dt>Changes applied</dt><dd>${num(s.delivery.appliedSequence)}</dd>
-      <dt>Status</dt><dd><span class="badge ${esc(shownState(s.hosting.state))}">${esc(stateLabel(s.hosting.state))}</span> ${esc(s.hosting.message || '')}</dd>
-    </dl></section>
-    <section class="card"><div class="eyebrow">Where the data is</div><dl class="kv">
-      <dt>Dataset</dt><dd>${s.dataset ? `<code>${esc(s.dataset)}</code>${s.datasetCreated ? ' <span class="muted">created by this page, 365-day purge</span>' : ''}` : '—'}</dd>
-      <dt>Tag root</dt><dd><code>${esc(s.tagRoot)}</code></dd>
-      <dt>Postgres tables</dt><dd><code>${esc(s.tablePrefix)}…</code> in <code>flow_data_sim</code></dd>
-      <dt>Counts</dt><dd>${num(s.counts.tables)} tables · ${num(s.counts.tags)} tags</dd>
-      <dt>Areas</dt><dd>${modules.length ? modules.map(esc).join(', ') : 'core only'}</dd>
-    </dl></section>
-    <section class="card"><div class="eyebrow">Lines and equipment</div><ul class="tree">${lines}</ul></section>
-    <section class="card"><div class="eyebrow">Storylines and planted incidents</div>
-      ${s.storylines.length ? `<ul class="plain">${s.storylines.map(t => `<li>${esc(t.title)} <code>${esc(t.id)}</code></li>`).join('')}</ul>` : '<p class="muted">No storylines recorded.</p>'}
-      ${incidents}${drifts}
-    </section>
-  </div>
-  <section class="card"><div class="eyebrow">Files</div><div class="downloads">${plantFiles(base)}</div></section>`;
+  const s = browse.summary, o = browse.overview && !browse.overview.failed ? browse.overview : null;
+  const now = o?.now || {}, counts = o?.counts || {}, root = s.tagRoot;
+  const val = tag => now[tag]?.[1];
+  const base = `/api/plants/${encodeURIComponent(s.simulation)}`;
+  const asOf = Date.parse(o?.asOfUtc || s.delivery.tagCursorUtc || s.window.anchorUtc);
+
+  // Key numbers
+  const lineStates = s.lines.map(l => ({ l, state: val(`${root}.${l.id}.State`), speed: val(`${root}.${l.id}.Speed`), sku: val(`${root}.${l.id}.SKU`), good: val(`${root}.${l.id}.GoodCount`) }));
+  const good = lineStates.reduce((sum, x) => sum + (typeof x.good === 'number' ? x.good : 0), 0);
+  const days = Math.max(1, Math.round((asOf - Date.parse(s.window.startUtc)) / 864e5));
+  const kpi = (big, label, small = '') => `<div class="sum-kpi"><b>${big}</b><span>${label}</span>${small ? `<small>${small}</small>` : ''}</div>`;
+  const kpis = [
+    kpi(`${s.lines.length} line${s.lines.length === 1 ? '' : 's'}`, lineStates.map(x => `${esc(x.l.id)} ${esc(lc(x.state) || '—')}`).join(' · ')),
+    o?.now ? kpi(num(good), 'good cases so far', lineStates.map(x => `${esc(x.l.id)} ${num(x.good)}`).join(' · ')) : '',
+    counts.downtimeevents !== undefined ? kpi(num(counts.downtimeevents), 'downtime events', `${num(counts.maintenancetickets)} maintenance tickets`) : '',
+    counts.qualityholds !== undefined ? kpi(num(counts.qualityholds), 'lots held by Quality', `of ${num(counts.lots)} lots`)
+      : counts.salesorders !== undefined ? kpi(num(counts.salesorders), 'sales orders') : '',
+    kpi(`${days} day${days === 1 ? '' : 's'}`, 'of history', `since ${esc(fmtTime(s.window.startUtc))}`)
+  ].join('');
+
+  // Planted incidents per machine (purple badge with their count)
+  const planted = new Map();
+  for (const i of s.incidents) if (i.equipment) planted.set(`${i.line}.${i.equipment}`, (planted.get(`${i.line}.${i.equipment}`) || 0) + 1);
+
+  const flows = lineStates.map(x => flowSvg(s, x, now, planted)).join('');
+
+  // Storylines and records
+  const stories = s.storylines.length
+    ? s.storylines.map((t, i) => `<div class="sum-story"><span class="n">${i + 1}</span><div><b>${esc(t.title)}</b>${t.pitch ? `<p>${esc(t.pitch)}</p>` : ''}</div></div>`).join('')
+    : '<p class="muted">No storylines recorded.</p>';
+  const masters = new Set(['lines', 'equipment', 'skus', 'shifts', 'customers', 'employees', 'certifications', 'parts', 'failurecodes', 'qualityspecs', 'recipes', 'recipephases', 'goldenprofiles', 'workinstructions']);
+  const LABEL = { qualityresults: 'Quality results', inventorytransactions: 'Inventory moves', maintenanceticketstatus: 'Ticket status changes', salesorders: 'Sales orders',
+    productionorders: 'Production orders', downtimeevents: 'Downtime events', productionruns: 'Production runs', lots: 'Lots', shipments: 'Shipments', maintenancetickets: 'Maintenance tickets',
+    qualityholds: 'Quality holds', qualitysamples: 'Quality samples', partsusage: 'Parts used', batches: 'Batches', batchphases: 'Batch phases', deviations: 'Deviations', trainingrecords: 'Training records', workcompliance: 'Work compliance checks', operatorcompliance: 'Operator compliance checks', batchconsumption: 'Batch consumption' };
+  const recs = Object.entries(counts).filter(([p, n]) => !masters.has(p) && n > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  const max = Math.max(1, ...recs.map(r => r[1]));
+  const records = recs.length ? recs.map(([p, n], i) => `<div class="sum-rec"><span>${esc(LABEL[p] || p)}</span><span class="bar"><i style="width:${(n / max * 100).toFixed(1)}%;animation-delay:${i * 50}ms"></i></span><b>${num(n)}</b></div>`).join('')
+    : '<p class="muted">No records yet.</p>';
+  const drifts = s.drifts.length ? `<p class="muted">Golden-batch drifts: ${s.drifts.map(d => `${esc(d.line)} ${esc(d.phase)} from ${esc(fmtTime(d.fromUtc))} (${esc(d.cause)})`).join('; ')}</p>` : '';
+  const live = o?.failed ? problem(o.failed) : o?.nowProblem ? `<p class="muted">${esc(o.nowProblem)}</p>` : '';
+
+  $('pane-summary').innerHTML = `
+    <p class="sum-intro">${plantStory(s, o, lineStates, good, days)}</p>
+    <div class="sum-kpis">${kpis}</div>${live}
+    <section class="sum-section"><div class="sum-title"><h2>Process flow, now</h2><span>Product moves left to right while a line runs. A purple badge counts a machine's planted storyline incidents.</span></div>${flows}</section>
+    <section class="sum-section"><div class="sum-title"><h2>The week, by line</h2><span>Red: downtime · amber: planned stops · purple: planted storyline moments · blue: now. Hover a marker for details.</span></div>${timeline(s, o, asOf)}</section>
+    <div class="sum-split">
+      <section><div class="sum-title"><h2>What the demo shows</h2><span>${s.storylines.length} storyline${s.storylines.length === 1 ? '' : 's'} · ${s.incidents.length} planted incident${s.incidents.length === 1 ? '' : 's'}</span></div>${stories}${drifts}</section>
+      <section><div class="sum-title"><h2>Records so far</h2><span><code>${esc(s.tablePrefix)}*</code> in flow_data_sim</span></div><div class="sum-records">${records}</div></section>
+    </div>
+    <div class="sum-split sum-foot">
+      <dl class="kv"><dt>Tags</dt><dd><code>${esc(root)}.*</code> · ${num(s.counts.tags)} in Dataset ${s.dataset ? `<code>${esc(s.dataset)}</code>` : '—'}${s.datasetCreated ? ' (365-day purge)' : ''}</dd>
+        <dt>Tables</dt><dd><code>${esc(s.tablePrefix)}*</code> · ${num(s.counts.tables)} in <code>flow_data_sim</code></dd>
+        <dt>Delivery</dt><dd>${num(s.delivery.appliedSequence)} changes applied · tags through ${esc(fmtTime(s.delivery.tagCursorUtc))} · snapshot ${esc(fmtTime(s.delivery.snapshotUtc))}</dd></dl>
+      <div class="downloads">${plantFiles(base)}</div>
+    </div>`;
+  startFlows();
+}
+
+// One paragraph at the top: what the plant is, and its life so far.
+const INDUSTRY = { 'food-beverage': 'food and beverage', cpg: 'consumer goods', pharma: 'pharmaceutical', chemicals: 'chemicals' };
+function plantStory(s, o, lineStates, good, days) {
+  const counts = o?.counts || {}, machines = s.lines.reduce((n, l) => n + l.equipment.length, 0);
+  const industry = INDUSTRY[s.audience?.industry] || (s.audience?.industry ? s.audience.industry.replace('-', ' ') : '');
+  const list = items => items.length < 2 ? items.join('') : items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
+  const sentences = [];
+  const products = s.products || [];
+  sentences.push(`<b>${esc(s.simulation)}</b> is a simulated ${esc(industry || 'manufacturing')} plant with ${s.lines.length} line${s.lines.length === 1 ? '' : 's'} (${list(s.lines.map(l => esc(l.name)))}) and ${machines} machines` +
+    (products.length ? `, making ${products.length} product${products.length === 1 ? '' : 's'}: ${products.map(p => esc(p.description)).join('; ')}.` : '.'));
+  const unplanned = (o?.downtime || []).filter(d => lc(d.category) !== 'planned').length;
+  const life = [];
+  if (o?.now && good) life.push(`${num(good)} good cases`);
+  if (counts.salesorders !== undefined) life.push(`${num(counts.salesorders)} sales orders`);
+  if (counts.downtimeevents !== undefined) life.push(`${num(counts.downtimeevents)} downtime events (${num(unplanned)} unplanned)`);
+  if (counts.maintenancetickets !== undefined) life.push(`${num(counts.maintenancetickets)} maintenance tickets`);
+  if (counts.qualityholds !== undefined) life.push(`${num(counts.qualityholds)} of ${num(counts.lots)} lots held by Quality`);
+  sentences.push(`It has run for ${days} day${days === 1 ? '' : 's'}, since ${esc(fmtTime(s.window.startUtc))}` + (life.length ? `, with ${list(life)} so far.` : '.'));
+  if (s.storylines.length) {
+    const last = s.incidents.map(i => i.atUtc).sort().pop();
+    sentences.push(`Its story: ${list(s.storylines.map(t => esc(lc(t.title))))}` +
+      (s.incidents.length ? `, told through ${s.incidents.length} planted moment${s.incidents.length === 1 ? '' : 's'}${last ? `, the last on ${esc(fmtTime(last))}` : ''}.` : '.'));
+  }
+  const state = lineStates.filter(x => x.state !== undefined);
+  if (state.length) {
+    const running = state.filter(x => unitState(x.state) === 'run');
+    sentences.push(running.length === state.length
+      ? `Right now ${state.length === 1 ? 'the line is' : `all ${state.length} lines are`} running${running.every(x => typeof x.speed === 'number') ? `, at ${list(running.map(x => `${fmtValue(x.speed)}`))} cases/min` : ''}.`
+      : `Right now ${list(state.map(x => `${esc(x.l.name)} is ${/change|setup|clean|cip/.test(lc(x.state)) ? 'in ' : ''}${esc(lc(x.state))}`))}.`);
+  }
+  return sentences.join(' ');
+}
+
+function flowSvg(s, x, now, planted) {
+  const root = s.tagRoot, l = x.l, eq = l.equipment;
+  const W = 1100, top = 40, h = 64, gap = 26, x0 = 0;
+  const unitW = Math.min(180, (W - gap * (eq.length - 1)) / Math.max(1, eq.length));
+  const running = unitState(x.state) === 'run';
+  const y = top + h / 2;
+  const lastX = x0 + (eq.length - 1) * (unitW + gap) + unitW / 2;
+  const units = eq.map((e, i) => {
+    const ux = x0 + i * (unitW + gap);
+    const status = now[`${root}.${l.id}.${e.id}.Status`]?.[1];
+    const st = unitState(status ?? (running ? 'running' : x.state));
+    const numeric = Object.keys(now).filter(k => k.startsWith(`${root}.${l.id}.${e.id}.`) && typeof now[k][1] === 'number')
+      .sort((a, b) => (a.endsWith('Vibration') ? -1 : 0) - (b.endsWith('Vibration') ? -1 : 0))[0];
+    const measure = numeric ? numeric.split('.').pop() : null;
+    const detail = numeric ? `${SHORT_MEASURE[measure] || lc(measure)} ${fmtValue(now[numeric][1])}` : lc(status || '');
+    const count = planted.get(`${l.id}.${e.id}`) || 0;
+    return `<g class="unit ${st}${count ? ' alert' : ''}" transform="translate(${ux},${top})"><title>${esc(e.name)}: ${esc(status || x.state || 'no value yet')}${count ? ` · ${count} planted incident${count > 1 ? 's' : ''}` : ''}</title>
+      <rect width="${unitW}" height="${h}" rx="12"/><circle class="led ${st}" cx="${unitW - 14}" cy="14" r="4.5"/>
+      <text class="id" x="12" y="20">${esc(e.id)}</text><text class="nm" x="12" y="38">${esc(trimText(e.name, unitW))}</text><text class="val" x="12" y="54">${esc(trimText(detail, unitW))}</text>
+      ${count ? `<g transform="translate(-6,-6)"><circle class="badge" r="10"/><text class="badge-t" text-anchor="middle" y="3.5">${count}</text></g>` : ''}</g>`;
+  }).join('');
+  const path = `M${x0 + unitW / 2} ${y} H${lastX}`;
+  const meta = [lc(x.state) || 'no state yet', typeof x.speed === 'number' ? `${fmtValue(x.speed)} cases/min` : null, x.sku].filter(Boolean).map(esc).join(' · ');
+  return `<svg class="sum-flow" viewBox="-10 0 ${W + 20} ${top + h + (running ? 12 : 30)}" role="img" aria-label="${esc(l.name)} process flow: ${meta}">
+    <text class="line-label" x="0" y="20">${esc(l.id)} · ${esc(l.name)}</text><text class="line-meta" x="${Math.max(110, (l.id.length + l.name.length) * 8 + 30)}" y="20">${meta}</text>
+    <path class="pipe${running ? ' on' : ''}" d="${path}"/>${running ? `<path class="stream" d="${path}"/><g class="bottles" data-path="${path}" data-span="${lastX - unitW / 2}"></g>` : ''}
+    ${units}
+    ${running ? '' : `<text class="paused" x="${(x0 + lastX) / 2}" y="${top + h + 22}" text-anchor="middle">Flow paused: ${esc(lc(x.state) || 'no state yet')}</text>`}</svg>`;
+}
+function trimText(text, width) { const max = Math.floor((width - 22) / 7.2); return text.length > max ? text.slice(0, max - 1) + '…' : text; }
+function startFlows() {
+  if (reduceMotion.matches) return;
+  document.querySelectorAll('#pane-summary .bottles').forEach(g => {
+    const count = Math.max(4, Math.round(Number(g.dataset.span) / 110)), dur = Math.max(5, Number(g.dataset.span) / 110);
+    for (let i = 0; i < count; i++) {
+      const b = document.createElementNS(SVGNS, 'rect');
+      b.setAttribute('class', 'bottle'); b.setAttribute('width', 7); b.setAttribute('height', 12); b.setAttribute('x', -3.5); b.setAttribute('y', -6); b.setAttribute('rx', 2);
+      const m = document.createElementNS(SVGNS, 'animateMotion');
+      m.setAttribute('dur', dur + 's'); m.setAttribute('repeatCount', 'indefinite'); m.setAttribute('path', g.dataset.path); m.setAttribute('begin', (-i * dur / count) + 's');
+      b.appendChild(m); g.appendChild(b);
+    }
+  });
+}
+
+function timeline(s, o, asOf) {
+  const t0 = Date.parse(s.window.startUtc), t1 = Math.max(asOf, t0 + 3600e3);
+  const pos = ms => Math.min(100, Math.max(0, (ms - t0) / (t1 - t0) * 100)).toFixed(2) + '%';
+  const ticks = [];
+  for (let d = new Date(t0); d.getTime() <= t1; d.setUTCDate(d.getUTCDate() + 1)) {
+    const midnight = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1);
+    if (midnight < t1) ticks.push(`<span style="left:${pos(midnight)}">${new Date(midnight).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>`);
+  }
+  const marker = (ms, cls, label) => `<span class="ev ${cls}" tabindex="0" style="left:${pos(ms)}" aria-label="${esc(label)}"></span><span class="tip" style="left:${pos(ms)}">${esc(label)}</span>`;
+  const rows = s.lines.map(l => {
+    const stops = (o?.downtime || []).filter(d => d.line === l.id).map(d => {
+      const planned = lc(d.category) === 'planned';   // the category is Planned or Unplanned
+      return marker(Date.parse(d.startUtc), planned ? 'planned' : 'down', `${d.equipment || l.id} · ${d.reason || d.category} · ${fmtTime(d.startUtc)}`);
+    }).join('');
+    const story = s.incidents.filter(i => i.line === l.id).map(i => marker(Date.parse(i.atUtc), 'story', `${i.equipment} · ${i.note} · ${fmtTime(i.atUtc)}`)).join('');
+    return `<div class="sum-tl-row"><span class="name">${esc(l.id)} · ${esc(l.name)}</span><div class="lane">${stops}${story}<span class="now" style="left:${pos(asOf)}"></span></div></div>`;
+  }).join('');
+  return `<div class="sum-tl"><div class="sum-tl-row axis"><span></span><div class="ticks">${ticks.join('')}</div></div>${rows}</div>`;
 }
 
 // ----- Time series -----

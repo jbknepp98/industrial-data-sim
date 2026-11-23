@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using IndustrialDataSim.Core.Plant;
 using IndustrialDataSim.Runtime;
@@ -101,6 +102,8 @@ public sealed class PlantBrowser(WebServices services, PlantHostingService hosti
             }),
             drifts = model.Drifts.Select(d => new { line = d.Line, recipe = d.Recipe, phase = d.Phase, cause = d.Cause, fromUtc = d.FromUtc, untilUtc = d.UntilUtc }),
             storylines = Storylines(simulation),
+            audience = Audience(simulation),
+            products = model.Skus.Select(k => new { code = k.Code, description = k.Description }),
             modules = new
             {
                 quality = model.Quality is not null,
@@ -125,6 +128,14 @@ public sealed class PlantBrowser(WebServices services, PlantHostingService hosti
         };
     }
 
+    /// <summary>The interview's audience: the industry and what the plant makes, for the Summary's opening paragraph.</summary>
+    private object? Audience(string simulation)
+    {
+        var interview = WebApp.FindInterview(services, simulation);
+        if (interview?.NeedsJson is null || JsonNode.Parse(interview.NeedsJson)?["audience"] is not JsonObject audience) return null;
+        return new { industry = audience["industry"]?.GetValue<string>(), product = audience["product"]?.GetValue<string>() };
+    }
+
     private List<object> Storylines(string simulation)
     {
         var interview = WebApp.FindInterview(services, simulation);
@@ -133,7 +144,7 @@ public sealed class PlantBrowser(WebServices services, PlantHostingService hosti
         var result = new List<object>();
         foreach (var id in (needs?["chosenStorylines"] as JsonArray ?? []).Select(n => n?.GetValue<string>()).OfType<string>())
             if (services.Library.Storylines.Find(id) is { } storyline)
-                result.Add(new { id = storyline.Id, title = storyline.Title });
+                result.Add(new { id = storyline.Id, title = storyline.Title, pitch = storyline.Pitch });
         return result;
     }
 
@@ -301,6 +312,56 @@ public sealed class PlantBrowser(WebServices services, PlantHostingService hosti
                     rawPoints = s.Points.Count,
                     thinned
                 };
+            })
+        };
+    }
+
+    /// <summary>Downtime events listed on the Summary timeline (newest first).</summary>
+    public const int MaxTimelineEvents = 500;
+
+    /// <summary>
+    /// What the Summary shows beside the model: every tag's current value (one
+    /// Historian read over the last 15 minutes; Historian returns the value in
+    /// force at the start, so a tag that has not changed lately still has one),
+    /// the row count of each table, and the downtime events for the timeline.
+    /// Values are null when the page has no Historian connection.
+    /// </summary>
+    public async Task<object> Overview(string simulation, CancellationToken stop)
+    {
+        var (registration, model) = Find(simulation);
+        var tags = TagsOf(model);
+        var end = DataEnd(registration);
+        var start = end.AddMinutes(-15) < registration.StartUtc ? registration.StartUtc : end.AddMinutes(-15);
+
+        Dictionary<string, object?>? now = null;
+        string? nowProblem = null;
+        string? dataset = DatasetOf(simulation);
+        if (dataset is not null && services.HistorianReader is not null && start < end)
+        {
+            try
+            {
+                using var historian = services.HistorianReader();
+                var series = await historian.ReadTagData(dataset, tags.Select(t => t.Name).ToList(), start, end, stop);
+                now = series.Where(s => s.Points.Count > 0).ToDictionary(s => s.Tag, s => (object?)new object[] { s.Points[^1].Time.UtcDateTime, s.Points[^1].Value }, StringComparer.Ordinal);
+            }
+            catch (RuntimeFailure failure) { nowProblem = failure.Message; }
+        }
+        else nowProblem = "The page has no Historian connection, so live values are not shown.";
+
+        var counts = Tables(simulation).Select(t => JsonSerializer.SerializeToNode(t)!).ToDictionary(t => t["purpose"]!.GetValue<string>(), t => t["rows"]!.GetValue<long>());
+        string downtime = Quote(PlantSchema.PhysicalName(model, "downtimeevents"));
+        var (_, rows) = services.Plants.ReadOnlyQuery(
+            $"SELECT downtime_id, line_id, equipment_id, category, reason, failure_code, start_utc, end_utc FROM {downtime} WHERE NOT is_deleted ORDER BY start_utc DESC LIMIT {MaxTimelineEvents}", [], MaxTimelineEvents);
+        return new
+        {
+            asOfUtc = end,
+            now,
+            nowProblem,
+            counts,
+            downtime = rows.Select(r => new
+            {
+                id = r[0], line = r[1], equipment = r[2], category = r[3], reason = r[4], failureCode = r[5],
+                startUtc = Cell(r[6]), endUtc = Cell(r[7])
             })
         };
     }

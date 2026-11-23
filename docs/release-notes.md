@@ -1,3 +1,19 @@
+# Unreleased (after 2.0.0-rc.3)
+
+Held for more work before rc.4 (owner decision, November 23, 2026).
+
+- **The Connect brief sets up the Historian too.** It now has Gage create two
+  connectors with Connect's own field names: `<Plant> Historian` (`Timebase.Historian`)
+  for the plant's Dataset, and `<Plant> Postgres` (`PGDG.PostgreSql`) with one query
+  topic per table plus template topics for Atlas. The Atlas brief binds sensors and
+  query properties to those connectors. The rc.3 brief set up only Postgres.
+- **Only the essential files are offered:** Demo guide, 1 · Gage brief: Connect and
+  2 · Gage brief: Atlas. The other files are still served for scripts.
+- **A new plant Summary.** One paragraph on the plant and its life so far, the key
+  numbers, an animated process flow per line with live machine values, a week timeline
+  of downtime and planted storyline moments, the storylines and the records so far,
+  with no grey cards. New `GET /api/browse/{name}/overview`.
+
 # industrial-data-sim 2.0.0-rc.3: release candidate
 
 Candidate, not a release. Approved by the owner on November 23, 2026: 2.0.0-rc.2 plus
