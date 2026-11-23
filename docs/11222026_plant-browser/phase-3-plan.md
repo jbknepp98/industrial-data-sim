@@ -31,11 +31,16 @@ must not redraw the table grid on the poll.
 
 <implementation-note>
 Built November 23, 2026 as **list, then the plant's page** instead of a side-by-side
-list and detail: the owner-approved Historian Datasets-style list stays the overview,
-and opening a plant shows its page with a "Plants / name" breadcrumb (as the Timebase
-apps move from a list into one item). Markup ids follow that: `#plants-overview`,
+list and detail: the owner-approved Historian Datasets-style list stays the overview.
+
+**Owner decision, November 23, 2026:** opening a plant opens it as **its own tab** in the
+top tab strip (icon, plant name, ×), the way the other Timebase apps open items; there
+is no breadcrumb. The Plants tab stays the list. Opening a plant that already has a tab
+focuses that tab; several plants can be open at once; closing a tab returns to the tab
+shown before it; each plant tab keeps its section and table while open; the deep link
+`#plant=<name>&section=…&table=…` opens or focuses that plant's tab. Markup ids follow that: `#plants-overview`,
 `#plant-detail`, `.detail-head`, `.section-tabs`, `#pane-summary|series|tables`,
-`#table-list`, `#grid`. After Remove the page returns to the list. Everything else
+`#table-list`, `#grid`. After Remove the plant's tab closes and the Plants list shows. Everything else
 below (hash state, polling rules, Summary cards, table browser, limits) is as planned.
 </implementation-note>
 

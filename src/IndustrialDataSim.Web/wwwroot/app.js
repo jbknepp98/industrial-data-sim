@@ -74,38 +74,71 @@ const VIEWS = {
   interview: { title: 'Interview', icon: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>' },
   plants: { title: 'Plants', icon: '<path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/>' }
 };
+// A plant opened from the Plants list gets its own tab, "plant:<name>", like an
+// item opened in the other Timebase apps; several can be open at once. Each plant
+// tab remembers its section and table while it is open.
+const PLANT_TAB = 'plant:';
+const isPlantTab = t => t?.startsWith(PLANT_TAB);
+const tabPlant = t => t.slice(PLANT_TAB.length);
+const plantTabState = new Map();   // name → { section, table }
 const openTabs = [];
+const tabHistory = [];              // most recently shown last, for "close returns to the previous tab"
 let currentTab = null;
 
+function tabInfo(t) {
+  return isPlantTab(t) ? { title: tabPlant(t), icon: VIEWS.plants.icon } : VIEWS[t];
+}
+
 function renderTabs() {
-  $('open-tabs').innerHTML = openTabs.map(t => `<div class="tab${t === currentTab ? ' active' : ''}">
-    <button type="button" class="tab-open" data-tab="${t}"${t === currentTab ? ' aria-current="page"' : ''}><svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${VIEWS[t].icon}</svg><span>${VIEWS[t].title}</span></button>
-    ${openTabs.length > 1 ? `<button type="button" class="tab-close" data-close="${t}" aria-label="Close ${VIEWS[t].title}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>` : ''}</div>`).join('');
+  $('open-tabs').innerHTML = openTabs.map(t => {
+    const info = tabInfo(t), tab = esc(t), title = esc(info.title);
+    return `<div class="tab${t === currentTab ? ' active' : ''}${isPlantTab(t) ? ' plant-tab' : ''}">
+    <button type="button" class="tab-open" data-tab="${tab}"${t === currentTab ? ' aria-current="page"' : ''} title="${title}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${info.icon}</svg><span>${title}</span></button>
+    ${openTabs.length > 1 ? `<button type="button" class="tab-close" data-close="${tab}" aria-label="Close ${title}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>` : ''}</div>`;
+  }).join('');
 }
 $('open-tabs').addEventListener('click', e => {
   const close = e.target.closest('[data-close]');
-  if (close) {
-    const i = openTabs.indexOf(close.dataset.close);
-    openTabs.splice(i, 1);
-    if (close.dataset.close === currentTab) return showTab(openTabs[Math.max(0, i - 1)]);
-    return renderTabs();
-  }
+  if (close) return closeTab(close.dataset.close);
   const open = e.target.closest('[data-tab]');
   if (open) showTab(open.dataset.tab);
 });
 
-function showTab(name) {
+function closeTab(t) {
+  const i = openTabs.indexOf(t);
+  if (i < 0) return;
+  openTabs.splice(i, 1);
+  if (isPlantTab(t)) plantTabState.delete(tabPlant(t));
+  for (let k = tabHistory.length - 1; k >= 0; k--) if (tabHistory[k] === t) tabHistory.splice(k, 1);
+  if (t !== currentTab) return renderTabs();
+  const previous = [...tabHistory].reverse().find(x => openTabs.includes(x)) || openTabs[Math.max(0, i - 1)] || 'plants';
+  showTab(previous);
+}
+
+function showTab(name, section, table) {
+  if (isPlantTab(currentTab) && browse?.plant) plantTabState.set(browse.plant, { section: browse.section, table: browse.table });
   if (!openTabs.includes(name)) openTabs.push(name);
   currentTab = name;
+  tabHistory.push(name);
+  if (tabHistory.length > 50) tabHistory.shift();
+  const view = isPlantTab(name) ? 'plants' : name;
   for (const t of Object.keys(VIEWS)) {
-    $('tab-' + t).setAttribute('aria-selected', String(t === name));
-    $('view-' + t).hidden = t !== name;
+    $('tab-' + t).setAttribute('aria-selected', String(t === view));
+    $('view-' + t).hidden = t !== view;
+  }
+  if (view === 'plants') {
+    if (isPlantTab(name)) {
+      const saved = plantTabState.get(tabPlant(name)) || {};
+      showPlantPage(tabPlant(name), section || saved.section || 'summary', table ?? saved.table ?? null);
+    } else showPlantList();
   }
   renderTabs();
   writeHash();
   clearInterval(plantsTimer);
-  if (name === 'plants') { loadPlants(); plantsTimer = setInterval(loadPlants, 5000); }
+  if (view === 'plants') { loadPlants(); plantsTimer = setInterval(loadPlants, 5000); }
 }
+/** Opens a plant in its own tab, or focuses the tab it already has. */
+function openPlant(name, section, table) { showTab(PLANT_TAB + name, section, table); }
 $('tab-interview').addEventListener('click', () => showTab('interview'));
 $('tab-plants').addEventListener('click', () => showTab('plants'));
 
@@ -176,7 +209,7 @@ function writeHash() {
   const parts = [];
   if (interviewId) parts.push('interview=' + interviewId);
   if (interviewId && step === 'review') parts.push('step=review');
-  if (currentTab === 'plants' && browse?.plant) {
+  if (isPlantTab(currentTab) && browse?.plant) {
     parts.push('plant=' + encodeURIComponent(browse.plant));
     if (browse.section !== 'summary') parts.push('section=' + browse.section);
     if (browse.section === 'tables' && browse.table) parts.push('table=' + encodeURIComponent(browse.table));
@@ -495,8 +528,7 @@ $('approve-yes').addEventListener('click', async () => {
     const approvedName = interview?.approval?.simulation;
     await loadInterview();
     // Show the plant where it now lives: its page on the Plants tab, Backfilling until it catches up.
-    showTab('plants');
-    if (approvedName) openPlant(approvedName);
+    if (approvedName) openPlant(approvedName); else showTab('plants');
   } catch (e) {
     $('approve-error').hidden = false;
     $('approve-error').textContent = e.message + (e.code ? ` (${e.code})` : '');
@@ -823,7 +855,7 @@ $('plants').addEventListener('click', e => {
   if (row) openPlant(row.dataset.open);
 });
 
-function openPlant(name, section = 'summary', table = null) {
+function showPlantPage(name, section = 'summary', table = null) {
   browse.plant = name; browse.table = table;
   browse.summary = browse.tables = browse.rows = null;
   browse.grid = { sort: 'row_version', dir: 'desc', q: '', deleted: false, page: 1 };
@@ -835,21 +867,18 @@ function openPlant(name, section = 'summary', table = null) {
   renderDetailHead();
   selectSection(['summary', 'series', 'tables'].includes(section) ? section : 'summary');
 }
-function closePlant() {
+function showPlantList() {
   browse.plant = null; pendingRemove = null;
   $('plant-detail').hidden = true;
   $('plants-overview').hidden = false;
   renderPlants();
-  writeHash();
 }
-$('plant-back').addEventListener('click', closePlant);
 
 function detailPlant() { return plantsData?.find(p => p.simulation === browse.plant) || null; }
 
 function renderDetailHead() {
   const name = browse.plant, p = detailPlant();
   $('detail-name').textContent = name;
-  $('detail-crumb').textContent = name;
   if (!p) {
     $('detail-badge').hidden = true;
     $('detail-sub').textContent = plantsData ? "That plant is not in this page's list. Pick one from Plants." : 'Loading…';
@@ -893,7 +922,8 @@ document.querySelector('.detail-head').addEventListener('click', async e => {
     if (act === 'remove-yes') {
       await api('DELETE', `/api/plants/${encodeURIComponent(name)}?confirm=true${pendingRemoveDataset ? '&deleteDataset=true' : ''}`);
       pendingRemove = null; pendingRemoveDataset = false;
-      closePlant();
+      closeTab(PLANT_TAB + name);
+      if (currentTab !== 'plants') showTab('plants');
     }
   } catch (err) {
     $('plants-error').hidden = false;
@@ -1431,8 +1461,7 @@ const linkedPlant = hashValue('plant'), linkedSection = hashValue('section'), li
 window.addEventListener('hashchange', () => {
   const plant = hashValue('plant');
   if (!plant) return;
-  if (currentTab !== 'plants') showTab('plants');
-  if (plant !== browse.plant) return openPlant(plant, hashValue('section') || 'summary', hashValue('table'));
+  if (currentTab !== PLANT_TAB + plant) return openPlant(plant, hashValue('section') || undefined, hashValue('table'));
   const section = hashValue('section') || 'summary', table = hashValue('table');
   if (section === 'tables' && table && table !== browse.table && browse.tables?.some(t => t.name === table)) {
     browse.table = table; renderTableList();
@@ -1447,8 +1476,7 @@ loadHealth(false);
 loadInterview();
 (async () => {
   if (linkedPlant) {
-    showTab('plants');
-    openPlant(linkedPlant, linkedSection || 'summary', linkedTable);
+    openPlant(linkedPlant, linkedSection || undefined, linkedTable);
     return;
   }
   let open = 'interview';
