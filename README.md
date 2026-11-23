@@ -5,7 +5,7 @@ two products:
 
 | Product | Version | What it does |
 | --- | --- | --- |
-| **Plant simulator** (`flow-data-simulator-web`) | 2.0.0-rc.2, candidate | Builds a small simulated plant from an interview on a web page in your Timebase stack, then runs it on one clock: records (orders, downtime, maintenance tickets, quality, shipments, batches) to Postgres for Connect, and tags to a Historian Dataset |
+| **Plant simulator** (`flow-data-simulator-web`) | 2.0.0-rc.3, candidate | Builds a small simulated plant from an interview on a web page in your Timebase stack, then runs it on one clock: records (orders, downtime, maintenance tickets, quality, shipments, batches) to Postgres for Connect, and tags to a Historian Dataset |
 | **Session simulator** (`IndustrialDataSim.Cli`) | 1.0.1, released | Writes Timestamp Value Quality (TVQ) points from declarative pattern models to Historian Datasets, with durable sessions in SQLite |
 
 ## Plant simulator (2.0)

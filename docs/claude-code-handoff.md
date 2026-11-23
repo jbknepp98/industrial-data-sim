@@ -11,11 +11,15 @@ candidate) is where current work happens; this first part is about it. The
 This document transfers engineering context, not credentials. Never copy secrets
 from chat transcripts, env files or logs into code, prompts, logs or documents.
 
-## Status now (November 22, 2026)
+## Status now (November 23, 2026)
 
 - **Released:** 1.0.1 (tag `v1.0.1` on `192aaab`), the session simulator.
-- **Candidate:** 2.0.0-rc.2 (tag `v2.0.0-rc.2`): rc.1 plus each plant approved on
-  the page getting its own 365-day Historian Dataset (see release-notes.md). rc.1
+- **Candidate:** 2.0.0-rc.3 (tag `v2.0.0-rc.3` on `f753bcd`, CI run 45118826885):
+  rc.2 plus the Timebase Plant Simulator page (Historian layout, two-step
+  interview), file uploads, changing a plant by rebuild in place, the Gage kit and
+  the plant browser (each plant in its own tab: Summary, Time series, Tables).
+  Gates P23–P27 passed on the CI image. rc.2 (tag `v2.0.0-rc.2`) gave each plant
+  approved on the page its own 365-day Historian Dataset (see release-notes.md). rc.1
   is tagged `v2.0.0-rc.1` on `a7bceef`
   ([CI run 44999977188](https://github.com/jbknepp98/industrial-data-sim/actions/runs/44999977188)). Release gates and their state:
   [release-2.0.0-acceptance.md](release-2.0.0-acceptance.md).
@@ -24,7 +28,7 @@ from chat transcripts, env files or logs into code, prompts, logs or documents.
   customer's Timebase stack. Claude is reached through Pulse Gage, and only the
   user's **Approve plan** click starts a plant. See
   [release-2.0.0-specification.md](release-2.0.0-specification.md).
-- **Tests:** 1,129 .NET tests, all passing, in Release with `FLOWSIM_TEST_PG`
+- **Tests:** 1,164 .NET tests, all passing, in Release with `FLOWSIM_TEST_PG`
   set. Without it, the Postgres integration tests are skipped.
 - **Running on the owner's Mac** (Docker Desktop, Timebase 2.0.0 stack on the
   network `timebase-2-0-beta_default`):
@@ -33,9 +37,11 @@ from chat transcripts, env files or logs into code, prompts, logs or documents.
   - `bluebirdbev-plant`, image `flow-data-simulator:2.0.0-dev` (a local build,
     not a release), running the BluebirdBev plant into the `Test` Dataset
     (7-day purge age);
-  - `flow-data-simulator-web`, image `flow-data-simulator-web:2.0.0-rc.2`
-    (the CI-built image), on `127.0.0.1:8480`, hosting no plants. It shows
-    BluebirdBev as "running elsewhere".
+  - `flow-data-simulator-web` on `127.0.0.1:8480`, image
+    `flow-data-simulator-web:2.0.0-rc.2` until the owner switches it to the
+    loaded CI image `2.0.0-rc.3`; it hosts the page-built plant Gallo;
+  - `flow-data-simulator-web-look` on `127.0.0.1:8481`, image
+    `flow-data-simulator-web:2.0.0-rc.3`, a test container for previews.
 
 ## Suggested first message to Claude Code (2.0)
 

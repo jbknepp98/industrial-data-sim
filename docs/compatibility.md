@@ -1,5 +1,16 @@
 # Compatibility record
 
+## Release 2.0.0-rc.3 (November 23, 2026)
+
+Candidate, not a release: rc.2 plus the Timebase Plant Simulator page, file uploads,
+rebuild in place, the Gage kit and the plant browser (see release notes). Same base
+image, .NET runtime and Timebase stack as rc.1 below.
+
+| Architecture | Evidence |
+| --- | --- |
+| linux-arm64 | Built natively on the CI `ubuntu-24.04-arm` runner (run 45118826885 on `f753bcd`, every job passed). The artifact's SHA-256 matched its `SHA256SUMS`; the loaded image `sha256:4cb121a5a186…` carries `flow-data-simulator-web:2.0.0-rc.3` and `:f753bcd4ee61…`. Live acceptance P10, P13 and P23–P27 ran on that exact image in the test container on 127.0.0.1:8481 on Docker Desktop on Apple Silicon against the stack below. **Primary target.** |
+| linux-x64 | Built natively on the CI `ubuntu-24.04` runner and smoke-tested there (same run). No live run against a Timebase stack. |
+
 ## Release 2.0.0-rc.1 (November 22, 2026)
 
 Candidate, not a release. It adds the plant simulator and the web container

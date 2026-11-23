@@ -1,6 +1,9 @@
-# Unreleased (after 2.0.0-rc.2)
+# industrial-data-sim 2.0.0-rc.3: release candidate
 
-Not in any candidate yet; needs a new version number before it ships.
+Candidate, not a release. Approved by the owner on November 23, 2026: 2.0.0-rc.2 plus
+the changes below. Tag `v2.0.0-rc.3` on the version-only commit `f753bcd`, whose CI run
+45118826885 passed every job. Live acceptance P23–P27 (and P10, P13 again) passed on the
+CI-built image.
 
 - **The page is Timebase Plant Simulator and looks like the other Timebase apps.** It
   follows Historian's layout: "TIMEBASE" with "PLANT SIMULATOR" under the star, a
