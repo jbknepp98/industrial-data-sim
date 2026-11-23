@@ -36,10 +36,11 @@ make a live gate Passed.
 | P24 | Attached files: supported types read, limits and wrong files refused with the codes documented, files are information not instructions | `AttachmentTests`, `WebTests`; live on 8481 through Gage: a CSV and a PNG in one message, then a PDF, all read (about 6,800 and 8,300 input tokens) | Open: repeat on the rc.3 image |
 | P25 | Existing plants: the interviewer lists only page-built plants; stop/start only after the user confirms; a change moves to the plant's interview; rebuild in place needs both confirmations, empties only the page's own Dataset and drops only that plant's tables; no remove tool | `PlantInterviewTests` including the Postgres-gated `AChangeApprovedTwiceRebuildsThePlantInPlace`; live `list_plants` call through Gage on 8481 | Open: live rebuild of a `PlanTest…` plant on the rc.3 image |
 | P26 | Gage kit: prompts and the Connect and Atlas briefs for a plan and a built plant; no password or secret in them | `ThePlanOffersGagePromptsAndConnectAndAtlasBriefs` | Open: download and read on the rc.3 image |
+| P27 | Plant browser: only page-built plants listed and readable; Summary, table counts and rows match Postgres; a trend matches Historian; read-only and bounded | `BrowseTests`, `HistorianReadTests`, `TrendThinningTests`; live on the `web-timebase-look` build (8481), November 23: BluebirdBev absent and `browse.not_found`, all 23 Gallo table counts equal `count(*)`, sort/search/deep link in Chrome, a drawn trend equal to a fresh API read point for point, `PlanTestBrowse` removed from its page with its Dataset (`exists` false) | Open: repeat on the rc.3 image |
 
 After rc.2 the interview gained plant tools and file upload, and the page a larger body
 limit for uploads, so P10 and P13 must be evidenced again on the next candidate
-together with P23–P26.
+together with P23–P27.
 
 ## Evidence records
 

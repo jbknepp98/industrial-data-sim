@@ -162,8 +162,12 @@ name to `FLOWSIM_WEB_ALLOWED_HOSTS` in `web.env`.
   storylines, needs, plant preview and the Gage kit. **Approve plan…** builds
   and starts the plant; **Back to Interview** returns to the chat.
 - **Plants** lists only the plants this page built; plants started with the CLI
-  or other tools, such as BluebirdBev, are not shown. Open a row for Stop,
-  Start, Remove and the downloads.
+  or other tools, such as BluebirdBev, are not shown. Open one for its page:
+  Stop, Start and Remove at the top, then **Summary** (run, where the data is,
+  lines, storylines, planted incidents, files), **Time series** (one time range
+  for any number of trends of up to 4 tags each) and **Tables** (its Postgres
+  tables, 200 rows a page, sort, search, deleted rows). Everything there is
+  read-only.
 - **Change a plant** by asking the interviewer. It moves the request into the
   interview that built that plant. Approving the changed plan **rebuilds the
   plant in place under the same name**: its tables and the tag history in its
@@ -216,6 +220,10 @@ name to `FLOWSIM_WEB_ALLOWED_HOSTS` in `web.env`.
 | `approve.unchanged` | The plan is what the plant already runs: ask the interviewer for the change first |
 | `approve.dataset_failed` | The plant was not rebuilt and runs as before: check Historian → Datasets, then approve again |
 | `approve.rebuild_failed` | The old tables were removed but the new plan could not be admitted: ask the interviewer to compose and preview the change again, then approve |
+| `browse.query_timeout` | A table read took over 5 seconds: narrow the search, or try again |
+| `browse.historian_unavailable` | The page has no Historian connection (`TIMEBASE_BASE_URL` and the Pulse client settings in `web.env`) |
+| `browse.dataset_unknown` | The page does not know the plant's Dataset (a plant approved before each plant had its own Dataset, with `TIMEBASE_DATASET` unset) |
+| `historian.read_too_large` | More than 32 MB for the trend: choose a shorter range or fewer tags |
 | `plant.retention_warning` | The plant writes to a Dataset whose purge age is shorter than its backfill (only plants approved with 2.0.0-rc.1, which use `TIMEBASE_DATASET`) |
 
 More detail: [docs/plant-simulation.md](../../docs/plant-simulation.md).

@@ -655,8 +655,7 @@ tokens in light and dark (the same values as Explorer, Historian and Pulse):
   under it says the interviewer is AI and can make mistakes.
 - **Interview, step 2 (Review plan, `&step=review` in the URL):** storylines,
   needs profile, plant preview and the Gage kit at full width. After an
-  approval (a first build or a rebuild) the page opens Plants with that plant's
-  row open.
+  approval (a first build or a rebuild) the page opens that plant's page.
 - **Ready to build band:** a glass band along the bottom, shown once the
   interviewer finishes a turn that left a preview. On step 1 it offers
   **Review plan**; on step 2 **Back to Interview** and **Approve plan…**, which
@@ -667,8 +666,9 @@ tokens in light and dark (the same values as Explorer, Historian and Pulse):
 - **Plants:** a filter box and one list card like Historian's Datasets: status
   dot, name, Status, Delivered through, Rows and Tag points. Statuses read
   Backfilling (also while starting; a yellow, pulsing dot), Live, Stopped, Error,
-  Running elsewhere and Not hosted. The chevron opens a
-  row for its details, Stop, Start, Remove, the downloads and the Gage kit.
+  Running elsewhere and Not hosted. Opening a row shows that plant's page (see
+  **Browsing a plant**): Stop, Start, Remove, then Summary (with the downloads and
+  the Gage kit), Time series and Tables.
 
 It serves its own Poppins and JetBrains Mono fonts from `wwwroot/fonts/` (SIL
 Open Font License, see `NOTICE.md` there) and the blue Timebase star as its
@@ -801,6 +801,32 @@ and stays available after building:
 
 The three downloads appear on Review plan, on the live card after approval and
 in each page-made plant's row on the Plants tab.
+
+**Browsing a plant** (owner decisions, November 22, 2026). Plants lists only the
+plants this page built (approved from one of its interviews and still registered,
+`PagePlants`); BluebirdBev, other tools' plants, other Datasets and other tables in
+`flow_data_sim` are never listed or linked, and `/api/browse/*` answers any other name
+with 404 `browse.not_found` without saying whether it exists. Opening a plant shows its
+page (`#plant=Name&section=summary|series|tables&table=…` in the URL, followed while the
+page is open):
+
+- **Summary:** run window and delivery, where the data is (Dataset, tag root, table
+  prefix, counts, areas), lines and equipment, storylines and planted incidents, the files.
+- **Time series:** one UTC start/end for the plant (quick picks 1 h, 8 h, 24 h, 7 d,
+  whole run; at most 31 days, inside the run) and any number of trend windows that follow
+  it, each with up to 4 tags from the line → machine tree. Numbers are step lines on up
+  to two y-axes by measure; text tags are colored state lanes; hover shows each tag's
+  value in force. The server thins each tag to at most 1,000 points (the lowest and
+  highest of 500 time slices for numbers, changes for text) and reads at most 32 MB from
+  Historian. Windows and tags are remembered per plant in the browser.
+- **Tables:** the plant's own tables with row and soft-deleted counts; 200 rows per page
+  newest first, sortable by any column, one search box matched literally against the
+  text columns, a deleted-rows toggle, pages up to 501.
+
+Everything is read-only: Postgres reads run in a `READ ONLY` transaction with a
+5-second statement timeout, SQL identifiers come only from `PlantSchema`, every value
+from the browser is a parameter, and reads are not logged. The 5-second poll updates the
+list and the plant's header in place and never redraws a section.
 
 **Hosting** (`PlantHostingService`): `flowsim_web_plants` records each plant
 approved on the page, its Dataset and its Stop/Start switch, so a restart starts the same

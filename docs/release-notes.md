@@ -44,7 +44,18 @@ Not in any candidate yet; needs a new version number before it ships.
   model it in Atlas. On Review plan with **Copy** buttons, on the live card and on the
   Plants tab; `GET /api/interviews/{id}/gage/{prompts|connect|atlas}` and
   `GET /api/plants/{name}/gage/{kind}`.
-- **After approval the page opens Plants** with the new or rebuilt plant's row open.
+- **Browse each plant.** Plants lists only the plants this page built (BluebirdBev and
+  other tools' plants no longer appear). Opening one shows its page: **Summary** (run,
+  where the data is, lines and equipment, storylines, planted incidents, files),
+  **Time series** (one UTC range for any number of trend windows of up to 4 tags each,
+  at most 31 days, thinned to 1,000 points per tag) and **Tables** (its own Postgres
+  tables, 200 rows a page, sort, one search box, deleted rows). Read-only throughout.
+  New endpoints under `/api/browse/{name}`; codes `browse.not_found`,
+  `browse.unknown_table`, `browse.bad_sort`, `browse.bad_search`, `browse.bad_page`,
+  `browse.query_timeout`, `browse.bad_tags`, `browse.bad_range`,
+  `browse.dataset_unknown`, `browse.historian_unavailable`, `historian.read_too_large`,
+  `historian.read_unexpected`.
+- **After approval the page opens the plant's page** (a first build or a rebuild).
   Statuses read Backfilling (yellow, pulsing; also shown while starting), Live,
   Stopped, Error, Running elsewhere and Not hosted.
 - **File links show what they do.** Downloads (demo guide in Markdown, Connect spec,

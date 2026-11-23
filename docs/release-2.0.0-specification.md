@@ -67,6 +67,11 @@ The CLI and skill remain for hand-written models and diagnostics.
   **Approve plan**, rebuild in place of a changed plant behind a double confirmation,
   plant list with Stop, Start and Remove, and per-plant downloads (Connect mapping
   spec, Atlas starter, demo guide, Gage kit: prompts, Connect brief, Atlas brief).
+- **Plant browser:** each page-built plant opens to Summary, Time series (one master
+  range, trend windows of up to 4 tags, at most 31 days, 1,000 points per tag) and Tables
+  (200 rows a page, sort, one search box, deleted rows). Read-only: `READ ONLY`
+  transactions with a 5-second timeout, identifiers from the schema only, values as
+  parameters; only plants this page built are listed or readable. *(Added after rc.2.)*
 - **Image:** `flow-data-simulator-web`, linux-arm64 and linux-x64, non-root, SIGINT
   stop, built-in health check, with the CLI inside for `plant gage-check`.
 

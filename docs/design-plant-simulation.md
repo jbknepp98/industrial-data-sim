@@ -334,6 +334,12 @@ their stack.
 - **Gage kit (November 22, 2026):** every plan and plant offers sample Gage
   prompts and briefs that let Gage set it up in Connect and Atlas; the
   Connect brief never carries the password.
+- **Plant browser (November 22, 2026):** it replaces the Plants view (not a
+  separate item); it shows only environments this tool created, never other
+  Datasets, domains, simulators or tables; trends take a free start/end, up to
+  4 tags per window, many windows bound to one master range, thinned to 1,000
+  points; tables have one search box, click-to-sort and a deleted-rows toggle.
+  Read-only throughout, with no SQL box.
 
 ## Open questions for the owner (answered above)
 
