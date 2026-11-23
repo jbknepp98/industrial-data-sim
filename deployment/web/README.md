@@ -162,7 +162,7 @@ name to `FLOWSIM_WEB_ALLOWED_HOSTS` in `web.env`.
   storylines, needs, plant preview and the Gage kit. **Approve plan…** builds
   and starts the plant; **Back to Interview** returns to the chat.
 - **Plants** lists only the plants this page built; plants started with the CLI
-  or other tools, such as BluebirdBev, are not shown. Open one for its page:
+  or other tools, such as BluebirdBev, are not shown. Open one in its own tab:
   Stop, Start and Remove at the top, then **Summary** (run, where the data is,
   lines, storylines, planted incidents, files), **Time series** (one time range
   for any number of trends of up to 4 tags each) and **Tables** (its Postgres

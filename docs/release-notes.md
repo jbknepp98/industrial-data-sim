@@ -45,7 +45,7 @@ Not in any candidate yet; needs a new version number before it ships.
   Plants tab; `GET /api/interviews/{id}/gage/{prompts|connect|atlas}` and
   `GET /api/plants/{name}/gage/{kind}`.
 - **Browse each plant.** Plants lists only the plants this page built (BluebirdBev and
-  other tools' plants no longer appear). Opening one shows its page: **Summary** (run,
+  other tools' plants no longer appear). Opening one opens it in its own tab: **Summary** (run,
   where the data is, lines and equipment, storylines, planted incidents, files),
   **Time series** (one UTC range for any number of trend windows of up to 4 tags each,
   at most 31 days, thinned to 1,000 points per tag) and **Tables** (its own Postgres

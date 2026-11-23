@@ -666,7 +666,7 @@ tokens in light and dark (the same values as Explorer, Historian and Pulse):
 - **Plants:** a filter box and one list card like Historian's Datasets: status
   dot, name, Status, Delivered through, Rows and Tag points. Statuses read
   Backfilling (also while starting; a yellow, pulsing dot), Live, Stopped, Error,
-  Running elsewhere and Not hosted. Opening a row shows that plant's page (see
+  Running elsewhere and Not hosted. Opening a row opens that plant in its own tab (see
   **Browsing a plant**): Stop, Start, Remove, then Summary (with the downloads and
   the Gage kit), Time series and Tables.
 
@@ -806,9 +806,10 @@ in each page-made plant's row on the Plants tab.
 plants this page built (approved from one of its interviews and still registered,
 `PagePlants`); BluebirdBev, other tools' plants, other Datasets and other tables in
 `flow_data_sim` are never listed or linked, and `/api/browse/*` answers any other name
-with 404 `browse.not_found` without saying whether it exists. Opening a plant shows its
-page (`#plant=Name&section=summary|series|tables&table=…` in the URL, followed while the
-page is open):
+with 404 `browse.not_found` without saying whether it exists. Opening a plant opens it
+in its own tab in the top strip (owner decision, November 23, 2026): several can be
+open, opening one again focuses its tab, closing a tab returns to the one shown before,
+and `#plant=Name&section=summary|series|tables&table=…` opens or focuses that tab:
 
 - **Summary:** run window and delivery, where the data is (Dataset, tag root, table
   prefix, counts, areas), lines and equipment, storylines and planted incidents, the files.
