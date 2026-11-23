@@ -48,6 +48,9 @@ curl -s http://localhost:8480/api/health
   place after a double confirmation. Each plant approved there gets its own Historian
   Dataset, named after it, with a 365-day purge age. Plants approved there are managed there: stop, start and
   remove them on its Plants tab, never with `plant run` or `plant remove` here.
+  Opening a plant there (its own tab) shows its Summary, trends from its own
+  Dataset and its Postgres tables, read-only; point the user there to look
+  inside a page-built plant instead of querying it by hand.
 - **It does not answer:** offer the setup (`deployment/web/README.md` in the
   repository: Pulse client with the `Pulse` and `Historian` audiences, a Soft
   client policy, the Gage model, `plant gage-check`),

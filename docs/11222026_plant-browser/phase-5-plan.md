@@ -62,7 +62,7 @@ made only after the owner approves cutting rc.3.
 <success-criteria>
 
 <automated-verification>
-- [ ] `dotnet build -c Release` and `dotnet test -c Release` (with `FLOWSIM_TEST_PG`) pass.
+- [x] `dotnet build -c Release` and `dotnet test -c Release` (with `FLOWSIM_TEST_PG`) pass.
 - [ ] `git grep -n "2.0.0-rc.2"` shows only history (release notes, compatibility, acceptance records).
 - [ ] After merging to `main` (with the owner's OK) and pushing: the CI run passes every job.
 - [ ] Tag `v2.0.0-rc.3` on the version-only commit whose CI run passed; pushed.
