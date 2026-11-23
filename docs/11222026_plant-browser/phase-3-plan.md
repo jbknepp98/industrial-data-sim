@@ -144,11 +144,11 @@ Checks (Chrome, http://localhost:8480):
 - [x] Summary values equal `curl -s localhost:8480/api/browse/PlanTestBrowse`.
 - [x] Tables: every table's count equals `SELECT count(*)` via `docker exec flow-data-sim-pg psql …` (read-only).
 - [x] Sorting `created_utc` asc then desc reorders; search for a ticket id finds it; `%` finds nothing extra.
-- [ ] Page 2 has no overlap with page 1; Previous is disabled on page 1.
+- [x] Previous is disabled on page 1. Page 2 without overlap is covered by `RowsPageNewestFirstAndSortSearchDeletedAndRefusalsWork`: no live plant has a table over 200 rows (Gallo's largest: 74).
 - [x] "Show deleted rows" changes the total only if the table has soft-deleted rows.
-- [ ] Deep link `#plant=PlanTestBrowse&section=tables&table=<prefix>maintenancetickets` opens that table after a reload.
-- [ ] Open Remove dialog, tick the box, wait 10 s: the box stays ticked; Cancel.
-- [ ] Light and dark both readable; at 375 px wide the list stacks above the detail with no page-wide horizontal scroll.
+- [x] Deep link `#plant=PlanTestBrowse&section=tables&table=<prefix>maintenancetickets` opens that table after a reload.
+- [x] Open Remove dialog, tick the box, wait 10 s: the box stays ticked; Cancel.
+- [x] Light and dark both readable; at 375 px wide the list stacks above the detail with no page-wide horizontal scroll.
 Keep `PlanTestBrowse` running for Phase 4.
 </end-to-end-verification>
 

@@ -62,27 +62,43 @@ text `--muted` 10 px mono.
 <success-criteria>
 
 <automated-verification>
-- [ ] Builds: `dotnet build -c Release`; full suite passes with `FLOWSIM_TEST_PG` set
-- [ ] `node --check src/IndustrialDataSim.Web/wwwroot/app.js` passes
+- [x] Builds: `dotnet build -c Release`; full suite passes with `FLOWSIM_TEST_PG` set
+- [x] `node --check src/IndustrialDataSim.Web/wwwroot/app.js` passes
 </automated-verification>
 
 <end-to-end-verification>
 Rebuild the dev image and recreate the web container on it (as in Phase 3). In Chrome with `PlanTestBrowse`:
-- [ ] Time series opens with one window, two tags, last 24 h; points visible.
-- [ ] Add a second window with a vibration tag and a state tag; both draw.
-- [ ] Change the master range to "Last 8 h": both windows redraw to the same range.
-- [ ] One window's first-tag values equal `GET /api/browse/PlanTestBrowse/trend?…` for the same range
+- [x] Time series opens with one window, two tags, last 24 h; points visible.
+- [x] Add a second window with a vibration tag and a state tag; both draw.
+- [x] Change the master range to "Last 8 h": both windows redraw to the same range.
+- [x] One window's first-tag values equal `GET /api/browse/PlanTestBrowse/trend?…` for the same range
       (spot-check 3 points by hover readout).
-- [ ] A 7-day range on a 10-second tag reports "Thinned from N points" and draws ≤ 1,000 points.
-- [ ] A fifth tag cannot be selected; a 32-day range is refused in the page with the reason.
-- [ ] Reload: both windows and their tags come back; switching to another plant and back keeps them.
-- [ ] Light and dark both readable; 375 px wide: windows stack, no page-wide horizontal scroll.
+- [x] A 7-day range on a 10-second tag reports "Thinned from N points" and draws ≤ 1,000 points.
+- [x] A fifth tag cannot be selected; a 32-day range is refused in the page with the reason.
+- [x] Reload: both windows and their tags come back; switching to another plant and back keeps them.
+- [x] Light and dark both readable; 375 px wide: windows stack, no page-wide horizontal scroll.
 Then remove `PlanTestBrowse` from its detail header with "Also delete its Dataset" ticked, and
 confirm in Historian that the Dataset is gone (`GET /api/datasets/PlanTestBrowse/exists` → false).
 Put the web container back on `flow-data-simulator-web:2.0.0-rc.2` until Phase 5.
 </end-to-end-verification>
 
 </success-criteria>
+
+<verification-record>
+Done November 23, 2026 on the test container `flow-data-simulator-web-look` (127.0.0.1:8481,
+image `flow-data-simulator-web:2.0.0-rc.3-dev-look` built from the branch), not on the
+user's 8480 container, which stayed on rc.2 throughout; BluebirdBev untouched.
+- Trends read on Gallo (read-only) and on `PlanTestBrowse`, approved from a short interview
+  through Gage and removed afterwards with its Dataset (`exists` → false; its 23 tables gone).
+- Default window: first line's first two number tags (Speed, GoodCount) rather than its first
+  two tags, which are text (State, SKU).
+- Hover spot-check: 2 of 3 readouts equal to the digit; the third differed by one count
+  because of the hover position, and the drawn series equalled a fresh API read point for point.
+- 7 days of Speed: 31,836 raw points drawn as 698. 375 px checked in the app's browser
+  (the page refuses iframes: `frame-ancestors 'none'`); no page-wide horizontal scroll.
+- Four PlanTest plants left by test runs before the cleanup-deadlock fix were removed with
+  `plant remove … --confirm`.
+</verification-record>
 
 <post-verification>
 Commit: "Time series: master time range and trend windows of up to 4 tags each".

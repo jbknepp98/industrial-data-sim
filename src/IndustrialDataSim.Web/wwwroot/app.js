@@ -986,11 +986,341 @@ function renderSummary() {
   <section class="card"><div class="eyebrow">Files</div><div class="downloads">${plantFiles(base)}</div></section>`;
 }
 
-// ----- Time series (Phase 4 fills this) -----
+// ----- Time series -----
+// One start/end for the whole plant (in UTC, like every time the simulator
+// writes), and any number of trend windows that all follow it. Each window
+// shows up to 4 of the plant's tags, read from its own Dataset and thinned by
+// the server to at most 1,000 points per tag. The windows and their tags are
+// remembered per plant in this browser; the range is not.
 
-function renderSeriesPane() {
-  $('pane-series').innerHTML = '<p class="muted">Trends are coming in this build.</p>';
+const TREND = { maxTags: 4, maxDays: 31, colors: ['--tb-blue-500', '--tb-green-500', '--tb-orange-500', '--tb-red-500'] };
+const series = { plant: null, tree: null, tags: new Map(), range: null, windows: [], nextId: 1, error: null };
+
+const trendKey = plant => 'flowsim.trends.' + plant;
+function saveTrends() { store.set(trendKey(series.plant), JSON.stringify({ windows: series.windows.map(w => ({ tags: w.tags })) })); }
+function utcInput(ms) { return new Date(ms).toISOString().slice(0, 16); }
+function parseUtcInput(value) { const ms = Date.parse(value + ':00Z'); return Number.isNaN(ms) ? null : ms; }
+const shortTag = name => name.split('.').slice(1).join('.') || name;
+
+async function renderSeriesPane(reload = false) {
+  if (series.plant !== browse.plant || reload || !series.tree) {
+    const plant = browse.plant;
+    $('pane-series').innerHTML = '<p class="muted">Loading…</p>';
+    try {
+      const tree = await api('GET', browseUrl('/series'));
+      if (plant !== browse.plant) return;
+      const fresh = series.plant !== plant;
+      series.plant = plant; series.tree = tree; series.tags = new Map();
+      for (const line of tree.lines) {
+        line.tags.forEach(t => series.tags.set(t.name, { ...t, group: line.name }));
+        line.equipment.forEach(e => e.tags.forEach(t => series.tags.set(t.name, { ...t, group: `${line.name} · ${e.id}` })));
+      }
+      tree.plantTags.forEach(t => series.tags.set(t.name, { ...t, group: 'Plant' }));
+      const minMs = Date.parse(tree.range.minUtc), maxMs = Date.parse(tree.range.maxUtc);
+      if (fresh || !series.range) {
+        series.range = { start: Math.max(minMs, maxMs - 24 * 3600e3), end: maxMs };
+        let saved = null;
+        try { saved = JSON.parse(store.get(trendKey(plant)) || 'null'); } catch { saved = null; }
+        series.windows = (saved?.windows || []).map(w => ({ id: series.nextId++, tags: (w.tags || []).filter(t => series.tags.has(t)).slice(0, TREND.maxTags) }));
+        if (!series.windows.length) {
+          const first = tree.lines[0];
+          const numbers = first ? [...first.tags, ...first.equipment.flatMap(e => e.tags)].filter(t => t.valueType === 'number') : [];
+          series.windows = [{ id: series.nextId++, tags: numbers.slice(0, 2).map(t => t.name) }];
+        }
+      }
+    } catch (e) {
+      if (plant === browse.plant) $('pane-series').innerHTML = problem(e);
+      return;
+    }
+  }
+  buildSeriesPane();
+  drawAllTrends();
 }
+
+function buildSeriesPane() {
+  const r = series.range;
+  $('pane-series').innerHTML = `<div class="timebar">
+      <label><span>Start <span class="utc">UTC</span></span><input type="datetime-local" id="tr-start" step="60" value="${utcInput(r.start)}"></label>
+      <label><span>End <span class="utc">UTC</span></span><input type="datetime-local" id="tr-end" step="60" value="${utcInput(r.end)}"></label>
+      <button type="button" id="tr-apply">Apply</button>
+      <div class="quick" role="group" aria-label="Quick ranges">${[['1h', 1], ['8h', 8], ['24h', 24], ['7d', 168]].map(([label, h]) => `<button type="button" data-hours="${h}">Last ${label}</button>`).join('')}<button type="button" data-hours="all">Whole run</button></div>
+      <button type="button" class="primary" id="tr-add"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Add trend</span></button>
+    </div>
+    <p class="error" id="tr-range-error" hidden></p>
+    <p class="muted tr-note">Data from ${esc(fmtTime(series.tree.range.minUtc))} to ${esc(fmtTime(series.tree.range.maxUtc))} in Dataset <code>${esc(series.tree.dataset || '—')}</code>. Up to ${TREND.maxTags} tags per trend and ${TREND.maxDays} days at a time.</p>
+    <div class="trends" id="trend-windows">${series.windows.map(windowShell).join('')}</div>`;
+}
+
+function windowShell(w, index) {
+  return `<section class="card trend" data-window="${w.id}">
+    <div class="eyebrow trend-head"><span class="trend-title">Trend ${index + 1}</span><span class="chips" data-chips></span>
+      <button type="button" class="ghost small" data-act="pick" aria-expanded="false">Tags…</button>
+      <button type="button" class="ghost small icon-only" data-act="close-window" aria-label="Remove Trend ${index + 1}" title="Remove this trend"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <div class="picker" data-picker hidden></div>
+    <div class="trend-body" data-body><p class="muted">Loading…</p></div>
+  </section>`;
+}
+
+function rangeProblem(start, end) {
+  const min = Date.parse(series.tree.range.minUtc), latest = Date.now() + 5 * 60e3;
+  if (start == null || end == null) return 'Enter a start and an end.';
+  if (start >= end) return 'The start must be before the end.';
+  if (end - start > TREND.maxDays * 86400e3) return `Choose at most ${TREND.maxDays} days at a time.`;
+  if (start < min) return `The plant's data starts at ${fmtTime(series.tree.range.minUtc)}.`;
+  if (end > latest) return 'The end cannot be in the future.';
+  return null;
+}
+
+function setRange(start, end) {
+  const why = rangeProblem(start, end);
+  $('tr-range-error').hidden = !why;
+  $('tr-range-error').textContent = why || '';
+  if (why) return;
+  series.range = { start, end };
+  $('tr-start').value = utcInput(start); $('tr-end').value = utcInput(end);
+  drawAllTrends();
+}
+
+$('pane-series').addEventListener('click', e => {
+  const target = e.target.closest('button');
+  if (!target) return;
+  if (target.id === 'tr-apply') return setRange(parseUtcInput($('tr-start').value), parseUtcInput($('tr-end').value));
+  if (target.dataset.hours) {
+    const max = Date.parse(series.tree.range.maxUtc), min = Date.parse(series.tree.range.minUtc);
+    const hours = target.dataset.hours === 'all' ? (max - min) / 3600e3 : Number(target.dataset.hours);
+    return setRange(Math.max(min, max - Math.min(hours, TREND.maxDays * 24) * 3600e3), max);
+  }
+  if (target.id === 'tr-add') {
+    series.windows.push({ id: series.nextId++, tags: [] });
+    saveTrends(); buildSeriesPane(); drawAllTrends();
+    const last = $('trend-windows').lastElementChild;
+    openPicker(last);
+    return;
+  }
+  const card = target.closest('[data-window]');
+  if (!card) return;
+  const w = series.windows.find(x => x.id === Number(card.dataset.window));
+  if (target.dataset.act === 'close-window') {
+    series.windows = series.windows.filter(x => x !== w);
+    saveTrends(); buildSeriesPane(); drawAllTrends();
+  } else if (target.dataset.act === 'pick') {
+    card.querySelector('[data-picker]').hidden ? openPicker(card) : closePicker(card);
+  } else if (target.dataset.act === 'remove-tag') {
+    w.tags = w.tags.filter(t => t !== target.dataset.tag);
+    saveTrends(); drawTrend(w);
+  } else if (target.dataset.act === 'picker-done') {
+    closePicker(card);
+  }
+});
+$('pane-series').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.target.id === 'tr-start' || e.target.id === 'tr-end')) $('tr-apply').click();
+  if (e.key === 'Escape') { const card = e.target.closest('[data-window]'); if (card) closePicker(card); }
+});
+
+function openPicker(card) {
+  const w = series.windows.find(x => x.id === Number(card.dataset.window));
+  const picker = card.querySelector('[data-picker]');
+  const tagRow = t => `<label class="pick"><input type="checkbox" value="${esc(t.name)}"${w.tags.includes(t.name) ? ' checked' : ''}><span>${esc(shortTag(t.name))}</span><span class="muted">${esc(t.measure)}${t.valueType === 'string' ? ' · text' : ''}</span></label>`;
+  const groups = series.tree.lines.map(l => `<div class="pick-group"><div class="pick-title">${esc(l.name)} <code>${esc(l.id)}</code></div>${l.tags.map(tagRow).join('')}
+      ${l.equipment.map(e => `<div class="pick-sub">${esc(e.id)} ${esc(e.name)}</div>${e.tags.map(tagRow).join('')}`).join('')}</div>`).join('')
+    + (series.tree.plantTags.length ? `<div class="pick-group"><div class="pick-title">Plant</div>${series.tree.plantTags.map(tagRow).join('')}</div>` : '');
+  picker.innerHTML = `<div class="picker-top"><label class="filter"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="search" data-pick-filter placeholder="Filter tags…" aria-label="Filter tags"></label>
+      <span class="muted" data-pick-count></span><button type="button" class="primary small" data-act="picker-done">Done</button></div>
+    <div class="pick-list">${groups}</div>`;
+  picker.hidden = false;
+  card.querySelector('[data-act="pick"]').setAttribute('aria-expanded', 'true');
+  updatePickLimit(picker);
+  picker.querySelector('[data-pick-filter]').focus();
+}
+function updatePickLimit(picker) {
+  const boxes = [...picker.querySelectorAll('input[type=checkbox]')];
+  const chosen = boxes.filter(b => b.checked).length;
+  boxes.forEach(b => { b.disabled = !b.checked && chosen >= TREND.maxTags; b.closest('label').title = b.disabled ? `Up to ${TREND.maxTags} tags per trend` : ''; });
+  picker.querySelector('[data-pick-count]').textContent = chosen >= TREND.maxTags ? `Up to ${TREND.maxTags} tags per trend` : `${chosen} of ${TREND.maxTags}`;
+}
+function closePicker(card) {
+  const picker = card.querySelector('[data-picker]');
+  if (picker.hidden) return;
+  const w = series.windows.find(x => x.id === Number(card.dataset.window));
+  const chosen = [...picker.querySelectorAll('input[type=checkbox]:checked')].map(b => b.value);
+  picker.hidden = true; picker.innerHTML = '';
+  card.querySelector('[data-act="pick"]').setAttribute('aria-expanded', 'false');
+  // keep the order tags were already in, then the new ones
+  w.tags = [...w.tags.filter(t => chosen.includes(t)), ...chosen.filter(t => !w.tags.includes(t))].slice(0, TREND.maxTags);
+  saveTrends(); drawTrend(w);
+}
+$('pane-series').addEventListener('change', e => {
+  if (e.target.matches('.picker input[type=checkbox]')) updatePickLimit(e.target.closest('.picker'));
+});
+$('pane-series').addEventListener('input', e => {
+  if (!e.target.matches('[data-pick-filter]')) return;
+  const q = e.target.value.trim().toLowerCase();
+  e.target.closest('.picker').querySelectorAll('label.pick').forEach(l => { l.hidden = q && !l.textContent.toLowerCase().includes(q); });
+});
+
+function drawAllTrends() { series.windows.forEach(drawTrend); }
+
+async function drawTrend(w) {
+  const card = document.querySelector(`[data-window="${w.id}"]`);
+  if (!card) return;
+  const body = card.querySelector('[data-body]');
+  const colorOf = i => getComputedStyle(document.documentElement).getPropertyValue(TREND.colors[i]).trim() || '#31aee4';
+  renderChips(card, w, null);
+  if (!w.tags.length) { body.innerHTML = '<p class="muted">No tags yet. Click Tags… to pick up to 4.</p>'; return; }
+  const seq = w.seq = (w.seq || 0) + 1;
+  const { start, end } = series.range;
+  const query = w.tags.map(t => 'tag=' + encodeURIComponent(t)).join('&') + `&start=${encodeURIComponent(new Date(start).toISOString())}&end=${encodeURIComponent(new Date(end).toISOString())}`;
+  body.classList.add('loading');
+  try {
+    const data = await api('GET', browseUrl('/trend?' + query));
+    if (seq !== w.seq) return;
+    w.data = data;
+    renderChips(card, w, data);
+    body.innerHTML = '';
+    body.appendChild(chart(data, colorOf));
+  } catch (e) {
+    if (seq !== w.seq) return;
+    body.innerHTML = problem(e);
+  } finally { if (seq === w.seq) body.classList.remove('loading'); }
+}
+
+function renderChips(card, w, data) {
+  const color = i => `var(${TREND.colors[i]})`;
+  card.querySelector('[data-chips]').innerHTML = w.tags.map((t, i) => {
+    const d = data?.tags.find(x => x.name === t);
+    const note = !d ? '' : d.points.length === 0 ? ' · No values in this range' : d.thinned ? ` · Thinned from ${num(d.rawPoints)} points` : '';
+    const info = series.tags.get(t);
+    return `<span class="tag-chip" title="${esc(t)}${info ? ` (${esc(info.measure)})` : ''}"><span class="swatch" style="background:${color(i)}"></span>${esc(shortTag(t))}<span class="muted">${esc(note)}</span>
+      <button type="button" data-act="remove-tag" data-tag="${esc(t)}" aria-label="Remove ${esc(shortTag(t))}">×</button></span>`;
+  }).join('');
+}
+
+const STATE_COLORS = { Running: '--run', Run: '--run', Down: '--down', Fault: '--down', Changeover: '--change', Idle: '--idle', Starved: '--idle', Blocked: '--minor', Maintenance: '--maint', Cleaning: '--maint', CIP: '--maint' };
+const BAND_PALETTE = ['--ph1', '--ph2', '--ph3', '--ph4', '--ph5', '--ph6'];
+function bandColor(value) {
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  if (STATE_COLORS[value]) return css(STATE_COLORS[value]);
+  let h = 0; for (const c of String(value)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return css(BAND_PALETTE[h % BAND_PALETTE.length]);
+}
+
+function niceTimeStep(spanMs) {
+  const steps = [60e3, 5 * 60e3, 15 * 60e3, 30 * 60e3, 3600e3, 2 * 3600e3, 3 * 3600e3, 6 * 3600e3, 12 * 3600e3, 86400e3, 2 * 86400e3, 7 * 86400e3];
+  return steps.find(s => spanMs / s <= 6) || steps[steps.length - 1];
+}
+
+function chart(data, colorOf) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const start = Date.parse(data.start), end = Date.parse(data.end);
+  const dataEnd = Math.min(end, Date.parse(series.tree.range.maxUtc));
+  const numbers = data.tags.map((t, i) => ({ ...t, i })).filter(t => t.valueType === 'number');
+  const texts = data.tags.map((t, i) => ({ ...t, i })).filter(t => t.valueType !== 'number');
+  const measures = [...new Set(numbers.map(t => t.measure))];
+  const axes = measures.slice(0, 2);
+  const width = Math.max(320, (document.querySelector('#trend-windows')?.clientWidth || 800) - 34);
+  const laneH = 14, lanes = texts.length;
+  const m = { l: axes.length ? 54 : 12, r: axes.length > 1 ? 54 : 12, t: axes.length ? 22 : 10, b: 22 };
+  const plotH = numbers.length ? 230 - m.t - m.b : 0;
+  const height = m.t + plotH + (lanes ? lanes * (laneH + 4) + 4 : 0) + m.b;
+  const x = ms => m.l + (ms - start) / (end - start) * (width - m.l - m.r);
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('class', 'trend-svg');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `Trend of ${data.tags.map(t => shortTag(t.name)).join(', ')} from ${fmtTime(data.start)} to ${fmtTime(data.end)}`);
+  const el = (name, attrs, text) => { const node = document.createElementNS(NS, name); for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v); if (text != null) node.textContent = text; svg.appendChild(node); return node; };
+
+  // y scales per axis measure; further measures share the left axis.
+  const scale = {};
+  for (const measure of measures) {
+    const values = numbers.filter(t => (axes.includes(measure) ? t.measure === measure : !axes.includes(t.measure))).flatMap(t => t.points.map(p => Number(p[1]))).filter(Number.isFinite);
+    let lo = Math.min(...values), hi = Math.max(...values);
+    if (!values.length) { lo = 0; hi = 1; }
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const pad = (hi - lo) * 0.06;
+    scale[measure] = { lo: lo - pad, hi: hi + pad };
+  }
+  const axisOf = t => axes.includes(t.measure) ? t.measure : axes[0];
+  const y = (t, v) => { const s = scale[axisOf(t)] || { lo: 0, hi: 1 }; return m.t + plotH - (v - s.lo) / (s.hi - s.lo) * plotH; };
+
+  // grid and time axis
+  const step = niceTimeStep(end - start);
+  const multiDay = end - start > 86400e3;
+  for (let tick = Math.ceil(start / step) * step; tick <= end; tick += step) {
+    el('line', { x1: x(tick), x2: x(tick), y1: m.t, y2: height - m.b, class: 'grid-line' });
+    const iso = new Date(tick).toISOString();
+    el('text', { x: x(tick), y: height - 6, class: 'axis-text', 'text-anchor': 'middle' }, multiDay ? `${iso.slice(5, 10)} ${iso.slice(11, 16)}` : iso.slice(11, 16));
+  }
+  if (numbers.length) {
+    axes.forEach((measure, side) => {
+      const s = scale[measure];
+      for (let k = 0; k <= 4; k++) {
+        const v = s.lo + (s.hi - s.lo) * k / 4, yy = m.t + plotH - plotH * k / 4;
+        if (side === 0) el('line', { x1: m.l, x2: width - m.r, y1: yy, y2: yy, class: 'grid-line' });
+        el('text', { x: side === 0 ? m.l - 6 : width - m.r + 6, y: yy + 3, class: 'axis-text', 'text-anchor': side === 0 ? 'end' : 'start' }, Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : +v.toPrecision(3));
+      }
+      el('text', { x: side === 0 ? 4 : width - 4, y: 11, class: 'axis-text axis-title', 'text-anchor': side === 0 ? 'start' : 'end' }, measure + (side === 0 && measures.length > 2 ? ' (+ others)' : ''));
+    });
+  }
+
+  // numbers: step lines (Historian stores changes; a value holds until the next)
+  for (const t of numbers) {
+    const pts = t.points.map(p => [Date.parse(p[0]), Number(p[1])]).filter(p => Number.isFinite(p[1]));
+    if (!pts.length) continue;
+    let d = '';
+    pts.forEach(([ms, v], k) => { d += k === 0 ? `M${x(ms)},${y(t, v)}` : `H${x(ms)}V${y(t, v)}`; });
+    d += `H${x(Math.max(pts[pts.length - 1][0], dataEnd))}`;
+    el('path', { d, class: 'trend-line', stroke: colorOf(t.i) });
+  }
+  // text: one lane each, colored by value
+  texts.forEach((t, lane) => {
+    const top = m.t + plotH + 4 + lane * (laneH + 4);
+    el('rect', { x: m.l, y: top, width: width - m.l - m.r, height: laneH, class: 'lane-bg' });
+    t.points.forEach((p, k) => {
+      const from = Date.parse(p[0]), to = k + 1 < t.points.length ? Date.parse(t.points[k + 1][0]) : dataEnd;
+      if (to <= from) return;
+      const r = el('rect', { x: x(from), y: top, width: Math.max(0.5, x(to) - x(from)), height: laneH, fill: bandColor(p[1]) });
+      const title = document.createElementNS(NS, 'title'); title.textContent = `${shortTag(t.name)}: ${p[1]} from ${fmtTime(p[0])}`; r.appendChild(title);
+    });
+    el('rect', { x: m.l - 6, y: top + 3, width: 4, height: laneH - 6, fill: colorOf(t.i), rx: 1 });
+  });
+
+  // hover: a cursor line and each tag's value in force at that time
+  const cursor = el('line', { x1: 0, x2: 0, y1: m.t, y2: height - m.b, class: 'cursor-line', visibility: 'hidden' });
+  const wrap = document.createElement('div');
+  wrap.className = 'chart-wrap';
+  wrap.appendChild(svg);
+  const readout = document.createElement('div');
+  readout.className = 'readout';
+  readout.hidden = true;
+  wrap.appendChild(readout);
+  const valueAt = (t, ms) => { let found = null; for (const p of t.points) { if (Date.parse(p[0]) <= ms) found = p; else break; } return found; };
+  svg.addEventListener('mousemove', e => {
+    const box = svg.getBoundingClientRect();
+    const px = (e.clientX - box.left) * width / box.width;
+    if (px < m.l || px > width - m.r) { cursor.setAttribute('visibility', 'hidden'); readout.hidden = true; return; }
+    const ms = start + (px - m.l) / (width - m.l - m.r) * (end - start);
+    cursor.setAttribute('x1', px); cursor.setAttribute('x2', px); cursor.setAttribute('visibility', 'visible');
+    readout.innerHTML = `<b>${esc(new Date(ms).toISOString().slice(0, 19).replace('T', ' '))} UTC</b>` + data.tags.map((t, i) => {
+      const p = valueAt(t, ms);
+      const v = p == null ? '—' : typeof p[1] === 'number' ? (+p[1].toPrecision(6)).toLocaleString() : String(p[1]);
+      return `<span><i style="background:${colorOf(i)}"></i>${esc(shortTag(t.name))}: <b>${esc(v)}</b></span>`;
+    }).join('');
+    readout.hidden = false;
+    readout.style.left = Math.min(box.width - 220, Math.max(0, e.clientX - box.left + 12)) + 'px';
+  });
+  svg.addEventListener('mouseleave', () => { cursor.setAttribute('visibility', 'hidden'); readout.hidden = true; });
+  return wrap;
+}
+
+// Charts read their colors when they draw: redraw on a theme change or resize.
+new MutationObserver(() => { if (!$('pane-series').hidden && series.tree) drawAllTrends(); })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!$('pane-series').hidden && series.tree) drawAllTrends(); });
+let trendResize = null;
+window.addEventListener('resize', () => { clearTimeout(trendResize); trendResize = setTimeout(() => { if (!$('pane-series').hidden && series.tree) series.windows.forEach(w => { const card = document.querySelector(`[data-window="${w.id}"] [data-body]`); if (card && w.data) { card.innerHTML = ''; card.appendChild(chart(w.data, i => getComputedStyle(document.documentElement).getPropertyValue(TREND.colors[i]).trim())); } }); }, 200); });
 
 // ----- Tables -----
 
@@ -1094,7 +1424,8 @@ $('grid-search').addEventListener('keydown', e => { if (e.key === 'Enter') { e.p
 // when it has none yet.
 const linkedInterview = /#interview=([0-9a-f-]{36})/.exec(location.hash)?.[1];
 const hashValue = key => { const m = new RegExp(`[#&]${key}=([^&]*)`).exec(location.hash); return m ? decodeURIComponent(m[1]) : null; };
-const linkedPlant = hashValue('plant');
+// Read before anything rewrites the URL (showTab and the interview both write it).
+const linkedPlant = hashValue('plant'), linkedSection = hashValue('section'), linkedTable = hashValue('table');
 // A link pasted or followed while the page is open (the page itself writes the
 // URL with replaceState, which does not fire this).
 window.addEventListener('hashchange', () => {
@@ -1117,7 +1448,7 @@ loadInterview();
 (async () => {
   if (linkedPlant) {
     showTab('plants');
-    openPlant(linkedPlant, hashValue('section') || 'summary', hashValue('table'));
+    openPlant(linkedPlant, linkedSection || 'summary', linkedTable);
     return;
   }
   let open = 'interview';
